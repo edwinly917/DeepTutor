@@ -372,14 +372,14 @@ export default function IdeaGenPage() {
           <div className="p-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
             <h2 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
               <BookOpen className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-              Select Source (Cross-Notebook)
+              选择来源（跨笔记本）
             </h2>
             {selectedRecords.size > 0 && (
               <button
                 onClick={clearAllSelections}
                 className="text-xs text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
               >
-                Clear ({selectedRecords.size})
+                清空（{selectedRecords.size}）
               </button>
             )}
           </div>
@@ -391,7 +391,7 @@ export default function IdeaGenPage() {
               </div>
             ) : notebooks.length === 0 ? (
               <div className="p-4 text-center text-sm text-slate-400 dark:text-slate-500">
-                No notebooks with records found
+                未找到包含记录的笔记本
               </div>
             ) : (
               <div className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -443,7 +443,7 @@ export default function IdeaGenPage() {
                             </div>
                           ) : records.length === 0 ? (
                             <div className="py-2 text-xs text-slate-400 dark:text-slate-500 text-center">
-                              No records
+                              暂无记录
                             </div>
                           ) : (
                             <>
@@ -458,7 +458,7 @@ export default function IdeaGenPage() {
                                   }}
                                   className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300"
                                 >
-                                  Select All
+                                  全选
                                 </button>
                                 <button
                                   onClick={(e) => {
@@ -467,7 +467,7 @@ export default function IdeaGenPage() {
                                   }}
                                   className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
                                 >
-                                  Cancel
+                                  取消选择
                                 </button>
                               </div>
                               <div className="space-y-1">
@@ -528,24 +528,23 @@ export default function IdeaGenPage() {
           {/* User Thoughts Input */}
           <div className="p-3 border-t border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2">
-              Your Thoughts{" "}
-              {selectedRecords.size > 0 ? "(Optional)" : "(Required)"}
+              你的想法{" "}
+              {selectedRecords.size > 0 ? "（可选）" : "（必填）"}
             </label>
             <textarea
               value={userThoughts}
               onChange={(e) => setUserThoughts(e.target.value)}
               placeholder={
                 selectedRecords.size > 0
-                  ? "Describe your thoughts or research direction based on these materials..."
-                  : "Describe your research topic or idea (no notebook selection needed)..."
+                  ? "基于这些材料描述你的想法或研究方向..."
+                  : "描述你的研究主题或想法（无需选择笔记本）..."
               }
               className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 resize-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none"
               rows={3}
             />
             {selectedRecords.size === 0 && (
               <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                💡 You can generate ideas from text description alone, or select
-                notebook records above for richer context.
+                💡 你可以仅用文字描述生成想法，也可以选择上方笔记记录获得更丰富的上下文。
               </p>
             )}
           </div>
@@ -560,14 +559,14 @@ export default function IdeaGenPage() {
               {isGenerating ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Generating...
+                  生成中...
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
                   {selectedRecords.size > 0
-                    ? `Generate Ideas (${selectedRecords.size} items)`
-                    : "Generate Ideas (Text Only)"}
+                    ? `生成想法（已选 ${selectedRecords.size} 条）`
+                    : "生成想法（仅文本）"}
                 </>
               )}
             </button>
@@ -588,7 +587,7 @@ export default function IdeaGenPage() {
                 IdeaGen
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Discover research ideas from your notes
+                从你的笔记中发现研究灵感
               </p>
             </div>
           </div>
@@ -599,7 +598,7 @@ export default function IdeaGenPage() {
                 onClick={selectAllIdeas}
                 className="px-3 py-1.5 text-xs text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-lg transition-colors"
               >
-                Select All
+                全选
               </button>
               <button
                 onClick={saveSelectedIdeas}
@@ -607,7 +606,7 @@ export default function IdeaGenPage() {
                 className="px-3 py-1.5 text-xs bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 flex items-center gap-1"
               >
                 <Save className="w-3 h-3" />
-                Save Selected
+                保存所选
               </button>
             </div>
           )}
@@ -638,11 +637,10 @@ export default function IdeaGenPage() {
             <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
               <Brain className="w-16 h-16 text-slate-200 dark:text-slate-600 mb-4" />
               <p className="text-slate-500 dark:text-slate-400 text-center max-w-md">
-                Select notebook records or describe your research topic
+                选择笔记记录或描述你的研究主题
                 <br />
                 <span className="text-xs text-slate-400 dark:text-slate-500 mt-2 block">
-                  You can select notebooks for context, or simply describe your
-                  research direction in the text field
+                  你可以选择笔记记录作为上下文，也可以直接在文本框描述研究方向
                 </span>
               </p>
             </div>
@@ -680,12 +678,12 @@ export default function IdeaGenPage() {
                         </h3>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-600 px-2 py-0.5 rounded-full">
-                            {idea.research_ideas.length} ideas
+                            {idea.research_ideas.length} 个想法
                           </span>
                           <button
                             onClick={() => saveIdea(idea)}
                             className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-lg transition-colors"
-                            title="Save to Notebook"
+                            title="保存到笔记本"
                           >
                             <Save className="w-4 h-4" />
                           </button>
@@ -708,7 +706,7 @@ export default function IdeaGenPage() {
                         ))}
                         {idea.research_ideas.length > 3 && (
                           <span className="text-xs text-slate-400 dark:text-slate-500">
-                            +{idea.research_ideas.length - 3} more
+                            +{idea.research_ideas.length - 3} 个更多
                           </span>
                         )}
                       </div>

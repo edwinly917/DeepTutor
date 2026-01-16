@@ -28,6 +28,10 @@ services:
       - ./web/context:/app/web/context:ro
       - ./web/types:/app/web/types:ro
       - ./web/public:/app/web/public:ro
+      - ./web/tsconfig.json:/app/web/tsconfig.json:ro
+      - ./web/next-env.d.ts:/app/web/next-env.d.ts:ro
+      - ./web/tailwind.config.js:/app/web/tailwind.config.js:ro
+      - ./web/postcss.config.js:/app/web/postcss.config.js:ro
 
       # Mount data directories (writable) - output to local ./data
       - ./data/user:/app/data/user
@@ -35,6 +39,7 @@ services:
 
     environment:
       - NODE_ENV=development
+      - NEXT_PUBLIC_API_BASE=http://localhost:${BACKEND_PORT:-8001}
       # Enable more verbose logging in development
       - RAG_TOOL_MODULE_LOG_LEVEL=${RAG_TOOL_MODULE_LOG_LEVEL:-DEBUG}
 

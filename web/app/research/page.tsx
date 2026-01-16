@@ -70,6 +70,11 @@ export default function ResearchPage() {
 
   // PDF export state
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isExportingPptx, setIsExportingPptx] = useState(false);
+  const [pptStylePrompt, setPptStylePrompt] = useState<string>("");
+  const [pptStyleModel, setPptStyleModel] = useState<string>("");
+  const [pptApiKey, setPptApiKey] = useState<string>("");
+  const [pptBaseUrl, setPptBaseUrl] = useState<string>("");
   // Ref for report content (hidden rendered report for PDF)
   const reportContentRef = useRef<HTMLDivElement>(null);
 
@@ -313,6 +318,51 @@ export default function ResearchPage() {
     }
   };
 
+  const handleExportPptx = async () => {
+    if (!state.reporting.generatedReport) return;
+
+    setIsExportingPptx(true);
+    try {
+      const res = await fetch(apiUrl("/api/v1/research/export_pptx"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          markdown: state.reporting.generatedReport,
+          title: state.planning.originalTopic || undefined,
+          style_prompt: pptStylePrompt || undefined,
+          style_model: pptStyleModel || undefined,
+          style_api_key: pptApiKey || undefined,
+          style_base_url: pptBaseUrl || undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+
+      const data = await res.json();
+      const downloadUrl =
+        typeof data?.download_url === "string" ? data.download_url : "";
+      if (!downloadUrl) return;
+
+      const href = downloadUrl.startsWith("http")
+        ? downloadUrl
+        : apiUrl(downloadUrl);
+
+      const a = document.createElement("a");
+      a.href = href;
+      a.download =
+        typeof data?.filename === "string" && data.filename
+          ? data.filename
+          : `${state.planning.originalTopic || "report"}.pptx`;
+      a.click();
+    } catch (err) {
+      console.error("PPTX Export failed", err);
+    } finally {
+      setIsExportingPptx(false);
+    }
+  };
+
   return (
     <div className="h-screen animate-fade-in flex gap-4 p-4">
       {/* LEFT PANEL */}
@@ -322,17 +372,17 @@ export default function ResearchPage() {
           <div className="flex items-center justify-between">
             <h2 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
               <Settings className="w-5 h-5 text-slate-500 dark:text-slate-400" />
-              Configuration
+              配置
             </h2>
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
               <div
                 className={`w-2 h-2 rounded-full ${state.global.stage !== "idle" && state.global.stage !== "completed" ? "bg-emerald-500 animate-pulse" : "bg-slate-300 dark:bg-slate-600"}`}
               />
               {state.global.stage === "idle"
-                ? "Idle"
+                ? "空闲"
                 : state.global.stage === "completed"
-                  ? "Completed"
-                  : "Running"}
+                  ? "已完成"
+                  : "运行中"}
             </div>
           </div>
 
@@ -340,14 +390,14 @@ export default function ResearchPage() {
             {/* KB Selection */}
             <div>
               <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 block">
-                Knowledge Base
+                知识库
               </label>
               <select
                 value={selectedKb}
                 onChange={(e) => setSelectedKb(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500/20"
               >
-                {kbs.length === 0 && <option value="">Loading...</option>}
+                {kbs.length === 0 && <option value="">加载中...</option>}
                 {kbs.map((kb) => (
                   <option key={kb} value={kb}>
                     {kb}
@@ -359,20 +409,25 @@ export default function ResearchPage() {
             {/* Plan Mode */}
             <div>
               <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 block">
-                Plan Mode
+                计划模式
               </label>
               <div className="flex bg-slate-50 dark:bg-slate-700 p-1 rounded-lg border border-slate-200 dark:border-slate-600">
                 {["quick", "medium", "deep", "auto"].map((mode) => (
                   <button
                     key={mode}
                     onClick={() => setPlanMode(mode)}
-                    className={`flex-1 py-1.5 text-xs font-medium rounded-md capitalize transition-all ${
-                      planMode === mode
-                        ? "bg-white dark:bg-slate-600 text-emerald-700 dark:text-emerald-400 shadow-sm border border-slate-100 dark:border-slate-500"
-                        : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
-                    }`}
+                    className={`flex-1 py-1.5 text-xs font-medium rounded-md capitalize transition-all ${planMode === mode
+                      ? "bg-white dark:bg-slate-600 text-emerald-700 dark:text-emerald-400 shadow-sm border border-slate-100 dark:border-slate-500"
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
+                      }`}
                   >
-                    {mode}
+                    {mode === "quick"
+                      ? "快速"
+                      : mode === "medium"
+                        ? "标准"
+                        : mode === "deep"
+                          ? "深入"
+                          : "自动"}
                   </button>
                 ))}
               </div>
@@ -381,13 +436,13 @@ export default function ResearchPage() {
             {/* Tools */}
             <div>
               <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 block">
-                Research Tools
+                研究工具
               </label>
               <div className="flex gap-2">
                 {[
-                  { key: "RAG", label: "RAG", icon: Database },
-                  { key: "Paper", label: "Paper", icon: GraduationCap },
-                  { key: "Web", label: "Web", icon: Globe },
+                  { key: "RAG", label: "知识库", icon: Database },
+                  { key: "Paper", label: "论文", icon: GraduationCap },
+                  { key: "Web", label: "网络", icon: Globe },
                 ].map((tool) => {
                   const isSelected = enabledTools.includes(tool.key);
                   const Icon = tool.icon;
@@ -402,11 +457,10 @@ export default function ResearchPage() {
                             : [...prev, tool.key],
                         );
                       }}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-medium transition-all border ${
-                        isSelected
-                          ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700"
-                          : "bg-slate-50 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-600"
-                      }`}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-medium transition-all border ${isSelected
+                        ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700"
+                        : "bg-slate-50 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-600"
+                        }`}
                     >
                       <Icon className="w-3.5 h-3.5" />
                       {tool.label}
@@ -423,7 +477,7 @@ export default function ResearchPage() {
                   className={`w-4 h-4 ${enableOptimization ? "text-indigo-500 dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"}`}
                 />
                 <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                  Topic Optimization
+                  主题优化
                 </span>
               </div>
               <button
@@ -435,6 +489,60 @@ export default function ResearchPage() {
                 />
               </button>
             </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 block">
+                PPT 风格提示词
+              </label>
+              <textarea
+                value={pptStylePrompt}
+                onChange={(e) => setPptStylePrompt(e.target.value)}
+                placeholder='例如："极简商务风，深蓝色主色调，少字多留白"'
+                rows={3}
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500/20 resize-none"
+              />
+            </div>
+
+            {/* PPT Model Configuration */}
+            <div className="border border-slate-200 dark:border-slate-600 rounded-lg p-3 space-y-3">
+              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                PPT 调用模型配置（可选）
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">
+                  模型名称
+                </label>
+                <input
+                  value={pptStyleModel}
+                  onChange={(e) => setPptStyleModel(e.target.value)}
+                  placeholder='例如："nano-banana"'
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">
+                  API Key
+                </label>
+                <input
+                  type="password"
+                  value={pptApiKey}
+                  onChange={(e) => setPptApiKey(e.target.value)}
+                  placeholder="留空则使用默认配置"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">
+                  Base URL
+                </label>
+                <input
+                  value={pptBaseUrl}
+                  onChange={(e) => setPptBaseUrl(e.target.value)}
+                  placeholder='例如："https://api.example.com/v1"'
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -442,7 +550,7 @@ export default function ResearchPage() {
         <div className="flex-1 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden">
           <div className="p-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
             <MessageSquare className="w-4 h-4" />
-            Topic Assistant
+            主题助手
           </div>
           <div
             ref={chatContainerRef}
@@ -459,7 +567,7 @@ export default function ResearchPage() {
                   {msg.isOptimizing ? (
                     <div className="flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin text-indigo-500 dark:text-indigo-400" />
-                      <span>Optimizing topic...</span>
+                      <span>正在优化主题...</span>
                     </div>
                   ) : (
                     <div className="prose prose-sm dark:prose-invert max-w-none">
@@ -475,7 +583,7 @@ export default function ResearchPage() {
                         onClick={() => startResearchLocal(msg.proposal!)}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-full hover:bg-emerald-700 shadow-lg shadow-emerald-500/20"
                       >
-                        <Play className="w-3 h-3" /> Start Research
+                        <Play className="w-3 h-3" /> 开始研究
                       </button>
                     </div>
                   )}
@@ -493,9 +601,9 @@ export default function ResearchPage() {
                 }
                 placeholder={
                   state.global.stage !== "idle" &&
-                  state.global.stage !== "completed"
-                    ? "Research in progress..."
-                    : "Enter research topic..."
+                    state.global.stage !== "completed"
+                    ? "研究进行中..."
+                    : "请输入研究主题..."
                 }
                 disabled={
                   state.global.stage !== "idle" &&
@@ -537,11 +645,15 @@ export default function ResearchPage() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `${state.planning.originalTopic || "report"}.md`;
+            a.download = `${state.planning.originalTopic || "报告"}.md`;
             a.click();
           }}
           onExportPdf={handleExportPdf}
           isExportingPdf={isExportingPdf}
+          onExportPptx={handleExportPptx}
+          pptStylePrompt={pptStylePrompt}
+          onPptStylePromptChange={setPptStylePrompt}
+          isExportingPptx={isExportingPptx}
         />
         {/* Hidden Render Div for PDF - uses preprocessed markdown */}
         <div

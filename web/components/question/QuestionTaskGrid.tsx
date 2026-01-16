@@ -15,6 +15,8 @@ import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { processLatexContent } from "@/lib/latex";
+import { useGlobal } from "@/context/GlobalContext";
+import { getTranslation } from "@/lib/i18n";
 
 interface QuestionTaskGridProps {
   tasks: Record<string, QuestionTask>;
@@ -24,46 +26,6 @@ interface QuestionTaskGridProps {
   mode?: "custom" | "mimic";
 }
 
-const getStatusIcon = (status: QuestionTask["status"], extended?: boolean) => {
-  if (status === "done" && extended) {
-    return <Zap className="w-4 h-4 text-amber-500" />;
-  }
-  switch (status) {
-    case "done":
-      return <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
-    case "generating":
-      return <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />;
-    case "analyzing":
-      return <Search className="w-4 h-4 text-purple-500 animate-pulse" />;
-    case "validating":
-      return <Search className="w-4 h-4 text-amber-500 animate-pulse" />;
-    case "error":
-      return <AlertCircle className="w-4 h-4 text-red-500" />;
-    default:
-      return <Clock className="w-4 h-4 text-slate-400" />;
-  }
-};
-
-const getStatusColor = (status: QuestionTask["status"], extended?: boolean) => {
-  if (status === "done" && extended) {
-    return "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300";
-  }
-  switch (status) {
-    case "done":
-      return "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300";
-    case "generating":
-      return "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300";
-    case "analyzing":
-      return "bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300";
-    case "validating":
-      return "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300";
-    case "error":
-      return "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300";
-    default:
-      return "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400";
-  }
-};
-
 export const QuestionTaskGrid: React.FC<QuestionTaskGridProps> = ({
   tasks,
   activeTaskIds,
@@ -71,7 +33,71 @@ export const QuestionTaskGrid: React.FC<QuestionTaskGridProps> = ({
   onTaskSelect,
   mode = "custom",
 }) => {
+  const { uiSettings } = useGlobal();
+  const t = (key: string) => getTranslation(uiSettings.language, key);
   const isMimicMode = mode === "mimic";
+
+  const getStatusLabel = (
+    status: QuestionTask["status"],
+    extended?: boolean,
+  ) => {
+    if (status === "done" && extended) return t("Extension");
+    switch (status) {
+      case "done":
+        return t("Completed");
+      case "generating":
+        return t("Generating");
+      case "analyzing":
+        return t("Analyzing");
+      case "validating":
+        return t("Validating");
+      case "error":
+        return t("Error");
+      default:
+        return t("Pending");
+    }
+  };
+
+  const getStatusIcon = (status: QuestionTask["status"], extended?: boolean) => {
+    if (status === "done" && extended) {
+      return <Zap className="w-4 h-4 text-amber-500" />;
+    }
+    switch (status) {
+      case "done":
+        return <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
+      case "generating":
+        return <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />;
+      case "analyzing":
+        return <Search className="w-4 h-4 text-purple-500 animate-pulse" />;
+      case "validating":
+        return <Search className="w-4 h-4 text-amber-500 animate-pulse" />;
+      case "error":
+        return <AlertCircle className="w-4 h-4 text-red-500" />;
+      default:
+        return <Clock className="w-4 h-4 text-slate-400" />;
+    }
+  };
+
+  const getStatusColor = (status: QuestionTask["status"], extended?: boolean) => {
+    if (status === "done" && extended) {
+      return "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300";
+    }
+    switch (status) {
+      case "done":
+        return "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300";
+      case "generating":
+        return "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300";
+      case "analyzing":
+        return "bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300";
+      case "validating":
+        return "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300";
+      case "error":
+        return "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300";
+      default:
+        return "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400";
+    }
+  };
+
   // Sort tasks: Active first, then by status
   const sortedTasks = Object.values(tasks).sort((a, b) => {
     const score = (task: QuestionTask) => {
@@ -92,7 +118,7 @@ export const QuestionTaskGrid: React.FC<QuestionTaskGridProps> = ({
     return (
       <div className="flex flex-col items-center justify-center p-8 text-slate-400 dark:text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
         <Activity className="w-8 h-8 mb-2 opacity-50" />
-        <p className="text-sm">No questions initialized yet</p>
+        <p className="text-sm">{t("No questions initialized")}</p>
       </div>
     );
   }
@@ -155,11 +181,11 @@ export const QuestionTaskGrid: React.FC<QuestionTaskGridProps> = ({
                   <span
                     className={`text-[10px] px-2 py-0.5 rounded-full font-medium uppercase tracking-wide ${getStatusColor(task.status, task.extended)}`}
                   >
-                    {task.extended ? "extended" : task.status}
+                    {getStatusLabel(task.status, task.extended)}
                   </span>
                   {task.round && task.maxRounds && (
                     <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                      ROUND {task.round} / {task.maxRounds}
+                      {t("Round")} {task.round} / {task.maxRounds}
                     </span>
                   )}
                 </div>
@@ -175,7 +201,7 @@ export const QuestionTaskGrid: React.FC<QuestionTaskGridProps> = ({
                   <div className="flex items-center gap-1 mb-2">
                     <BookOpen className="w-3 h-3 text-amber-500 dark:text-amber-400" />
                     <span className="font-semibold text-amber-600 dark:text-amber-400">
-                      Origin Question:
+                      {t("Origin Question:")}
                     </span>
                   </div>
                   <div className="prose prose-xs dark:prose-invert max-w-none leading-relaxed text-slate-700 dark:text-slate-300">
@@ -188,7 +214,7 @@ export const QuestionTaskGrid: React.FC<QuestionTaskGridProps> = ({
                       </ReactMarkdown>
                     ) : (
                       <span className="text-slate-400 dark:text-slate-500 italic">
-                        Waiting to start...
+                        {t("Waiting to start...")}
                       </span>
                     )}
                   </div>
@@ -196,9 +222,9 @@ export const QuestionTaskGrid: React.FC<QuestionTaskGridProps> = ({
               ) : (
                 <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
                   <span className="font-medium text-slate-400 dark:text-slate-500 mr-1">
-                    Focus:
+                    {t("Focus:")}
                   </span>
-                  {task.focus || "Waiting to start..."}
+                  {task.focus || t("Waiting to start...")}
                 </p>
               )}
             </div>

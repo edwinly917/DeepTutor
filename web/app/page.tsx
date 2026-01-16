@@ -96,42 +96,42 @@ export default function HomePage() {
       label: t("Smart Problem Solving"),
       href: "/solver",
       color: "blue",
-      description: "Multi-agent reasoning",
+      description: t("Multi-agent reasoning"),
     },
     {
       icon: PenTool,
       label: t("Generate Practice Questions"),
       href: "/question",
       color: "purple",
-      description: "Auto-validated quizzes",
+      description: t("Auto-validated quizzes"),
     },
     {
       icon: Microscope,
       label: t("Deep Research Reports"),
       href: "/research",
       color: "emerald",
-      description: "Comprehensive analysis",
+      description: t("Comprehensive analysis"),
     },
     {
       icon: Lightbulb,
       label: t("Generate Novel Ideas"),
       href: "/ideagen",
       color: "amber",
-      description: "Brainstorm & synthesize",
+      description: t("Brainstorm & synthesize"),
     },
     {
       icon: GraduationCap,
       label: t("Guided Learning"),
       href: "/guide",
       color: "indigo",
-      description: "Step-by-step tutoring",
+      description: t("Step-by-step tutoring"),
     },
     {
       icon: Edit3,
       label: t("Co-Writer"),
       href: "/co_writer",
       color: "pink",
-      description: "Collaborative writing",
+      description: t("Collaborative writing"),
     },
   ];
 
@@ -144,7 +144,7 @@ export default function HomePage() {
         <div className="flex-1 flex flex-col items-center justify-center px-6">
           <div className="text-center max-w-2xl mx-auto mb-8">
             <h1 className="text-4xl font-bold text-slate-900 dark:text-slate-100 mb-3 tracking-tight">
-              {t("Welcome to DeepTutor")}
+              {t("Welcome to Hi-NoteBook")}
             </h1>
             <p className="text-lg text-slate-500 dark:text-slate-400">
               {t("How can I help you today?")}

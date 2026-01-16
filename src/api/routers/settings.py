@@ -167,8 +167,8 @@ SETTINGS_FILE = Path(__file__).parent.parent.parent.parent / "data" / "user" / "
 # Default UI settings
 DEFAULT_UI_SETTINGS = {
     "theme": "light",
-    "language": "en",  # Interface language
-    "output_language": "en",  # Output preference (legacy, might move to main.yaml)
+    "language": "zh",
+    "output_language": "zh",
 }
 
 

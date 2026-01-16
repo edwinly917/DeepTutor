@@ -54,6 +54,9 @@ import rehypeRaw from "rehype-raw";
 import "katex/dist/katex.min.css";
 import { processLatexContent } from "@/lib/latex";
 
+import { useGlobal } from "@/context/GlobalContext";
+import { getTranslation } from "@/lib/i18n";
+
 interface CoWriterEditorProps {
   initialValue?: string;
 }
@@ -66,9 +69,20 @@ const AI_MARK_CLOSE_TAG = /<\/span>/g;
 export default function CoWriterEditor({
   initialValue = "",
 }: CoWriterEditorProps) {
+  const { uiSettings } = useGlobal();
+  const t = (key: string, ...args: any[]) => {
+    let text = getTranslation(uiSettings.language, key);
+    if (args.length > 0) {
+      args.forEach((arg, index) => {
+        text = text.replace(`{${index}}`, String(arg));
+      });
+    }
+    return text;
+  };
+
   const [content, setContent] = useState(
     initialValue ||
-      "# Welcome to Co-Writer\n\nSelect text to see the magic happen.\n\n## Features\n\n- **Bold** text with Ctrl+B\n- *Italic* text with Ctrl+I\n- <u>Underline</u> with Ctrl+U\n- <mark>Highlight</mark> with Ctrl+H\n- AI-powered editing and auto-marking\n",
+      `# ${t("Welcome to Co-Writer")}\n\n${t("Select text to see the magic happen.")}\n\n## ${t("Features")}\n\n- ${t("Bold text with Ctrl+B")}\n- ${t("Italic text with Ctrl+I")}\n- ${t("Underline with Ctrl+U")}\n- ${t("Highlight with Ctrl+H")}\n- ${t("AI-powered editing and auto-marking")}\n`,
   );
   const [selection, setSelection] = useState<{
     start: number;
@@ -158,14 +172,14 @@ export default function CoWriterEditor({
         ) {
           // Only show detailed errors in development mode
           console.debug(
-            "Backend connection check failed (this is normal if backend is not running):",
+            `${t("Backend connection check failed")} (this is normal if backend is not running):`,
             error.message,
           );
         }
         return false;
       }
     },
-    [],
+    [t],
   );
 
   // Check TTS configuration and available voices
@@ -232,7 +246,7 @@ export default function CoWriterEditor({
             // Only show errors in development mode
             if (process.env.NODE_ENV === "development") {
               console.debug(
-                "Failed to fetch KBs (backend may not be running):",
+                `${t("Failed to fetch KBs")} (backend may not be running):`,
                 err.message,
               );
             }
@@ -245,7 +259,7 @@ export default function CoWriterEditor({
         // Only show errors in development mode
         if (process.env.NODE_ENV === "development") {
           console.debug(
-            "Failed to initialize (backend may not be running):",
+            `${t("Failed to initialize")} (backend may not be running):`,
             error.message,
           );
         }
@@ -253,7 +267,7 @@ export default function CoWriterEditor({
     };
 
     loadData();
-  }, [checkBackendConnection]);
+  }, [checkBackendConnection, t]);
 
   const fetchHistory = () => {
     fetch(apiUrl("/api/v1/co_writer/history"))
@@ -272,7 +286,7 @@ export default function CoWriterEditor({
         // Only show errors in development mode to avoid console noise
         if (process.env.NODE_ENV === "development") {
           console.debug(
-            "Failed to fetch history (backend may not be running):",
+            `${t("Failed to fetch history")} (backend may not be running):`,
             err.message,
           );
         }
@@ -709,11 +723,11 @@ export default function CoWriterEditor({
       const isConnected = await checkBackendConnection();
       if (!isConnected) {
         alert(
-          `❌ Backend service not connected\n\n` +
-            `Please ensure the backend is running:\n` +
+          `❌ ${t("Backend service not connected")}\n\n` +
+            `${t("Please ensure the backend is running")}:\n` +
             `📍 ${apiUrl("")}\n\n` +
-            `💡 How to start:\n` +
-            `   Run in project root: python start.py\n` +
+            `💡 ${t("How to start")}:\n` +
+            `   ${t("Run in project root")}: python start.py\n` +
             `   Or: python start_web.py`,
         );
         return;
@@ -806,7 +820,7 @@ export default function CoWriterEditor({
       setBackendConnected(false);
 
       // Build detailed error message
-      let errorMessage = "Error processing request";
+      let errorMessage = t("Error processing request");
       const backendUrl = apiUrl("");
 
       if (
@@ -814,27 +828,27 @@ export default function CoWriterEditor({
         (error.message.includes("fetch") || error.message === "Failed to fetch")
       ) {
         errorMessage =
-          `❌ Cannot connect to backend service\n\n` +
-          `Please ensure the backend is running:\n` +
+          `❌ ${t("Cannot connect to backend service")}\n\n` +
+          `${t("Please ensure the backend is running")}:\n` +
           `📍 ${backendUrl}\n\n` +
-          `💡 How to start:\n` +
-          `   Run in project root: python start.py\n` +
+          `💡 ${t("How to start")}:\n` +
+          `   ${t("Run in project root")}: python start.py\n` +
           `   Or: python start_web.py\n\n` +
-          `If running on a different port, check NEXT_PUBLIC_API_BASE env variable`;
+          `${t("If running on a different port, check NEXT_PUBLIC_API_BASE env variable")}`;
       } else if (
         error.name === "AbortError" ||
         error.message.includes("timeout")
       ) {
         errorMessage =
-          `⏱️ Request timeout\n\n` +
-          `Backend response took too long, please check:\n` +
-          `1. Is the backend running properly?\n` +
-          `2. Is network connection stable?\n` +
-          `3. Is server load too high?`;
+          `⏱️ ${t("Request timeout")}\n\n` +
+          `${t("Backend response took too long, please check")}:\n` +
+          `1. ${t("Is the backend running properly?")}\n` +
+          `2. ${t("Is network connection stable?")}\n` +
+          `3. ${t("Is server load too high?")}`;
       } else if (error.message) {
         errorMessage = `❌ ${error.message}`;
       } else {
-        errorMessage = `❌ Unknown error: ${String(error)}`;
+        errorMessage = `❌ ${t("Unknown error")}: ${String(error)}`;
       }
 
       alert(errorMessage);

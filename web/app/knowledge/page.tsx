@@ -456,16 +456,16 @@ export default function KnowledgePage() {
         method: "POST",
         body: formData,
       });
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) throw new Error("上传失败");
 
       setUploadModalOpen(false);
       setFiles(null);
       // Refresh immediately to establish WebSocket connection
       await fetchKnowledgeBases();
-      alert("Files uploaded successfully! Processing started in background.");
+      alert("文件上传成功！已在后台开始处理。");
     } catch (err) {
       console.error(err);
-      alert("Failed to upload files");
+      alert("上传文件失败");
     } finally {
       setUploading(false);
     }
@@ -489,7 +489,7 @@ export default function KnowledgePage() {
       });
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.detail || "Creation failed");
+        throw new Error(errorData.detail || "创建失败");
       }
 
       const result = await res.json();
@@ -520,7 +520,7 @@ export default function KnowledgePage() {
         ...prev,
         [newKb.name]: {
           stage: "initializing",
-          message: "Initializing knowledge base...",
+          message: "正在初始化知识库...",
           current: 0,
           total: 0,
           file_name: "",
@@ -539,11 +539,11 @@ export default function KnowledgePage() {
       }, 1000);
 
       alert(
-        "Knowledge base created successfully! Initialization started in background.",
+        "知识库创建成功！已在后台开始初始化。",
       );
     } catch (err: any) {
       console.error(err);
-      alert(`Failed to create knowledge base: ${err.message}`);
+      alert(`创建知识库失败：${err.message}`);
     } finally {
       setUploading(false);
     }
@@ -575,10 +575,10 @@ export default function KnowledgePage() {
         <div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-3">
             <BookOpen className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-            Knowledge Bases
+            知识库
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-2">
-            Manage and explore your educational content repositories.
+            管理并浏览你的知识内容仓库。
           </p>
         </div>
         <div className="flex gap-3">
@@ -588,10 +588,10 @@ export default function KnowledgePage() {
               await fetchKnowledgeBases();
             }}
             className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2 border border-slate-200 dark:border-slate-600 shadow-sm hover:shadow"
-            title="Refresh knowledge bases"
+            title="刷新知识库"
           >
             <RefreshCw className="w-4 h-4" />
-            Refresh
+            刷新
           </button>
           <button
             onClick={() => {
@@ -602,7 +602,7 @@ export default function KnowledgePage() {
             className="bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors flex items-center gap-2 shadow-lg shadow-slate-900/20"
           >
             <Plus className="w-4 h-4" />
-            New Knowledge Base
+            新建知识库
           </button>
         </div>
       </div>
@@ -647,7 +647,7 @@ export default function KnowledgePage() {
                     </h3>
                     {kb.is_default && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 text-[10px] font-bold uppercase tracking-wide border border-blue-100 dark:border-blue-800 mt-1">
-                        Default
+                        默认
                       </span>
                     )}
                   </div>
@@ -660,14 +660,14 @@ export default function KnowledgePage() {
                       setUploadModalOpen(true);
                     }}
                     className="p-2 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                    title="Upload Documents"
+                    title="上传文档"
                   >
                     <Upload className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => handleDelete(kb.name)}
                     className="p-2 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-lg text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                    title="Delete Knowledge Base"
+                    title="删除知识库"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -679,7 +679,7 @@ export default function KnowledgePage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg">
                     <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1 flex items-center gap-1.5">
-                      <FileText className="w-3 h-3" /> Documents
+                      <FileText className="w-3 h-3" /> 文档
                     </p>
                     <p className="text-lg font-bold text-slate-700 dark:text-slate-200">
                       {kb.statistics.raw_documents}
@@ -687,7 +687,7 @@ export default function KnowledgePage() {
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg">
                     <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1 flex items-center gap-1.5">
-                      <ImageIcon className="w-3 h-3" /> Images
+                      <ImageIcon className="w-3 h-3" /> 图片
                     </p>
                     <p className="text-lg font-bold text-slate-700 dark:text-slate-200">
                       {kb.statistics.images}
@@ -698,7 +698,7 @@ export default function KnowledgePage() {
                 <div className="pt-2">
                   <div className="flex items-center justify-between text-xs mb-2">
                     <span className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
-                      <Layers className="w-3 h-3" /> Status
+                      <Layers className="w-3 h-3" /> 状态
                     </span>
                     {(() => {
                       const progress = progressMap[kb.name];
@@ -706,22 +706,22 @@ export default function KnowledgePage() {
                         if (progress.stage === "completed") {
                           return (
                             <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                              Ready
+                              就绪
                             </span>
                           );
                         } else if (progress.stage === "error") {
                           return (
                             <span className="text-red-600 dark:text-red-400 font-bold">
-                              Error
+                              错误
                             </span>
                           );
                         } else {
                           // Display current stage and progress
                           const stageLabels: Record<string, string> = {
-                            initializing: "Initializing",
-                            processing_documents: "Processing",
-                            processing_file: "Processing File",
-                            extracting_items: "Extracting Items",
+                            initializing: "初始化中",
+                            processing_documents: "处理中",
+                            processing_file: "处理文件中",
+                            extracting_items: "提取中",
                           };
                           const stageLabel =
                             stageLabels[progress.stage] || progress.stage;
@@ -741,9 +741,7 @@ export default function KnowledgePage() {
                               : "text-slate-400 dark:text-slate-500"
                           }
                         >
-                          {kb.statistics.rag_initialized
-                            ? "Ready"
-                            : "Not Indexed"}
+                          {kb.statistics.rag_initialized ? "就绪" : "未建立索引"}
                         </span>
                       );
                     })()}
@@ -790,7 +788,7 @@ export default function KnowledgePage() {
                                   fetchKnowledgeBases();
                                 }}
                                 className="text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
-                                title="Clear progress status"
+                                title="清除进度状态"
                               >
                                 <X className="w-3 h-3" />
                               </button>
@@ -806,12 +804,12 @@ export default function KnowledgePage() {
                           )}
                           {progress.current > 0 && progress.total > 0 && (
                             <div className="text-[10px] text-slate-400 dark:text-slate-500">
-                              File {progress.current} of {progress.total}
+                              第 {progress.current}/{progress.total} 个文件
                             </div>
                           )}
                           {progress.error && (
                             <div className="text-[10px] text-red-600 dark:text-red-400 mt-1">
-                              Error: {progress.error}
+                              错误：{progress.error}
                             </div>
                           )}
                         </div>
@@ -820,9 +818,9 @@ export default function KnowledgePage() {
                     if (kb.statistics.rag) {
                       return (
                         <div className="mt-2 flex gap-3 text-[10px] text-slate-400 dark:text-slate-500">
-                          <span>{kb.statistics.rag.chunks} chunks</span>
+                          <span>{kb.statistics.rag.chunks} 块</span>
                           <span>•</span>
-                          <span>{kb.statistics.rag.entities} entities</span>
+                          <span>{kb.statistics.rag.entities} 实体</span>
                         </div>
                       );
                     }
@@ -837,7 +835,7 @@ export default function KnowledgePage() {
           {kbs.length === 0 && (
             <div className="col-span-full text-center py-12 text-slate-400 dark:text-slate-500">
               <Database className="w-12 h-12 mx-auto mb-4 opacity-20" />
-              <p>No knowledge bases found. Create one to get started.</p>
+              <p>未找到知识库。新建一个开始吧。</p>
             </div>
           )}
         </div>
@@ -849,7 +847,7 @@ export default function KnowledgePage() {
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                Create Knowledge Base
+                新建知识库
               </h3>
               <button
                 onClick={() => setCreateModalOpen(false)}
@@ -862,21 +860,21 @@ export default function KnowledgePage() {
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Knowledge Base Name
+                  知识库名称
                 </label>
                 <input
                   type="text"
                   required
                   value={newKbName}
                   onChange={(e) => setNewKbName(e.target.value)}
-                  placeholder="e.g., Math101"
+                  placeholder="例如：Math101"
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Upload Documents
+                  上传文档
                 </label>
                 <div
                   className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${dragActive
@@ -905,11 +903,11 @@ export default function KnowledgePage() {
                     />
                     <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
                       {files && files.length > 0
-                        ? `${files.length} files selected`
-                        : "Drag & drop files here or click to browse"}
+                        ? `已选择 ${files.length} 个文件`
+                        : "拖拽文件到此处，或点击选择"}
                     </span>
                     <span className="text-xs text-slate-400 dark:text-slate-500">
-                      Supports PDF, TXT, MD
+                      支持 PDF、TXT、MD
                     </span>
                   </label>
                 </div>
@@ -921,7 +919,7 @@ export default function KnowledgePage() {
                   onClick={() => setCreateModalOpen(false)}
                   className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-700"
                 >
-                  Cancel
+                  取消
                 </button>
                 <button
                   type="submit"
@@ -933,7 +931,7 @@ export default function KnowledgePage() {
                   {uploading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    "Create & Initialize"
+                    "创建并初始化"
                   )}
                 </button>
               </div>
@@ -948,7 +946,7 @@ export default function KnowledgePage() {
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                Upload Documents
+                上传文档
               </h3>
               <button
                 onClick={() => setUploadModalOpen(false)}
@@ -958,7 +956,7 @@ export default function KnowledgePage() {
               </button>
             </div>
             <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-              Upload PDF, TXT, or MD files to{" "}
+              上传 PDF、TXT 或 MD 文件到{" "}
               <strong className="text-slate-700 dark:text-slate-200">
                 {targetKb}
               </strong>
@@ -982,8 +980,8 @@ export default function KnowledgePage() {
                   <Upload className="w-8 h-8 text-slate-400 dark:text-slate-500" />
                   <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
                     {files && files.length > 0
-                      ? `${files.length} files selected`
-                      : "Click to browse files"}
+                      ? `已选择 ${files.length} 个文件`
+                      : "点击选择文件"}
                   </span>
                 </label>
               </div>
@@ -994,7 +992,7 @@ export default function KnowledgePage() {
                   onClick={() => setUploadModalOpen(false)}
                   className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-700"
                 >
-                  Cancel
+                  取消
                 </button>
                 <button
                   type="submit"
@@ -1004,7 +1002,7 @@ export default function KnowledgePage() {
                   {uploading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    "Upload"
+                    "上传"
                   )}
                 </button>
               </div>

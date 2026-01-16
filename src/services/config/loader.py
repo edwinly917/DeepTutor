@@ -8,8 +8,10 @@ Unified configuration loading for all DeepTutor modules.
 Provides YAML configuration loading, path resolution, and language parsing.
 """
 
+import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 
@@ -46,7 +48,7 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     return result
 
 
-def load_config_with_main(config_file: str, project_root: Path | None = None) -> dict[str, Any]:
+def load_config_with_main(config_file: str, project_root: Optional[Path] = None) -> dict[str, Any]:
     """
     Load configuration file, automatically merge with main.yaml common configuration
 
@@ -196,11 +198,84 @@ def get_agent_params(module_name: str) -> dict:
     return defaults
 
 
+@dataclass
+class PPTConfig:
+    """PPT generation configuration."""
+
+    model: str
+    api_key: str
+    base_url: str
+    binding: str = "openai"
+    temperature: float = 0.4
+    max_tokens: int = 2000
+    max_slides: int = 15
+    default_style_prompt: str = ""
+
+
+def get_ppt_config(project_root: Optional[Path] = None) -> PPTConfig:
+    """
+    Get PPT-specific LLM configuration with fallback chain.
+
+    Priority:
+    1. main.yaml: export.ppt section
+    2. Environment variables: PPT_MODEL, PPT_API_KEY, PPT_BASE_URL
+    3. Default LLM config (from LLM_* env vars)
+
+    Args:
+        project_root: Project root directory (if None, will use PROJECT_ROOT)
+
+    Returns:
+        PPTConfig with resolved configuration
+    """
+    if project_root is None:
+        project_root = PROJECT_ROOT
+
+    # Load main.yaml config
+    config = load_config_with_main("main.yaml", project_root)
+    ppt_config = config.get("export", {}).get("ppt", {})
+
+    # Helper to get value with priority: yaml -> env -> default
+    def _get_value(yaml_key: str, env_key: str, default: Any = "") -> Any:
+        yaml_val = ppt_config.get(yaml_key)
+        if yaml_val:  # YAML value is not empty
+            return yaml_val
+        env_val = os.getenv(env_key)
+        if env_val:  # Env value exists
+            return env_val.strip().strip("\"'")
+        return default
+
+    # Get PPT-specific config, fallback to default LLM env vars
+    model = _get_value("model", "PPT_MODEL", "") or os.getenv("LLM_MODEL", "")
+    api_key = _get_value("api_key", "PPT_API_KEY", "") or os.getenv("LLM_API_KEY", "")
+    base_url = _get_value("base_url", "PPT_BASE_URL", "") or os.getenv("LLM_HOST", "")
+    binding = _get_value("binding", "PPT_BINDING", "openai")
+
+    # Get generation parameters
+    temperature = float(ppt_config.get("temperature", 0.4))
+    max_tokens = int(ppt_config.get("max_tokens", 2000))
+    max_slides = int(ppt_config.get("max_slides", 15))
+    default_style_prompt = ppt_config.get("default_style_prompt", "")
+
+    return PPTConfig(
+        model=model,
+        api_key=api_key,
+        base_url=base_url,
+        binding=binding,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        max_slides=max_slides,
+        default_style_prompt=default_style_prompt,
+    )
+
+
 __all__ = [
     "PROJECT_ROOT",
     "load_config_with_main",
     "get_path_from_config",
     "parse_language",
     "get_agent_params",
+    "get_ppt_config",
+    "PPTConfig",
     "_deep_merge",
 ]
+

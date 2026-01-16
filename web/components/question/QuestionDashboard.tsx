@@ -25,6 +25,8 @@ import {
   RefreshCw,
   Sparkles,
 } from "lucide-react";
+import { useGlobal } from "@/context/GlobalContext";
+import { getTranslation } from "@/lib/i18n";
 
 type ProcessTab = "planning" | "generating";
 
@@ -97,6 +99,17 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
   onTaskSelect,
   tokenStats,
 }) => {
+  const { uiSettings } = useGlobal();
+  const t = (key: string, ...args: any[]) => {
+    let text = getTranslation(uiSettings.language, key);
+    if (args.length > 0) {
+      args.forEach((arg, index) => {
+        text = text.replace(`{${index}}`, String(arg));
+      });
+    }
+    return text;
+  };
+
   // Determine if using QuestionState or GlobalContext data
   const useGlobalContext = !state || state.global.stage === "idle";
 
@@ -160,8 +173,8 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
     useState<ProcessTab>("planning");
 
   const steps: { id: ProcessTab; label: string; icon: React.ElementType }[] = [
-    { id: "planning", label: "Planning", icon: GitBranch },
-    { id: "generating", label: "Generating", icon: Zap },
+    { id: "planning", label: t("Planning"), icon: GitBranch },
+    { id: "generating", label: t("Generate"), icon: Zap },
   ];
 
   const stageOrder: Record<string, number> = {
@@ -178,6 +191,30 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
   };
 
   const currentStageIndex = stageOrder[stage || "idle"] ?? -1;
+
+  const getStageLabel = (s?: string | null) => {
+    switch (s) {
+      case "planning":
+        return t("Planning");
+      case "researching":
+        return t("Retrieving");
+      case "uploading":
+        return t("Uploading");
+      case "parsing":
+        return t("Parsing");
+      case "extracting":
+        return t("Extracting");
+      case "generating":
+        return t("Generating");
+      case "validating":
+        return t("Validating");
+      case "complete":
+        return t("Completed");
+      case "idle":
+      default:
+        return t("Idle");
+    }
+  };
 
   // Check if a tab has content
   const isTabAvailable = (tabId: ProcessTab): boolean => {
@@ -260,7 +297,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
     const customModeSteps = [
       {
         id: "init",
-        label: "Initializing",
+        label: t("Initialization"),
         icon: Sparkles,
         active: isPlanning && !progressStatus,
         done:
@@ -274,7 +311,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
       },
       {
         id: "query",
-        label: "Generating Search Queries",
+        label: t("Generate Retrieval Queries"),
         icon: Search,
         active:
           progressStatus === "generating_queries" ||
@@ -289,7 +326,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
       },
       {
         id: "research",
-        label: "Retrieving Background Knowledge",
+        label: t("Retrieve Background Knowledge"),
         icon: Database,
         active: isResearching || progressStatus === "retrieving",
         done:
@@ -301,7 +338,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
       },
       {
         id: "plan",
-        label: "Creating Question Plan",
+        label: t("Create Question Plan"),
         icon: Target,
         active:
           progressStatus === "creating_plan" ||
@@ -318,28 +355,28 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
     const mimicModeSteps = [
       {
         id: "upload",
-        label: "Uploading PDF",
+        label: t("Upload PDF"),
         icon: Sparkles,
         active: isUploading,
         done: isParsing || isExtracting || isGenerating || isCompleted,
       },
       {
         id: "parse",
-        label: "Parsing PDF (MinerU)",
+        label: t("Parse PDF (MinerU)"),
         icon: RefreshCw,
         active: isParsing,
         done: isExtracting || isGenerating || isCompleted,
       },
       {
         id: "extract",
-        label: "Extracting Reference Questions",
+        label: t("Extract Reference Questions"),
         icon: Search,
         active: isExtracting,
         done: isGenerating || isCompleted,
       },
       {
         id: "ready",
-        label: "Ready to Generate",
+        label: t("Ready to Generate"),
         icon: Target,
         active: false,
         done: isGenerating || isCompleted,
@@ -354,7 +391,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
         <div className="flex-1 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-6 overflow-y-auto">
           <h3 className="font-bold text-slate-700 dark:text-slate-200 mb-6 flex items-center gap-2">
             <GitBranch className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
-            Planning Progress
+            {t("Planning Progress")}
           </h3>
 
           {/* Topic Info - Custom Mode */}
@@ -362,7 +399,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
             <div className="mb-6 p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg border border-indigo-100 dark:border-indigo-800">
               <div className="flex items-center gap-3 mb-2">
                 <div className="text-xs font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider">
-                  Topic
+                  {t("Topic")}
                 </div>
               </div>
               <p className="text-sm text-indigo-900 dark:text-indigo-200 font-medium">
@@ -370,14 +407,14 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
               </p>
               <div className="flex gap-4 mt-2 text-xs text-indigo-600 dark:text-indigo-400">
                 <span>
-                  Difficulty:{" "}
+                  {t("Difficulty")}：{" "}
                   <strong className="capitalize">{globalDifficulty}</strong>
                 </span>
                 <span>
-                  Type: <strong className="capitalize">{globalType}</strong>
+                  {t("Type")}：<strong className="capitalize">{globalType}</strong>
                 </span>
                 <span>
-                  Count: <strong>{globalCount}</strong>
+                  {t("Count")}：<strong>{globalCount}</strong>
                 </span>
               </div>
             </div>
@@ -388,16 +425,16 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
             <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/30 rounded-lg border border-amber-100 dark:border-amber-800">
               <div className="flex items-center gap-3 mb-2">
                 <div className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
-                  Mimic Exam Mode
+                  {t("Exam Mimic Mode")}
                 </div>
               </div>
               <p className="text-sm text-amber-900 dark:text-amber-200 font-medium">
-                Generating questions based on reference exam paper
+                {t("Generate questions based on reference paper")}
               </p>
               {totalQuestions > 0 && (
                 <div className="flex gap-4 mt-2 text-xs text-amber-700 dark:text-amber-400">
                   <span>
-                    Reference Questions: <strong>{totalQuestions}</strong>
+                    {t("Reference Questions Count")}：<strong>{totalQuestions}</strong>
                   </span>
                 </div>
               )}
@@ -439,7 +476,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
                   </p>
                   {step.active && (
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 animate-pulse">
-                      Processing...
+                      {t("Processing...")}
                     </p>
                   )}
                 </div>
@@ -451,7 +488,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
           {subFocuses.length > 0 && (
             <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-700">
               <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">
-                Question Focuses ({subFocuses.length})
+                {t("Question Focuses")}（{subFocuses.length}）
               </p>
               <div className="space-y-2 max-h-48 overflow-y-auto">
                 {subFocuses.map((focus: any) => (
@@ -478,17 +515,17 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
           <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
             <h3 className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
               <Activity className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
-              Live Logs
+              {t("Live Logs")}
             </h3>
             <span className="text-xs text-slate-400 dark:text-slate-500">
-              {logs.length} entries
+              {logs.length} {t("records")}
             </span>
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {logs.length === 0 ? (
               <div className="text-center text-slate-400 dark:text-slate-500 py-8">
                 <Activity className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                <p className="text-xs">Waiting for logs...</p>
+                <p className="text-xs">{t("Waiting for logs...")}</p>
               </div>
             ) : (
               logs.slice(-50).map((log: any, idx: number) => (
@@ -522,10 +559,10 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
           <div className="text-center">
             <Loader2 className="w-12 h-12 mx-auto mb-3 text-indigo-500 dark:text-indigo-400 animate-spin" />
             <p className="text-slate-600 dark:text-slate-300 font-medium">
-              Initializing question generation...
+              {t("Initializing generation...")}
             </p>
             <p className="text-slate-400 dark:text-slate-500 text-sm mt-1">
-              Preparing tasks...
+              {t("Preparing tasks...")}
             </p>
           </div>
         </div>
@@ -539,30 +576,30 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
               <FileQuestion className="w-4 h-4 text-amber-500 dark:text-amber-400" />
-              Question Tasks
+              题目任务
               {isCompleted && (
                 <span className="text-xs font-normal text-slate-400 dark:text-slate-500 ml-2">
-                  (Completed)
+                  （已完成）
                 </span>
               )}
             </h3>
             <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
               {isGenerating && activeTaskIds.length > 0 && (
                 <span className="text-indigo-600 dark:text-indigo-400 font-medium">
-                  {activeTaskIds.length} active
+                  {t("{0} active", activeTaskIds.length)}
                 </span>
               )}
               <span>
-                {completedQuestions} / {totalQuestions} completed
+                {completedQuestions} / {totalQuestions} {t("Completed")}
               </span>
               {extendedCount > 0 && (
                 <span className="text-amber-600 dark:text-amber-400">
-                  {extendedCount} extended
+                  {extendedCount} {t("Extended")}
                 </span>
               )}
               {failedQuestions > 0 && (
                 <span className="text-red-500 dark:text-red-400">
-                  {failedQuestions} failed
+                  {failedQuestions} {t("Failed")}
                 </span>
               )}
             </div>
@@ -582,7 +619,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
         <div className="flex-[2] min-w-[400px] flex flex-col gap-4">
           <h3 className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
             <Activity className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
-            {isGenerating ? "Active Question" : "Question Details"}
+            {isGenerating ? t("Active Questions") : t("Question Details")}
           </h3>
           <div className="flex-1 min-h-0">
             <ActiveQuestionDetail
@@ -620,22 +657,22 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
           <div>
             <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
               {isIdle
-                ? "Ready to Generate"
+                ? t("Ready to Generate")
                 : isCompleted
-                  ? "Generation Complete"
-                  : "Question Generation"}
+                  ? t("Generation Completed")
+                  : t("Question Generation")}
             </h2>
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               <span
                 className={`uppercase font-bold tracking-wider ${isCompleted ? "text-emerald-600 dark:text-emerald-400" : ""}`}
               >
-                {stage || "idle"}
+                {getStageLabel(stage || "idle")}
               </span>
               {totalQuestions > 0 && (
                 <>
                   <span>•</span>
                   <span>
-                    {completedQuestions} / {totalQuestions} questions
+                    {completedQuestions} / {totalQuestions} {t("Questions")}
                   </span>
                 </>
               )}
@@ -644,7 +681,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
                   <span>•</span>
                   <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
                     <Zap className="w-3 h-3" />
-                    {extendedCount} extended
+                    {extendedCount} {t("Extended")}
                   </span>
                 </>
               )}
@@ -653,7 +690,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
                   <span>•</span>
                   <span className="text-red-500 dark:text-red-400 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" />
-                    {failedQuestions} failed
+                    {failedQuestions} {t("Failed")}
                   </span>
                 </>
               )}
@@ -675,14 +712,14 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
               </div>
               <div className="h-4 w-px bg-slate-200 dark:bg-slate-600" />
               <div className="text-xs text-slate-500 dark:text-slate-400">
-                Calls:{" "}
+                {t("Calls")}：{" "}
                 <span className="font-medium text-slate-700 dark:text-slate-300">
                   {tokenStats.calls}
                 </span>
               </div>
               <div className="h-4 w-px bg-slate-200 dark:bg-slate-600" />
               <div className="text-xs text-slate-500 dark:text-slate-400">
-                Tokens:{" "}
+                {t("Tokens")}：{" "}
                 <span className="font-medium text-slate-700 dark:text-slate-300">
                   {tokenStats.tokens.toLocaleString()}
                 </span>
@@ -702,8 +739,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
             <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/30 px-4 py-2 rounded-lg border border-emerald-100 dark:border-emerald-800">
               <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
               <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                {results.length} question{results.length > 1 ? "s" : ""}{" "}
-                generated
+                {t("Generated {0} questions", results.length)}
               </span>
             </div>
           )}
@@ -720,10 +756,10 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
                 <FileQuestion className="w-8 h-8 text-slate-400 dark:text-slate-500" />
               </div>
               <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">
-                Ready to Generate Questions
+                {t("Ready to generate questions")}
               </h3>
               <p className="text-slate-500 dark:text-slate-400 text-sm">
-                Configure your requirements and click Generate to start.
+                {t("Configure requirements and click Generate to start.")}
               </p>
             </div>
           </div>

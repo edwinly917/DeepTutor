@@ -1,5 +1,5 @@
 system:
-  language: en
+  language: zh
 paths:
   user_data_dir: ./data/user
   knowledge_bases_dir: ./data/knowledge_bases
@@ -136,3 +136,22 @@ research:
         iteration_mode: flexible
       reporting:
         min_section_length: 500
+
+# Export settings for various output formats
+export:
+  ppt:
+    # Dedicated LLM for PPT generation (leave empty to use default LLM)
+    # Recommended: nano-banana or similar text-to-design models
+    model: ""                    # e.g., "nano-banana"
+    api_key: ""                  # PPT-specific API key
+    base_url: ""                 # PPT-specific API endpoint
+    binding: "openai"            # API compatibility type
+    
+    # Generation parameters
+    temperature: 0.4             # Lower temperature for consistent structure
+    max_tokens: 2000             # Enough for JSON spec generation
+    max_slides: 15               # Default maximum slides
+    
+    # Default style prompt (used when frontend doesn't provide one)
+    default_style_prompt: ""
+

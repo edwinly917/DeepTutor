@@ -299,7 +299,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   const [uiSettings, setUiSettings] = useState<{
     theme: "light" | "dark";
     language: "en" | "zh";
-  }>({ theme: "light", language: "en" });
+  }>({ theme: "light", language: "zh" });
 
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -315,7 +315,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
 
           setUiSettings({
             theme: themeToUse,
-            language: data.ui.language,
+            language: "zh",
           });
           // Apply and persist theme
           setTheme(themeToUse);

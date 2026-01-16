@@ -431,7 +431,7 @@ export default function SettingsPage() {
       if (preset && preset.models.length > 0) {
         setFetchedModels(preset.models);
       } else {
-        alert("Failed to connect to backend for model fetching.");
+        alert(t("Failed to connect to backend for model fetching."));
       }
     } finally {
       setFetchingModels(false);
@@ -443,7 +443,7 @@ export default function SettingsPage() {
     setProviderError(null);
     try {
       // 1. Validate model exists at the provider (optional)
-      setProviderError("Validating model...");
+      setProviderError(t("Validating model..."));
 
       const preset = PROVIDER_PRESETS.find((p) => p.id === selectedPresetId);
       const requiresKey = preset ? preset.requires_key : true;
@@ -472,7 +472,7 @@ export default function SettingsPage() {
 
           if (!isMatch) {
             const availableModels = modelData.models.slice(0, 5).join(", ");
-            const warning = `Model "${enteredModel}" not found at provider. Available: ${availableModels}${modelData.models.length > 5 ? "..." : ""}. Continue anyway?`;
+            const warning = `${t("Model")} "${enteredModel}" ${t("not found at provider")}. ${t("Available")}: ${availableModels}${modelData.models.length > 5 ? "..." : ""}. ${t("Continue anyway?")}`;
             if (!confirm(warning)) {
               setSavingProvider(false);
               setProviderError(null);
@@ -491,7 +491,7 @@ export default function SettingsPage() {
       }
 
       setProviderError(
-        isModelValid ? "Model verified. Saving..." : "Saving...",
+        isModelValid ? t("Model verified. Saving...") : t("Saving..."),
       );
 
       // 2. Proceed with save
@@ -517,18 +517,18 @@ export default function SettingsPage() {
         setOriginalProviderName(null);
       } else {
         const err = await res.json();
-        setProviderError(err.detail || "Failed to save provider");
+        setProviderError(err.detail || t("Failed to save provider"));
       }
     } catch (err) {
       console.error(err);
-      setProviderError("An error occurred: " + (err as any).message);
+      setProviderError(`${t("An error occurred")}: ${(err as any).message}`);
     } finally {
       setSavingProvider(false);
     }
   };
 
   const handleDeleteProvider = async (name: string) => {
-    if (!confirm(`Delete provider ${name}?`)) return;
+    if (!confirm(`${t("Delete provider")} ${name}?`)) return;
     try {
       let url;
       if (!name) {
@@ -545,11 +545,11 @@ export default function SettingsPage() {
         fetchProviders();
       } else {
         const err = await res.json();
-        alert(`Failed to delete provider: ${err.detail || res.statusText}`);
+        alert(`${t("Failed to delete provider")}: ${err.detail || res.statusText}`);
       }
     } catch (err) {
       console.error(err);
-      alert("Failed to delete provider: " + (err as any).message);
+      alert(`${t("Failed to delete provider")}: ${(err as any).message}`);
     }
   };
 
@@ -582,7 +582,7 @@ export default function SettingsPage() {
       const data = await res.json();
       setTestProviderResult(data);
     } catch (err) {
-      setTestProviderResult({ success: false, message: "Connection failed" });
+      setTestProviderResult({ success: false, message: t("Connection failed") });
     } finally {
       setTestingProvider(false);
     }
@@ -739,7 +739,7 @@ export default function SettingsPage() {
         [service]: {
           status: "error",
           model: null,
-          error: "Connection failed",
+          error: t("Connection failed"),
           response_time_ms: null,
           message: null,
         },
@@ -818,7 +818,7 @@ export default function SettingsPage() {
             const errorData = await envRes.json();
             throw new Error(
               errorData.detail?.errors?.join(", ") ||
-                "Failed to save environment variables",
+                t("Failed to save environment variables"),
             );
           }
           // Reload env config immediately to get updated state (including persistence)
@@ -833,7 +833,7 @@ export default function SettingsPage() {
         body: JSON.stringify({ config: editedConfig }),
       });
 
-      if (!configRes.ok) throw new Error("Failed to save configuration");
+      if (!configRes.ok) throw new Error(t("Failed to save configuration"));
 
       // 3. Save UI Settings
       const uiRes = await fetch(apiUrl("/api/v1/settings/ui"), {
@@ -842,7 +842,7 @@ export default function SettingsPage() {
         body: JSON.stringify(editedUI),
       });
 
-      if (!uiRes.ok) throw new Error("Failed to save UI settings");
+      if (!uiRes.ok) throw new Error(t("Failed to save UI settings"));
 
       const newConfig = await configRes.json();
       const newUI = await uiRes.json();
@@ -1140,7 +1140,7 @@ export default function SettingsPage() {
                   <div className="flex items-center gap-2">
                     <Database className="w-4 h-4 text-indigo-500" />
                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      Embedding
+                      {t("Embedding")}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -1364,8 +1364,8 @@ export default function SettingsPage() {
                     }
                     className="w-full p-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none"
                   >
-                    <option value="en">English</option>
-                    <option value="zh">Chinese</option>
+                    <option value="en">{t("English")}</option>
+                    <option value="zh">{t("Chinese")}</option>
                   </select>
                 </div>
               </section>
@@ -1425,7 +1425,7 @@ export default function SettingsPage() {
                     {loadingRagProviders ? (
                       <div className="flex items-center gap-2 text-sm text-slate-500">
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Loading providers...</span>
+                        <span>{t("Loading providers...")}</span>
                       </div>
                     ) : (
                       <div className="w-full p-2 bg-slate-100 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-700 dark:text-slate-300 flex items-center justify-between">
@@ -1933,7 +1933,7 @@ export default function SettingsPage() {
                               </h3>
                               {provider.is_active && (
                                 <span className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-[10px] rounded font-medium">
-                                  Active
+                                  {t("Active")}
                                 </span>
                               )}
                               <span
@@ -1944,8 +1944,8 @@ export default function SettingsPage() {
                                 }`}
                               >
                                 {provider.provider_type === "api"
-                                  ? "☁️ API"
-                                  : "🏠 Local"}
+                                  ? `☁️ ${t("API")}`
+                                  : `🏠 ${t("Local")}`}
                               </span>
                               <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 uppercase tracking-wider font-semibold text-slate-500">
                                 {provider.binding}
@@ -1971,7 +1971,7 @@ export default function SettingsPage() {
                                 handleActivateProvider(provider.name)
                               }
                               className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
-                              title="Set as Active"
+                              title={t("Set as Active")}
                             >
                               <CheckCircle className="w-4 h-4" />
                             </button>
@@ -1979,7 +1979,7 @@ export default function SettingsPage() {
                           <button
                             onClick={() => handleTestProvider(provider)}
                             className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-md transition-colors"
-                            title="Test Connection"
+                            title={t("Test Connection")}
                           >
                             <RefreshCw className="w-4 h-4" />
                           </button>
@@ -2000,14 +2000,14 @@ export default function SettingsPage() {
                               setTestProviderResult(null);
                             }}
                             className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
-                            title="Edit"
+                            title={t("Edit")}
                           >
                             <Sliders className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteProvider(provider.name)}
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                            title="Delete"
+                            title={t("Delete")}
                           >
                             <XCircle className="w-4 h-4" />
                           </button>
@@ -2145,7 +2145,7 @@ export default function SettingsPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                          Name
+                          {t("Name")}
                         </label>
                         <input
                           type="text"
@@ -2162,13 +2162,13 @@ export default function SettingsPage() {
                                 p.name !== "",
                             )
                           }
-                          placeholder="My Provider"
+                          placeholder={t("My Provider")}
                           className="w-full p-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm"
                         />
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                          Binding
+                          {t("Binding")}
                         </label>
                         <input
                           type="text"
@@ -2181,7 +2181,7 @@ export default function SettingsPage() {
 
                     <div>
                       <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                        Base URL
+                        {t("Base URL")}
                       </label>
                       <input
                         type="text"
@@ -2275,7 +2275,7 @@ export default function SettingsPage() {
 
                     <div>
                       <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1 flex justify-between">
-                        <span>Model</span>
+                        <span>{t("Model")}</span>
                         {PROVIDER_PRESETS.find((p) => p.id === selectedPresetId)
                           ?.models.length! > 0 && (
                           <button
@@ -2285,8 +2285,8 @@ export default function SettingsPage() {
                             className="text-[10px] text-blue-600 hover:underline"
                           >
                             {customModelInput
-                              ? "Select from list"
-                              : "Enter custom"}
+                              ? t("Select from list")
+                              : t("Enter custom")}
                           </button>
                         )}
                       </label>
@@ -2311,7 +2311,7 @@ export default function SettingsPage() {
                               {fetchedModels.length > 0 ? (
                                 <>
                                   <option value="" disabled>
-                                    Select a fetched model
+                                    {t("Select a fetched model")}
                                   </option>
                                   {fetchedModels.map((m) => (
                                     <option key={m} value={m}>
@@ -2365,7 +2365,7 @@ export default function SettingsPage() {
                           onClick={fetchModels}
                           disabled={fetchingModels || !editingProvider.base_url}
                           className="p-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
-                          title="Refresh Models from API"
+                          title={t("Refresh Models from API")}
                         >
                           {fetchingModels ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -2387,15 +2387,15 @@ export default function SettingsPage() {
                         ) : (
                           <RefreshCw className="w-3 h-3" />
                         )}
-                        Test Connection
+                        {t("Test Connection")}
                       </button>
                       {testProviderResult && (
                         <span
                           className={`text-[10px] px-2 py-0.5 rounded ${testProviderResult.success ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"}`}
                         >
                           {testProviderResult.success
-                            ? "Success!"
-                            : `Failed: ${testProviderResult.message}`}
+                            ? t("Success!")
+                            : `${t("Failed")}: ${testProviderResult.message}`}
                         </span>
                       )}
                     </div>
@@ -2411,7 +2411,7 @@ export default function SettingsPage() {
                         onClick={() => setShowProviderForm(false)}
                         className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg font-medium"
                       >
-                        Cancel
+                        {t("Cancel")}
                       </button>
                       <button
                         onClick={() => handleProviderSave(editingProvider)}

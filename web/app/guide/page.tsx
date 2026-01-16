@@ -428,7 +428,7 @@ ${html}
         const notebookName =
           notebookNames.length === 1
             ? notebookNames[0]
-            : `Cross-Notebook (${notebookNames.length} notebooks, ${selectedRecords.size} records)`;
+        : `跨笔记本（${notebookNames.length} 个笔记本，${selectedRecords.size} 条记录）`;
 
         setSessionState({
           session_id: data.session_id,
@@ -556,8 +556,8 @@ ${html}
     if (!sessionState.session_id) return;
 
     setIsLoading(true);
-    setLoadingMessage("Generating next knowledge point...");
-    const loadingId = addLoadingMessage("Generating next knowledge point...");
+    setLoadingMessage("正在生成下一个知识点...");
+    const loadingId = addLoadingMessage("正在生成下一个知识点...");
 
     try {
       const res = await fetch(apiUrl("/api/v1/guide/next"), {
@@ -588,7 +588,7 @@ ${html}
               role: "system",
               content:
                 data.message ||
-                "🎉 Congratulations on completing all knowledge points!",
+                "🎉 恭喜你完成了全部知识点！",
               timestamp: Date.now(),
             },
           ]);
@@ -714,7 +714,7 @@ ${html}
       return;
 
     setFixingHtml(true);
-    const loadingId = addLoadingMessage("Fixing HTML page...");
+    const loadingId = addLoadingMessage("正在修复 HTML 页面...");
 
     try {
       const res = await fetch(apiUrl("/api/v1/guide/fix_html"), {
@@ -751,7 +751,7 @@ ${html}
           {
             id: `error-${Date.now()}`,
             role: "system",
-            content: `❌ Fix failed: ${data.error || "Unknown error"}`,
+            content: `❌ 修复失败：${data.error || "未知错误"}`,
             timestamp: Date.now(),
           },
         ]);
@@ -764,7 +764,7 @@ ${html}
         {
           id: `error-${Date.now()}`,
           role: "system",
-          content: "❌ Fix failed, please try again later",
+          content: "❌ 修复失败，请稍后重试",
           timestamp: Date.now(),
         },
       ]);
@@ -807,14 +807,14 @@ ${html}
             <div className="p-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
               <h2 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                Select Source (Cross-Notebook)
+                选择来源（跨笔记本）
               </h2>
               {selectedRecords.size > 0 && (
                 <button
                   onClick={clearAllSelections}
                   className="text-xs text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
                 >
-                  Clear ({selectedRecords.size})
+                  清空（{selectedRecords.size}）
                 </button>
               )}
             </div>
@@ -826,7 +826,7 @@ ${html}
                 </div>
               ) : notebooks.length === 0 ? (
                 <div className="p-4 text-center text-sm text-slate-400 dark:text-slate-500">
-                  No notebooks with records found
+                  未找到包含记录的笔记本
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -878,7 +878,7 @@ ${html}
                               </div>
                             ) : records.length === 0 ? (
                               <div className="py-2 text-xs text-slate-400 dark:text-slate-500 text-center">
-                                No records
+                              暂无记录
                               </div>
                             ) : (
                               <>
@@ -1038,12 +1038,12 @@ ${html}
                   {isLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Loading...
+                      加载中...
                     </>
                   ) : (
                     <>
                       <ChevronRight className="w-4 h-4" />
-                      Next
+                      下一步
                     </>
                   )}
                 </button>
@@ -1058,12 +1058,12 @@ ${html}
                   {isLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Generating Summary...
+                      正在生成总结...
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      Complete Learning
+                      完成学习
                     </>
                   )}
                 </button>
@@ -1076,7 +1076,7 @@ ${html}
         <div className="flex-1 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden">
           <div className="p-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
             <MessageSquare className="w-4 h-4" />
-            Learning Assistant
+            学习助手
           </div>
 
           <div
@@ -1210,7 +1210,7 @@ ${html}
                   onKeyDown={(e) =>
                     e.key === "Enter" && !e.shiftKey && handleSendMessage()
                   }
-                  placeholder="Have any questions? Feel free to ask..."
+                  placeholder="有问题吗？随时可以提问..."
                   disabled={sendingMessage}
                   className="flex-1 pl-4 pr-10 py-2.5 bg-slate-100 dark:bg-slate-700 border-transparent focus:bg-white dark:focus:bg-slate-600 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                 />
@@ -1241,7 +1241,7 @@ ${html}
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
-            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
           >
             {sidebarCollapsed ? (
               <ChevronRight className="w-4 h-4 text-slate-600 dark:text-slate-300" />
@@ -1255,8 +1255,8 @@ ${html}
               className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
               title={
                 sidebarWide
-                  ? "Switch to narrow sidebar (1:3)"
-                  : "Switch to wide sidebar (3:1)"
+                  ? "切换为窄侧边栏（1:3）"
+                  : "切换为宽侧边栏（3:1）"
               }
             >
               <ArrowRight
@@ -1269,12 +1269,11 @@ ${html}
           <div className="flex-1 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-slate-300 dark:text-slate-600 p-8">
             <GraduationCap className="w-24 h-24 text-slate-200 dark:text-slate-600 mb-6" />
             <h3 className="text-lg font-medium text-slate-600 dark:text-slate-300 mb-2">
-              Guided Learning
+              引导式学习
             </h3>
             <p className="text-sm text-slate-400 dark:text-slate-500 max-w-md text-center leading-relaxed">
-              Select a notebook, and the system will generate a personalized
-              learning plan. Through interactive pages and intelligent Q&A,
-              you'll gradually master all the content.
+              选择一个笔记本，系统将生成个性化学习计划。通过交互页面与智能问答，
+              你将逐步掌握全部内容。
             </p>
           </div>
         ) : isCompleted ? (
@@ -1283,7 +1282,7 @@ ${html}
             <div className="p-4 border-b border-slate-100 dark:border-slate-700 bg-gradient-to-r from-emerald-50 to-indigo-50 dark:from-emerald-900/20 dark:to-indigo-900/20 flex items-center justify-between shrink-0">
               <h2 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                Learning Summary
+                学习总结
               </h2>
             </div>
             {/* Summary Content */}
@@ -1341,7 +1340,7 @@ ${html}
             <button
               onClick={() => setShowDebugModal(true)}
               className="absolute top-4 right-4 z-10 p-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors shadow-sm"
-              title="Fix HTML"
+              title="修复 HTML"
             >
               <Bug className="w-4 h-4 text-slate-600 dark:text-slate-300" />
             </button>
@@ -1351,7 +1350,7 @@ ${html}
               <iframe
                 ref={htmlFrameRef}
                 className="w-full h-full border-0"
-                title="Interactive Learning Content"
+                title="交互式学习内容"
                 sandbox="allow-scripts allow-same-origin"
                 key={`html-${sessionState.current_index}-${sessionState.current_html.length}`}
               />
@@ -1359,7 +1358,7 @@ ${html}
               <div className="flex-1 flex items-center justify-center">
                 <Loader2 className="w-12 h-12 text-indigo-400 dark:text-indigo-500 animate-spin mb-4" />
                 <p className="text-slate-500 dark:text-slate-400">
-                  {loadingMessage || "Loading learning content..."}
+                  {loadingMessage || "正在加载学习内容..."}
                 </p>
               </div>
             )}
@@ -1368,7 +1367,7 @@ ${html}
           <div className="flex-1 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-slate-300 dark:text-slate-600 p-8">
             <Loader2 className="w-12 h-12 text-indigo-400 dark:text-indigo-500 animate-spin mb-4" />
             <p className="text-slate-500 dark:text-slate-400">
-              {loadingMessage || "Loading learning content..."}
+              {loadingMessage || "正在加载学习内容..."}
             </p>
           </div>
         )}
@@ -1381,7 +1380,7 @@ ${html}
             <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
               <h3 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <Bug className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                Fix HTML Issue
+                修复 HTML 问题
               </h3>
               <button
                 onClick={() => {
@@ -1396,12 +1395,12 @@ ${html}
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Issue Description
+                  问题描述
                 </label>
                 <textarea
                   value={debugDescription}
                   onChange={(e) => setDebugDescription(e.target.value)}
-                  placeholder="Describe the HTML issue, e.g.: button not clickable, style display error, interaction not working..."
+                  placeholder="描述 HTML 问题，例如：按钮无法点击、样式显示异常、交互不生效..."
                   rows={6}
                   className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none resize-none"
                 />
@@ -1415,7 +1414,7 @@ ${html}
                 }}
                 className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
               >
-                Cancel
+                取消
               </button>
               <button
                 onClick={handleFixHtml}
@@ -1425,12 +1424,12 @@ ${html}
                 {fixingHtml ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Fixing...
+                    修复中...
                   </>
                 ) : (
                   <>
                     <Bug className="w-4 h-4" />
-                    Fix
+                    修复
                   </>
                 )}
               </button>

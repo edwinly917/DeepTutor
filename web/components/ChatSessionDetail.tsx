@@ -78,12 +78,12 @@ export default function ChatSessionDetail({
           apiUrl(`/api/v1/chat/sessions/${sessionId}`),
         );
         if (!response.ok) {
-          throw new Error("Failed to load session");
+          throw new Error(t("Failed to load session"));
         }
         const data = await response.json();
         setSession(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
+        setError(err instanceof Error ? err.message : t("Unknown error"));
       } finally {
         setLoading(false);
       }
@@ -169,17 +169,17 @@ export default function ChatSessionDetail({
                   <div className="flex flex-wrap gap-2 mb-4 pb-4 border-b border-slate-100 dark:border-slate-700">
                     {session.settings.kb_name && (
                       <span className="px-2.5 py-1 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full">
-                        KB: {session.settings.kb_name}
+                        {t("KB")}: {session.settings.kb_name}
                       </span>
                     )}
                     {session.settings.enable_rag && (
                       <span className="px-2.5 py-1 text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full">
-                        RAG Enabled
+                        {t("RAG Enabled")}
                       </span>
                     )}
                     {session.settings.enable_web_search && (
                       <span className="px-2.5 py-1 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full">
-                        Web Search Enabled
+                        {t("Web Search Enabled")}
                       </span>
                     )}
                   </div>

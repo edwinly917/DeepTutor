@@ -362,7 +362,7 @@ export default function HistoryPage() {
                 </h2>
                 <span className="text-xs text-slate-400 ml-auto">
                   {chatSessions.length}{" "}
-                  {chatSessions.length === 1 ? "session" : "sessions"}
+                  {t(chatSessions.length === 1 ? "session" : "sessions")}
                 </span>
               </div>
               <div className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -390,7 +390,7 @@ export default function HistoryPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex justify-between items-start">
                             <span className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-1">
-                              Chat
+                              {t("Chat")}
                             </span>
                             <span className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1">
                               <Clock className="w-3 h-3" />
@@ -408,7 +408,7 @@ export default function HistoryPage() {
                           </h3>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-xs text-slate-400 dark:text-slate-500">
-                              {session.message_count} messages
+                              {session.message_count} {t("messages")}
                             </span>
                             {session.last_message && (
                               <p className="text-sm text-slate-500 dark:text-slate-400 truncate flex-1">

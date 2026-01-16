@@ -28,8 +28,55 @@ import {
   Download,
   FileDown,
 } from "lucide-react";
+import { useGlobal } from "@/context/GlobalContext";
+import { getTranslation } from "@/lib/i18n";
 
 type ProcessTab = "planning" | "researching" | "reporting";
+
+type PptStyleTemplate = {
+  id: string;
+  label: string;
+  prompt: string;
+};
+
+const PPT_STYLE_TEMPLATES: PptStyleTemplate[] = [
+  {
+    id: "corporate-minimal",
+    label: "Corporate (Minimal)",
+    prompt:
+      "干净的商务风格幻灯片。使用浅色背景与充足留白。偏好扁平图形、细分隔线与轻微阴影。主题：背景 #FFFFFF，强调色 #2563EB，标题色 #0F172A，正文字色 #334155，字体 Aptos。标题尽量短；要点尽量精炼。",
+  },
+  {
+    id: "academic-lecture",
+    label: "Academic (Lecture)",
+    prompt:
+      "学术讲义风格。层级清晰、配色沉稳、排版易读。主题：背景 #FFFFFF，强调色 #4F46E5，标题色 #111827，正文字色 #111827，字体 Aptos。偏好分节页、少装饰，突出定义与关键结论。",
+  },
+  {
+    id: "dark-tech",
+    label: "Dark (Tech)",
+    prompt:
+      "现代深色科技风。深色背景、亮色强调、高对比。主题：背景 #0B1220，强调色 #22D3EE，标题色 #E2E8F0，正文字色 #CBD5E1，字体 Aptos。使用简洁线条与轻微渐变；要点短促有力。",
+  },
+  {
+    id: "data-report",
+    label: "Data (Report)",
+    prompt:
+      "数据型报告风格。突出数字、强调清晰与结构化要点。主题：背景 #FFFFFF，强调色 #10B981，标题色 #111827，正文字色 #1F2937，字体 Aptos。对指标使用一致的强调方式；分析要点简洁。",
+  },
+  {
+    id: "storyboard",
+    label: "Narrative (Pitch)",
+    prompt:
+      "路演/故事板风格。叙事节奏强，章节标题醒目，要点简短。主题：背景 #FFFBEB，强调色 #F97316，标题色 #7C2D12，正文字色 #431407，字体 Aptos。氛围有张力但保持可读性。",
+  },
+  {
+    id: "chinese-formal",
+    label: "Chinese (Formal)",
+    prompt:
+      "中文正式/公文风格。版式均衡、配色克制、层级清晰，适合内部汇报。主题：背景 #FFFFFF，强调色 #DC2626，标题色 #111827，正文字色 #1F2937，字体 PingFang SC。避免复杂装饰；要点结构化。",
+  },
+];
 
 interface ResearchDashboardProps {
   state: ResearchState;
@@ -38,7 +85,11 @@ interface ResearchDashboardProps {
   onAddToNotebook?: () => void;
   onExportMarkdown?: () => void;
   onExportPdf?: () => void;
+  onExportPptx?: () => void;
+  pptStylePrompt?: string;
+  onPptStylePromptChange?: (prompt: string) => void;
   isExportingPdf?: boolean;
+  isExportingPptx?: boolean;
 }
 
 export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
@@ -48,17 +99,43 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
   onAddToNotebook,
   onExportMarkdown,
   onExportPdf,
+  onExportPptx,
+  pptStylePrompt = "",
+  onPptStylePromptChange,
   isExportingPdf = false,
+  isExportingPptx = false,
 }) => {
   const { global, tasks, activeTaskIds, planning, reporting } = state;
+  const { uiSettings } = useGlobal();
+  const t = (key: string, ...args: any[]) => {
+    let text = getTranslation(uiSettings.language, key);
+    if (args.length > 0) {
+      args.forEach((arg, index) => {
+        text = text.replace(`{${index}}`, String(arg));
+      });
+    }
+    return text;
+  };
+
   const [activeView, setActiveView] = useState<"process" | "report">("process");
   const [activeProcessTab, setActiveProcessTab] =
     useState<ProcessTab>("planning");
+  const [selectedPptTemplateId, setSelectedPptTemplateId] =
+    useState<string>("custom");
+
+  useEffect(() => {
+    if (selectedPptTemplateId === "custom") return;
+    const tmpl = PPT_STYLE_TEMPLATES.find((t) => t.id === selectedPptTemplateId);
+    if (!tmpl) return;
+    if (pptStylePrompt !== tmpl.prompt) {
+      setSelectedPptTemplateId("custom");
+    }
+  }, [pptStylePrompt, selectedPptTemplateId]);
 
   const steps: { id: ProcessTab; label: string; icon: React.ElementType }[] = [
-    { id: "planning", label: "Planning", icon: GitBranch },
-    { id: "researching", label: "Researching", icon: Zap },
-    { id: "reporting", label: "Reporting", icon: PenTool },
+    { id: "planning", label: t("Planning"), icon: GitBranch },
+    { id: "researching", label: t("Researching"), icon: Zap },
+    { id: "reporting", label: t("Reporting"), icon: PenTool },
   ];
 
   const stageOrder: Record<string, number> = {
@@ -199,12 +276,12 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
           )}
 
           <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">
-            {isActive ? "Planning Research Strategy" : "Research Plan"}
+            {isActive ? t("Planning Research Strategy") : t("Research Plan")}
           </h3>
 
           {isActive && (
             <p className="text-slate-500 dark:text-slate-400 text-sm mb-4">
-              {planning.progress || "Initializing..."}
+              {planning.progress || t("Initializing...")}
             </p>
           )}
 
@@ -214,7 +291,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
               {planning.originalTopic && (
                 <div className="mb-3">
                   <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">
-                    Original Topic
+                    {t("Original Topic")}
                   </p>
                   <p className="text-sm text-slate-700 dark:text-slate-200">
                     {planning.originalTopic}
@@ -225,7 +302,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
                 planning.optimizedTopic !== planning.originalTopic && (
                   <div>
                     <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">
-                      Optimized Topic
+                      {t("Optimized Topic")}
                     </p>
                     <p className="text-sm text-slate-700 dark:text-slate-200">
                       {planning.optimizedTopic}
@@ -239,7 +316,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
           {planning.subTopics.length > 0 && (
             <div className="w-full mt-4">
               <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3 text-left">
-                Research Sub-topics ({planning.subTopics.length})
+                {t("Research Sub-topics")}（{planning.subTopics.length}）
               </p>
               <div className="flex flex-wrap gap-2">
                 {planning.subTopics.map((topic, i) => (
@@ -268,7 +345,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center text-slate-400 dark:text-slate-500">
             <Zap className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <p>No research data yet</p>
+            <p>{t("No research data")}</p>
           </div>
         </div>
       );
@@ -281,21 +358,21 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
           <div className="flex items-center justify-between shrink-0">
             <h3 className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
               <Zap className="w-4 h-4 text-amber-500 dark:text-amber-400" />
-              Research Tasks
+              {t("Research Tasks")}
               {!isActive && (
                 <span className="text-xs font-normal text-slate-400 dark:text-slate-500 ml-2">
-                  (History)
+                  {t("(History)")}
                 </span>
               )}
             </h3>
             <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
               {isActive && (
                 <span className="text-indigo-600 dark:text-indigo-400 font-medium">
-                  {state.activeTaskIds.length} active
+                  {t("{0} active", state.activeTaskIds.length)}
                 </span>
               )}
               <span>
-                {global.completedBlocks} / {global.totalBlocks} completed
+                {t("Completed {0} / {1} topics", global.completedBlocks, global.totalBlocks)}
               </span>
             </div>
           </div>
@@ -314,7 +391,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
         <div className="flex-[2] min-w-[280px] flex flex-col gap-4 overflow-hidden">
           <h3 className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 shrink-0">
             <Activity className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
-            {isActive ? "Live Execution" : "Execution History"}
+            {isActive ? t("Live Execution") : t("Execution History")}
           </h3>
           <div className="flex-1 min-h-0 overflow-hidden">
             <ActiveTaskDetail
@@ -368,17 +445,17 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
 
           <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">
             {isCompleted
-              ? "Report Generated!"
+              ? t("Report Generated!")
               : isActive
-                ? "Generating Report"
-                : "Report Generation"}
+                ? t("Generating Report...")
+                : t("Report Generation")}
           </h3>
 
           {/* Current Section Being Written */}
           {isActive && reporting.currentSection && (
             <div className="bg-purple-50 dark:bg-purple-900/30 border border-purple-100 dark:border-purple-800 rounded-lg px-4 py-2 mb-4 w-full">
               <p className="text-xs text-purple-600 dark:text-purple-400 font-medium uppercase tracking-wider mb-1">
-                Currently Writing
+                {t("Writing")}
               </p>
               <p className="text-purple-800 dark:text-purple-200 font-semibold">
                 {reporting.currentSection}
@@ -386,8 +463,11 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
               {reporting.totalSections &&
                 reporting.sectionIndex !== undefined && (
                   <p className="text-xs text-purple-500 dark:text-purple-400 mt-1">
-                    Section {reporting.sectionIndex + 1} of{" "}
-                    {reporting.totalSections}
+                    {t(
+                      "Section {0} / {1}",
+                      reporting.sectionIndex + 1,
+                      reporting.totalSections,
+                    )}
                   </p>
                 )}
             </div>
@@ -407,18 +487,20 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
                   />
                 </div>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                  {Math.round(
-                    ((reporting.sectionIndex + 1) / reporting.totalSections) *
-                      100,
+                  {t(
+                    "{0}% Completed",
+                    Math.round(
+                      ((reporting.sectionIndex + 1) / reporting.totalSections) *
+                        100,
+                    ),
                   )}
-                  % complete
                 </p>
               </div>
             )}
 
           {isActive && (
             <p className="text-slate-500 dark:text-slate-400 text-sm mb-4">
-              {reporting.progress || "Processing research findings..."}
+              {reporting.progress || t("Synthesizing research results...")}
             </p>
           )}
 
@@ -429,7 +511,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
                 <ListTree
                   className={`w-4 h-4 ${isCompleted ? "text-emerald-500 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500"}`}
                 />
-                <span>{global.totalBlocks} topics</span>
+                <span>{t("{0} topics", global.totalBlocks)}</span>
               </div>
             )}
             {reporting.wordCount && (
@@ -437,13 +519,22 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
                 <FileText
                   className={`w-4 h-4 ${isCompleted ? "text-emerald-500 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500"}`}
                 />
-                <span>{reporting.wordCount.toLocaleString()} words</span>
+                <span>
+                  {reporting.wordCount.toLocaleString()} {t("chars")}
+                </span>
               </div>
             )}
             {reporting.outline && reporting.outline.sections.length > 0 && (
               <div className="flex items-center gap-1.5">
                 <FileText className="w-4 h-4 text-slate-400 dark:text-slate-500" />
-                <span>{reporting.outline.sections.length} sections</span>
+                <span>
+                  {reporting.outline.sections.length}{" "}
+                  {t("Section {0} / {1}", "", "")
+                    .replace("/", "")
+                    .replace("0", "")
+                    .replace("1", "")
+                    .trim() || "sections"}
+                </span>
               </div>
             )}
           </div>
@@ -452,7 +543,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
           {reporting.outline && reporting.outline.sections.length > 0 && (
             <div className="mt-6 w-full text-left bg-slate-50 dark:bg-slate-700 rounded-lg p-4 border border-slate-100 dark:border-slate-600 max-h-[200px] overflow-y-auto">
               <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">
-                Report Outline
+                {t("Report Outline")}
               </p>
               <ul className="space-y-2">
                 {reporting.outline.sections.map((section, i) => (
@@ -503,7 +594,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
               className="mt-6 flex items-center justify-center gap-2 w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors shadow-sm"
             >
               <FileText className="w-4 h-4" />
-              View Full Report
+              {t("View Full Report")}
             </button>
           )}
         </div>
@@ -534,25 +625,38 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
           <div>
             <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
               {global.stage === "idle"
-                ? "Ready to Research"
+                ? t("Ready to Start Research")
                 : global.stage === "completed"
-                  ? "Research Complete"
+                  ? t("Research Completed")
                   : planning.optimizedTopic ||
                     planning.originalTopic ||
-                    "Research Dashboard"}
+                    t("Research Dashboard")}
             </h2>
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               <span
                 className={`uppercase font-bold tracking-wider ${isCompleted ? "text-emerald-600 dark:text-emerald-400" : ""}`}
               >
-                {global.stage}
+                {global.stage === "idle"
+                  ? t("Idle")
+                  : global.stage === "planning"
+                    ? t("Planning")
+                    : global.stage === "researching"
+                      ? t("Researching")
+                      : global.stage === "reporting"
+                        ? t("Reporting")
+                        : global.stage === "completed"
+                          ? t("Completed")
+                          : global.stage}
               </span>
               {global.totalBlocks > 0 && (
                 <>
                   <span>•</span>
                   <span>
-                    {global.completedBlocks} / {global.totalBlocks} topics
-                    completed
+                    {t(
+                      "Completed {0} / {1} topics",
+                      global.completedBlocks,
+                      global.totalBlocks,
+                    )}
                   </span>
                 </>
               )}
@@ -560,7 +664,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
                 <>
                   <span>•</span>
                   <span className="text-violet-600 dark:text-violet-400 font-medium">
-                    Parallel Mode
+                    {t("Parallel Mode")}
                   </span>
                 </>
               )}
@@ -579,7 +683,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
             }`}
           >
             <BarChart3 className="w-4 h-4" />
-            Process
+            {t("Process")}
           </button>
           <button
             onClick={() => setActiveView("report")}
@@ -595,7 +699,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
             }`}
           >
             <FileOutput className="w-4 h-4" />
-            Report
+            {t("Report")}
           </button>
         </div>
       </div>
@@ -611,10 +715,10 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
                   <Search className="w-8 h-8 text-slate-400 dark:text-slate-500" />
                 </div>
                 <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">
-                  Ready to Research
+                  {t("Ready to Start Research")}
                 </h3>
                 <p className="text-slate-500 dark:text-slate-400 text-sm">
-                  Enter a topic in the left panel to start deep research.
+                  {t("Enter a topic in the sidebar to start deep research.")}
                 </p>
               </div>
             </div>
@@ -644,7 +748,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
                   onClick={onAddToNotebook}
                   className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-all"
                 >
-                  <Book className="w-4 h-4" /> Add to Notebook
+                  <Book className="w-4 h-4" /> {t("Add to Notebook")}
                 </button>
               )}
               {onExportMarkdown && (
@@ -652,7 +756,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
                   onClick={onExportMarkdown}
                   className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
                 >
-                  <Download className="w-4 h-4" /> Markdown
+                  <Download className="w-4 h-4" /> {t("Export Markdown")}
                 </button>
               )}
               {onExportPdf && (
@@ -666,8 +770,55 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
                   ) : (
                     <FileDown className="w-4 h-4" />
                   )}{" "}
-                  PDF
+                  {t("Export PDF")}
                 </button>
+              )}
+              {onExportPptx && (
+                <div className="flex items-center gap-2">
+                  {onPptStylePromptChange && (
+                    <select
+                      value={selectedPptTemplateId}
+                      onChange={(e) => {
+                        const nextId = e.target.value;
+                        setSelectedPptTemplateId(nextId);
+                        if (nextId === "custom") return;
+                        const tmpl = PPT_STYLE_TEMPLATES.find(
+                          (t) => t.id === nextId,
+                        );
+                        if (!tmpl) return;
+                        onPptStylePromptChange(tmpl.prompt);
+                      }}
+                      className="text-sm px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+                    >
+                      <option value="custom">{t("Custom")}</option>
+                      {PPT_STYLE_TEMPLATES.map((tmpl) => (
+                        <option key={tmpl.id} value={tmpl.id}>
+                          {t(tmpl.label)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {onPptStylePromptChange && (
+                    <input
+                      value={pptStylePrompt}
+                      onChange={(e) => onPptStylePromptChange(e.target.value)}
+                      placeholder={t("PPT Style Prompt (Optional)")}
+                      className="text-sm px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 w-72"
+                    />
+                  )}
+                  <button
+                    onClick={onExportPptx}
+                    disabled={isExportingPptx}
+                    className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-all disabled:opacity-50"
+                  >
+                    {isExportingPptx ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <FileDown className="w-4 h-4" />
+                    )}{" "}
+                    {t("Export PPTX")}
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -842,7 +993,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
               ) : (
                 <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500">
                   <Loader2 className="w-8 h-8 mb-4 animate-spin opacity-50" />
-                  <p>Generating report preview...</p>
+                  <p>{t("Generating report preview...")}</p>
                 </div>
               )}
             </div>

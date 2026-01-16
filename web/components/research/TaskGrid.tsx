@@ -20,6 +20,19 @@ interface TaskGridProps {
   onTaskSelect: (taskId: string) => void;
 }
 
+const getStatusLabel = (status: TaskState["status"]) => {
+  switch (status) {
+    case "completed":
+      return "已完成";
+    case "running":
+      return "运行中";
+    case "failed":
+      return "失败";
+    default:
+      return "待开始";
+  }
+};
+
 const getStatusIcon = (status: TaskState["status"]) => {
   switch (status) {
     case "completed":
@@ -72,7 +85,7 @@ export const TaskGrid: React.FC<TaskGridProps> = ({
     return (
       <div className="flex flex-col items-center justify-center p-8 text-slate-400 dark:text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
         <Activity className="w-8 h-8 mb-2 opacity-50" />
-        <p className="text-sm">No tasks initialized yet</p>
+        <p className="text-sm">尚未初始化任务</p>
       </div>
     );
   }
@@ -141,7 +154,7 @@ export const TaskGrid: React.FC<TaskGridProps> = ({
                             : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
                     }`}
                   >
-                    {task.status}
+                    {getStatusLabel(task.status)}
                   </span>
                   {task.maxIterations > 0 && (
                     <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium whitespace-nowrap shrink-0">
@@ -156,9 +169,9 @@ export const TaskGrid: React.FC<TaskGridProps> = ({
             <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-2.5 min-h-[48px] border border-slate-100 dark:border-slate-600">
               <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
                 <span className="font-medium text-slate-400 dark:text-slate-500 mr-1">
-                  Current Action:
+                  当前动作：
                 </span>
-                {task.currentAction || "Waiting to start..."}
+                {task.currentAction || "等待开始..."}
               </p>
             </div>
 
@@ -166,7 +179,7 @@ export const TaskGrid: React.FC<TaskGridProps> = ({
             {task.toolsUsed.length > 0 && (
               <div className="flex items-center gap-1.5 overflow-hidden">
                 <span className="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-medium mr-1">
-                  Tools:
+                  工具：
                 </span>
                 {task.toolsUsed.slice(0, 5).map((tool, idx) => (
                   <div

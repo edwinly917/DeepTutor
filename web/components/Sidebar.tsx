@@ -16,8 +16,6 @@ import {
   Book,
   GraduationCap,
   Lightbulb,
-  Github,
-  Globe,
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
@@ -26,6 +24,11 @@ import { getTranslation } from "@/lib/i18n";
 
 const SIDEBAR_EXPANDED_WIDTH = 256;
 const SIDEBAR_COLLAPSED_WIDTH = 64;
+const BRAND_NAME = "Hi-NoteBook";
+const BRAND_LOGO_SRC = "/logo.png";
+const BRAND_LOGO_SIZE_COLLAPSED = 40;
+const BRAND_LOGO_CROP_HEIGHT_EXPANDED = 60;
+const BRAND_LOGO_SCALE = 1.4;
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -77,13 +80,18 @@ export default function Sidebar() {
       >
         {/* Header */}
         <div className="px-2 py-3 border-b border-slate-100 dark:border-slate-700 flex justify-center">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden">
+          <div className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden">
             <Image
-              src="/logo.png"
-              alt="DeepTutor Logo"
-              width={32}
-              height={32}
-              className="object-contain"
+              src={BRAND_LOGO_SRC}
+              alt={`${BRAND_NAME} Logo`}
+              width={BRAND_LOGO_SIZE_COLLAPSED}
+              height={BRAND_LOGO_SIZE_COLLAPSED}
+              className="object-cover object-center"
+              style={{
+                transform: `scale(${BRAND_LOGO_SCALE})`,
+                transformOrigin: "center",
+              }}
+              unoptimized
               priority
             />
           </div>
@@ -183,20 +191,23 @@ export default function Sidebar() {
       <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700">
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden">
-                <Image
-                  src="/logo.png"
-                  alt="DeepTutor Logo"
-                  width={32}
-                  height={32}
-                  className="object-contain"
-                  priority
-                />
-              </div>
-              <h1 className="font-bold text-slate-900 dark:text-slate-100 tracking-tight text-base truncate">
-                DeepTutor
-              </h1>
+            <div
+              className="relative flex-1 overflow-hidden rounded-lg mr-2"
+              style={{ height: BRAND_LOGO_CROP_HEIGHT_EXPANDED }}
+            >
+              <Image
+                src={BRAND_LOGO_SRC}
+                alt={`${BRAND_NAME} Logo`}
+                fill
+                sizes="220px"
+                className="object-cover object-center"
+                style={{
+                  transform: `scale(${BRAND_LOGO_SCALE})`,
+                  transformOrigin: "center",
+                }}
+                unoptimized
+                priority
+              />
             </div>
             <div className="flex items-center gap-0.5">
               {/* Collapse button */}
@@ -207,29 +218,7 @@ export default function Sidebar() {
               >
                 <ChevronsLeft className="w-4 h-4" />
               </button>
-              <a
-                href="https://hkuds.github.io/DeepTutor/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-slate-400 hover:text-blue-500 dark:hover:text-blue-400 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded"
-                title="Visit DeepTutor Homepage"
-              >
-                <Globe className="w-4 h-4" />
-              </a>
-              <a
-                href="https://github.com/HKUDS/DeepTutor"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded"
-                title="View on GitHub"
-              >
-                <Github className="w-4 h-4" />
-              </a>
             </div>
-          </div>
-
-          <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100/50 dark:bg-slate-700/50 px-2 py-1.5 rounded-md border border-slate-100 dark:border-slate-600 truncate">
-            ✨ Data Intelligence Lab @ HKU
           </div>
         </div>
       </div>

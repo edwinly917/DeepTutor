@@ -12,9 +12,30 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
+import { useGlobal } from "@/context/GlobalContext";
+import { getTranslation } from "@/lib/i18n";
+
 interface ActiveTaskDetailProps {
   task: TaskState | null;
 }
+
+export const ActiveTaskDetail: React.FC<ActiveTaskDetailProps> = ({ task }) => {
+  const { uiSettings } = useGlobal();
+  const t = (key: string) => getTranslation(uiSettings.language, key);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const getStatusLabel = (status: TaskState["status"]) => {
+    switch (status) {
+      case "completed":
+        return t("Completed");
+      case "running":
+        return t("Running");
+      case "failed":
+        return t("Failed");
+      default:
+        return t("Pending");
+    }
+  };
 
 const getThoughtIcon = (type: ThoughtEntry["type"]) => {
   switch (type) {
@@ -42,9 +63,6 @@ const formatTimestamp = (ts: number) => {
   });
 };
 
-export const ActiveTaskDetail: React.FC<ActiveTaskDetailProps> = ({ task }) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
-
   // Auto-scroll to bottom when new thoughts arrive
   useEffect(() => {
     if (scrollRef.current) {
@@ -56,7 +74,7 @@ export const ActiveTaskDetail: React.FC<ActiveTaskDetailProps> = ({ task }) => {
     return (
       <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-50/50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
         <Terminal className="w-12 h-12 mb-3 opacity-20" />
-        <p className="text-sm">Select a task to view execution details</p>
+        <p className="text-sm">{t("Select a task to view details")}</p>
       </div>
     );
   }
@@ -89,7 +107,7 @@ export const ActiveTaskDetail: React.FC<ActiveTaskDetailProps> = ({ task }) => {
                     : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
             }`}
           >
-            {task.status}
+            {getStatusLabel(task.status)}
           </div>
         </div>
       </div>
@@ -101,7 +119,7 @@ export const ActiveTaskDetail: React.FC<ActiveTaskDetailProps> = ({ task }) => {
       >
         {task.thoughts.length === 0 ? (
           <div className="text-center py-10 text-slate-400 dark:text-slate-500 text-xs italic">
-            Waiting for execution logs...
+            {t("Waiting for execution logs...")}
           </div>
         ) : (
           task.thoughts.map((thought, idx) => (
@@ -140,7 +158,7 @@ export const ActiveTaskDetail: React.FC<ActiveTaskDetailProps> = ({ task }) => {
                             : "text-slate-600 dark:text-slate-400"
                     }`}
                   >
-                    {thought.type.replace("_", " ")}
+                    {t(thought.type)}
                   </span>
                   <span className="text-[10px] text-slate-400 dark:text-slate-500">
                     {formatTimestamp(thought.timestamp)}

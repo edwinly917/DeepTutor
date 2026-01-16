@@ -1,11 +1,14 @@
 import asyncio
+from datetime import datetime
+import json
 import logging
 from pathlib import Path
+import re
 import sys
 import traceback
 from typing import Any
 
-from fastapi import APIRouter, WebSocket
+from fastapi import APIRouter, HTTPException, WebSocket
 from pydantic import BaseModel
 
 from src.agents.research.agents import RephraseAgent
@@ -15,6 +18,9 @@ from src.api.utils.task_id_manager import TaskIDManager
 from src.logging import get_logger
 from src.services.config import load_config_with_main
 from src.services.llm import get_llm_config
+
+# Import the new PPTGenerator service
+from src.services.export.ppt_generator import PPTGenerator
 
 # Force stdout to use utf-8 to prevent encoding errors with emojis on Windows
 if sys.platform == "win32":
@@ -40,6 +46,46 @@ class OptimizeRequest(BaseModel):
     iteration: int = 0
     previous_result: dict[str, Any] | None = None
     kb_name: str | None = "ai_textbook"
+
+
+class ExportPptxRequest(BaseModel):
+    markdown: str
+    title: str | None = None
+    max_slides: int = 15
+    style_prompt: str | None = None
+    style_model: str | None = None
+    style_api_key: str | None = None
+    style_base_url: str | None = None
+
+
+@router.post("/export_pptx")
+async def export_pptx(request: ExportPptxRequest):
+    project_root = Path(__file__).parent.parent.parent.parent
+    export_dir = project_root / "data" / "user" / "research" / "exports"
+    
+    # Initialize Generator
+    generator = PPTGenerator(export_dir=export_dir)
+    
+    try:
+        result = await generator.generate(
+            markdown=request.markdown,
+            title=request.title,
+            style_prompt=request.style_prompt,
+            style_model=request.style_model,
+            style_api_key=request.style_api_key,
+            style_base_url=request.style_base_url,
+            max_slides=request.max_slides,
+        )
+        return result
+    except ImportError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"PPT export dependencies not installed: {e}",
+        )
+    except Exception as e:
+        logger.error(f"PPT Export failed: {e}")
+        # Return generic error
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/optimize_topic")

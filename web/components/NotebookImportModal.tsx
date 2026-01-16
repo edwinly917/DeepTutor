@@ -13,6 +13,8 @@ import {
   Calendar,
 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
+import { useGlobal } from "@/context/GlobalContext";
+import { getTranslation } from "@/lib/i18n";
 
 interface Notebook {
   id: string;
@@ -45,6 +47,17 @@ export default function NotebookImportModal({
   onImport,
   title = "Import from Notebooks",
 }: NotebookImportModalProps) {
+  const { uiSettings } = useGlobal();
+  const t = (key: string, ...args: any[]) => {
+    let text = getTranslation(uiSettings.language, key);
+    if (args.length > 0) {
+      args.forEach((arg, index) => {
+        text = text.replace(`{${index}}`, String(arg));
+      });
+    }
+    return text;
+  };
+
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedNotebooks, setExpandedNotebooks] = useState<Set<string>>(
@@ -60,6 +73,9 @@ export default function NotebookImportModal({
   const [selectedRecordsData, setSelectedRecordsData] = useState<
     NotebookRecord[]
   >([]);
+
+  const displayTitle =
+    title === "Import from Notebooks" ? t("Import from Notebooks") : title;
 
   useEffect(() => {
     if (isOpen) {
@@ -168,9 +184,9 @@ export default function NotebookImportModal({
               <BookOpen className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <h2 className="font-bold text-slate-900">{title}</h2>
+              <h2 className="font-bold text-slate-900">{displayTitle}</h2>
               <p className="text-xs text-slate-500">
-                Select content from your notebooks to import
+                {t("Select content from your notebooks to import")}
               </p>
             </div>
           </div>
@@ -192,7 +208,7 @@ export default function NotebookImportModal({
               </div>
             ) : notebooks.length === 0 ? (
               <div className="text-center py-8 text-slate-400 text-sm">
-                No notebooks found
+                {t("No notebooks found")}
               </div>
             ) : (
               notebooks.map((nb) => (
@@ -220,7 +236,7 @@ export default function NotebookImportModal({
                     </span>
                   </div>
                   <div className="pl-6 text-xs text-slate-400 flex justify-between">
-                    <span>{nb.record_count} records</span>
+                    <span>{nb.record_count} {t("records")}</span>
                   </div>
                 </div>
               ))
@@ -232,7 +248,7 @@ export default function NotebookImportModal({
             {expandedNotebooks.size === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-slate-400">
                 <BookOpen className="w-12 h-12 mb-3 opacity-20" />
-                <p>Select a notebook to view records</p>
+                <p>{t("Select a notebook to view records")}</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -262,7 +278,7 @@ export default function NotebookImportModal({
                         </div>
                       ) : !records || records.length === 0 ? (
                         <div className="py-4 text-center text-xs text-slate-400 italic">
-                          No records
+                          {t("No records")}
                         </div>
                       ) : (
                         <div className="grid gap-2">
@@ -325,18 +341,14 @@ export default function NotebookImportModal({
         {/* Footer */}
         <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
           <div className="text-sm text-slate-500">
-            Selected{" "}
-            <span className="font-bold text-slate-900">
-              {selectedRecords.size}
-            </span>{" "}
-            items
+            {t("Selected {0} items", selectedRecords.size)}
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
               className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
             >
-              Cancel
+              {t("Cancel")}
             </button>
             <button
               onClick={handleImport}
@@ -344,7 +356,7 @@ export default function NotebookImportModal({
               className="px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               <Check className="w-4 h-4" />
-              Import Selected
+              {t("Import Selected")}
             </button>
           </div>
         </div>

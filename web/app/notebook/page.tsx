@@ -99,15 +99,15 @@ const getRecordIcon = (type: string) => {
 const getRecordLabel = (type: string) => {
   switch (type) {
     case "solve":
-      return "Solver";
+      return "解题";
     case "question":
-      return "Question";
+      return "题目";
     case "research":
-      return "Research";
+      return "研究";
     case "co_writer":
-      return "Co-Writer";
+      return "写作";
     default:
-      return "Record";
+      return "记录";
   }
 };
 
@@ -301,7 +301,7 @@ export default function NotebookPage() {
   const exportAsMarkdown = () => {
     if (!selectedRecord) return;
 
-    const content = `# ${selectedRecord.title}\n\n**Type:** ${selectedRecord.type}\n**Created:** ${new Date(selectedRecord.created_at * 1000).toLocaleString()}\n\n## User Query\n\n${selectedRecord.user_query}\n\n## Output\n\n${selectedRecord.output}`;
+    const content = `# ${selectedRecord.title}\n\n**类型：** ${getRecordLabel(selectedRecord.type)}\n**创建时间：** ${new Date(selectedRecord.created_at * 1000).toLocaleString()}\n\n## 用户问题\n\n${selectedRecord.user_query}\n\n## 输出\n\n${selectedRecord.output}`;
 
     const blob = new Blob([content], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
@@ -332,13 +332,13 @@ export default function NotebookPage() {
         </head>
         <body>
           <h1>${selectedRecord.title}</h1>
-          <div class="meta">${selectedRecord.type.toUpperCase()} • ${new Date(selectedRecord.created_at * 1000).toLocaleString()}</div>
+          <div class="meta">${getRecordLabel(selectedRecord.type)} • ${new Date(selectedRecord.created_at * 1000).toLocaleString()}</div>
           <div class="section">
-            <div class="section-title">User Query</div>
+            <div class="section-title">用户问题</div>
             <div class="query">${selectedRecord.user_query}</div>
           </div>
           <div class="section">
-            <div class="section-title">Output</div>
+            <div class="section-title">输出</div>
             <div class="output">${selectedRecord.output}</div>
           </div>
         </body>
@@ -472,7 +472,7 @@ export default function NotebookPage() {
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
               <BookOpen className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-              Notebooks
+              笔记本
             </h1>
             <div className="flex items-center gap-2">
               <button
@@ -484,7 +484,7 @@ export default function NotebookPage() {
               <button
                 onClick={() => setLeftCollapsed(true)}
                 className="p-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-sm hover:bg-slate-50 dark:hover:bg-slate-600 transition-all"
-                title="Collapse left panel"
+                title="收起左侧面板"
               >
                 <ChevronLeft className="w-4 h-4 text-slate-600 dark:text-slate-300" />
               </button>
@@ -496,7 +496,7 @@ export default function NotebookPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500" />
             <input
               type="text"
-              placeholder="Search notebooks..."
+              placeholder="搜索笔记本..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
@@ -508,16 +508,16 @@ export default function NotebookPage() {
         <div className="flex-1 overflow-y-auto p-2">
           {loading ? (
             <div className="p-8 text-center text-slate-400 dark:text-slate-500">
-              Loading...
+              加载中...
             </div>
           ) : filteredNotebooks.length === 0 ? (
             <div className="p-8 text-center">
               <FolderOpen className="w-12 h-12 text-slate-200 dark:text-slate-600 mx-auto mb-3" />
               <p className="text-slate-500 dark:text-slate-400 text-sm">
-                No notebooks yet
+                暂无笔记本
               </p>
               <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">
-                Create your first notebook to get started
+                创建你的第一个笔记本开始使用
               </p>
             </div>
           ) : (
@@ -582,7 +582,7 @@ export default function NotebookPage() {
                       <div className="flex items-center gap-3 mt-2 text-[10px] text-slate-400 dark:text-slate-500">
                         <span className="flex items-center gap-1">
                           <FileText className="w-3 h-3" />
-                          {nb.record_count} records
+                          {nb.record_count} 条记录
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
@@ -601,7 +601,7 @@ export default function NotebookPage() {
         <button
           onClick={() => setLeftCollapsed(false)}
           className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all self-start mt-4 shrink-0"
-          title="Expand left panel"
+          title="展开左侧面板"
         >
           <ChevronRight className="w-4 h-4 text-slate-600 dark:text-slate-300" />
         </button>
@@ -657,7 +657,7 @@ export default function NotebookPage() {
             <button
               onClick={() => setMiddleCollapsed(true)}
               className="p-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-sm hover:bg-slate-50 dark:hover:bg-slate-600 transition-all shrink-0"
-              title="Collapse middle panel"
+              title="收起中间面板"
             >
               <ChevronLeft className="w-4 h-4 text-slate-600 dark:text-slate-300" />
             </button>
@@ -672,10 +672,10 @@ export default function NotebookPage() {
                 <div className="p-8 text-center">
                   <FileText className="w-12 h-12 text-slate-200 dark:text-slate-600 mx-auto mb-3" />
                   <p className="text-slate-500 dark:text-slate-400 text-sm">
-                    No records yet
+                    暂无记录
                   </p>
                   <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">
-                    Add records from Solver, Question, Research, or Co-Writer
+                    可从解题、出题、研究或写作中添加记录
                   </p>
                 </div>
               ) : (
@@ -744,7 +744,7 @@ export default function NotebookPage() {
           <div className="flex-1 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 p-8">
             <BookOpen className="w-16 h-16 text-slate-200 dark:text-slate-600 mb-4" />
             <p className="text-slate-500 dark:text-slate-400">
-              Select a notebook to view records
+              请选择一个笔记本查看记录
             </p>
           </div>
         )}
@@ -753,7 +753,7 @@ export default function NotebookPage() {
         <button
           onClick={() => setMiddleCollapsed(false)}
           className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all self-start mt-4 shrink-0"
-          title="Expand middle panel"
+          title="展开中间面板"
         >
           <ChevronRight className="w-4 h-4 text-slate-600 dark:text-slate-300" />
         </button>
@@ -778,7 +778,7 @@ export default function NotebookPage() {
               <button
                 onClick={() => setRightCollapsed(true)}
                 className="p-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-sm hover:bg-slate-50 dark:hover:bg-slate-600 transition-all shrink-0"
-                title="Collapse right panel"
+                title="收起右侧面板"
               >
                 <ChevronRight className="w-4 h-4 text-slate-600 dark:text-slate-300" />
               </button>
@@ -818,7 +818,7 @@ export default function NotebookPage() {
                 <button
                   onClick={exportAsMarkdown}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                  title="Export as Markdown"
+                  title="导出为 Markdown"
                 >
                   <Download className="w-3.5 h-3.5" />
                   .md
@@ -826,7 +826,7 @@ export default function NotebookPage() {
                 <button
                   onClick={exportAsPDF}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                  title="Export as PDF"
+                  title="导出为 PDF"
                 >
                   <Download className="w-3.5 h-3.5" />
                   .pdf
@@ -834,10 +834,10 @@ export default function NotebookPage() {
                 <button
                   onClick={openImportModal}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 rounded-lg transition-colors"
-                  title="Import records from other notebooks"
+                  title="从其他笔记本导入记录"
                 >
                   <Upload className="w-3.5 h-3.5" />
-                  Import
+                  导入
                 </button>
               </div>
             )}
@@ -851,7 +851,7 @@ export default function NotebookPage() {
               {/* User Query */}
               <div className="mb-6">
                 <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  User Query
+                  用户问题
                 </h3>
                 <div className="p-4 bg-blue-50 dark:bg-blue-900/30 rounded-xl border border-blue-100 dark:border-blue-800">
                   <p className="text-slate-700 dark:text-slate-200">
@@ -863,7 +863,7 @@ export default function NotebookPage() {
               {/* Output */}
               <div>
                 <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Output
+                  输出
                 </h3>
                 <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-600">
                   <div className="prose prose-slate dark:prose-invert max-w-none prose-sm">
@@ -881,7 +881,7 @@ export default function NotebookPage() {
               {Object.keys(selectedRecord.metadata).length > 0 && (
                 <div className="mt-6">
                   <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                    Metadata
+                    元数据
                   </h3>
                   <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-600">
                     <pre className="text-xs text-slate-600 dark:text-slate-300 overflow-x-auto">
@@ -896,7 +896,7 @@ export default function NotebookPage() {
           <div className="flex-1 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 p-8">
             <FileText className="w-16 h-16 text-slate-200 dark:text-slate-600 mb-4" />
             <p className="text-slate-500 dark:text-slate-400">
-              Select a record to view details
+              请选择一条记录查看详情
             </p>
           </div>
         )}
@@ -905,7 +905,7 @@ export default function NotebookPage() {
         <button
           onClick={() => setRightCollapsed(false)}
           className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all self-start mt-4 shrink-0"
-          title="Expand right panel"
+          title="展开右侧面板"
         >
           <ChevronLeft className="w-4 h-4 text-slate-600 dark:text-slate-300" />
         </button>
@@ -917,7 +917,7 @@ export default function NotebookPage() {
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[400px] animate-in zoom-in-95">
             <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
               <h3 className="font-bold text-slate-900 dark:text-slate-100">
-                Create New Notebook
+                创建新笔记本
               </h3>
               <button
                 onClick={() => setShowCreateModal(false)}
@@ -929,7 +929,7 @@ export default function NotebookPage() {
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Name
+                  名称
                 </label>
                 <input
                   type="text"
@@ -940,13 +940,13 @@ export default function NotebookPage() {
                       name: e.target.value,
                     }))
                   }
-                  placeholder="My Notebook"
+                  placeholder="我的笔记本"
                   className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
                 />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Description (Optional)
+                  描述（可选）
                 </label>
                 <textarea
                   value={newNotebook.description}
@@ -956,14 +956,14 @@ export default function NotebookPage() {
                       description: e.target.value,
                     }))
                   }
-                  placeholder="Notes about machine learning..."
+                  placeholder="例如：机器学习笔记..."
                   rows={3}
                   className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none resize-none"
                 />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Color
+                  颜色
                 </label>
                 <div className="flex gap-2 flex-wrap">
                   {COLORS.map((color) => (
@@ -988,7 +988,7 @@ export default function NotebookPage() {
                 onClick={() => setShowCreateModal(false)}
                 className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
               >
-                Cancel
+                取消
               </button>
               <button
                 onClick={handleCreateNotebook}
@@ -996,7 +996,7 @@ export default function NotebookPage() {
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
-                Create
+                创建
               </button>
             </div>
           </div>
@@ -1120,14 +1120,14 @@ export default function NotebookPage() {
                 onClick={() => setShowDeleteConfirm(null)}
                 className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
               >
-                Cancel
+                取消
               </button>
               <button
                 onClick={() => handleDeleteNotebook(showDeleteConfirm)}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
               >
                 <Trash2 className="w-4 h-4" />
-                Delete
+                删除
               </button>
             </div>
           </div>
@@ -1141,7 +1141,7 @@ export default function NotebookPage() {
             <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <Upload className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                Import Records
+                导入记录
               </h3>
               <button
                 onClick={() => {
@@ -1160,17 +1160,17 @@ export default function NotebookPage() {
               {/* Source Notebook Selection */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Source Notebook
+                  源笔记本
                 </label>
                 <select
                   value={importSourceNotebook}
                   onChange={(e) => loadImportSourceRecords(e.target.value)}
                   className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
                 >
-                  <option value="">Select a notebook...</option>
+                  <option value="">选择一个笔记本...</option>
                   {availableNotebooks.map((nb) => (
                     <option key={nb.id} value={nb.id}>
-                      {nb.name} ({nb.record_count} records)
+                      {nb.name}（{nb.record_count} 条记录）
                     </option>
                   ))}
                 </select>
@@ -1181,7 +1181,7 @@ export default function NotebookPage() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      Select Records ({selectedImportRecords.size} selected)
+                      选择记录（已选 {selectedImportRecords.size} 条）
                     </label>
                     <div className="flex gap-2">
                       <button
@@ -1192,24 +1192,24 @@ export default function NotebookPage() {
                         }
                         className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
                       >
-                        Select All
+                        全选
                       </button>
                       <button
                         onClick={() => setSelectedImportRecords(new Set())}
                         className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
                       >
-                        Clear
+                        清空
                       </button>
                     </div>
                   </div>
 
                   {loadingImport ? (
                     <div className="py-8 text-center text-slate-400 dark:text-slate-500">
-                      Loading records...
+                      正在加载记录...
                     </div>
                   ) : importSourceRecords.length === 0 ? (
                     <div className="py-8 text-center text-slate-400 dark:text-slate-500">
-                      No records in this notebook
+                      此笔记本暂无记录
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -1240,7 +1240,7 @@ export default function NotebookPage() {
                                 <span
                                   className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${getRecordColor(record.type)}`}
                                 >
-                                  {record.type}
+                                  {getRecordLabel(record.type)}
                                 </span>
                                 <span className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
                                   {record.title}
@@ -1269,7 +1269,7 @@ export default function NotebookPage() {
                 }}
                 className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
               >
-                Cancel
+                取消
               </button>
               <button
                 onClick={handleImportRecords}
@@ -1277,7 +1277,7 @@ export default function NotebookPage() {
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Upload className="w-4 h-4" />
-                Import{" "}
+                导入{" "}
                 {selectedImportRecords.size > 0 &&
                   `(${selectedImportRecords.size})`}
               </button>

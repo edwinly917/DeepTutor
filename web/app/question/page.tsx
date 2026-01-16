@@ -120,7 +120,7 @@ export default function QuestionPage() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
     if (file && file.type !== "application/pdf") {
-      alert("Please upload a PDF exam paper");
+      alert("请上传 PDF 试卷文件");
       return;
     }
     setQuestionState((prev) => ({
@@ -152,7 +152,7 @@ export default function QuestionPage() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 text-slate-700 dark:text-slate-200 font-semibold">
               <PenTool className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-              Question Generator
+              题目生成器
             </div>
 
             {/* Mode Switching - disabled when generating */}
@@ -177,7 +177,7 @@ export default function QuestionPage() {
                 }`}
               >
                 <BrainCircuit className="w-4 h-4" />
-                Custom
+                自定义
               </button>
               <button
                 onClick={() =>
@@ -194,7 +194,7 @@ export default function QuestionPage() {
                 }`}
               >
                 <FileText className="w-4 h-4" />
-                Mimic Exam
+                仿真试卷
               </button>
             </div>
 
@@ -215,7 +215,7 @@ export default function QuestionPage() {
                 }`}
               >
                 <FileQuestion className="w-4 h-4" />
-                Questions
+                题目
                 {totalQuestions > 0 && (
                   <span className="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 text-xs rounded-full">
                     {totalQuestions}
@@ -234,7 +234,7 @@ export default function QuestionPage() {
                 }`}
               >
                 <Activity className="w-4 h-4" />
-                Process
+                过程
                 {questionState.step === "generating" && (
                   <Loader2 className="w-3 h-3 animate-spin text-purple-500 dark:text-purple-400" />
                 )}
@@ -271,7 +271,7 @@ export default function QuestionPage() {
                 className="text-sm flex items-center gap-1.5 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors px-3 py-1.5 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded-lg border border-slate-200 dark:border-slate-600"
               >
                 <RefreshCw className="w-4 h-4" />
-                New
+                新建
               </button>
             )}
           </div>
@@ -306,13 +306,13 @@ export default function QuestionPage() {
                         }`}
                       >
                         {questionState.mode === "knowledge"
-                          ? "Custom Mode"
-                          : "Mimic Exam Paper Mode"}
+                          ? "自定义模式"
+                          : "仿真试卷模式"}
                       </h3>
                       <p className="text-sm text-slate-600 dark:text-slate-400">
                         {questionState.mode === "knowledge"
-                          ? "Generate questions based on knowledge base content"
-                          : "Generate similar questions based on an exam paper"}
+                          ? "基于知识库内容生成题目"
+                          : "基于试卷生成相似题目"}
                       </p>
                     </div>
                   </div>
@@ -324,7 +324,7 @@ export default function QuestionPage() {
                     <div className="grid grid-cols-2 gap-6">
                       <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          Question Count
+                          题目数量
                         </label>
                         <div className="flex items-center gap-4">
                           <input
@@ -357,14 +357,14 @@ export default function QuestionPage() {
                           />
                         </div>
                         <p className="text-[10px] text-slate-400 dark:text-slate-500">
-                          Use slider (1-10) or type directly (1-50)
+                          可用滑块（1-10）或直接输入（1-50）
                         </p>
                       </div>
                     </div>
 
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                        Knowledge Point / Topic
+                        知识点 / 主题
                       </label>
                       <input
                         type="text"
@@ -375,7 +375,7 @@ export default function QuestionPage() {
                             topic: e.target.value,
                           }))
                         }
-                        placeholder="e.g. Gradient Descent Optimization"
+                        placeholder="例如：梯度下降优化"
                         className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/10 transition-all text-lg dark:text-slate-200 dark:placeholder:text-slate-500"
                       />
                     </div>
@@ -383,7 +383,7 @@ export default function QuestionPage() {
                     <div className="grid grid-cols-2 gap-6">
                       <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          Difficulty
+                          难度
                         </label>
                         <div className="flex bg-slate-50 dark:bg-slate-700 p-1 rounded-xl border border-slate-200 dark:border-slate-600">
                           {["easy", "medium", "hard"].map((lvl) => (
@@ -401,7 +401,11 @@ export default function QuestionPage() {
                                   : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                               }`}
                             >
-                              {lvl}
+                              {lvl === "easy"
+                                ? "简单"
+                                : lvl === "medium"
+                                  ? "中等"
+                                  : "困难"}
                             </button>
                           ))}
                         </div>
@@ -409,12 +413,12 @@ export default function QuestionPage() {
 
                       <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          Type
+                          题型
                         </label>
                         <div className="flex bg-slate-50 dark:bg-slate-700 p-1 rounded-xl border border-slate-200 dark:border-slate-600">
                           {[
-                            { id: "choice", label: "Multiple Choice" },
-                            { id: "written", label: "Written" },
+                            { id: "choice", label: "选择题" },
+                            { id: "written", label: "解答题" },
                           ].map((t) => (
                             <button
                               key={t.id}
@@ -445,7 +449,7 @@ export default function QuestionPage() {
                     {/* PDF Upload Section */}
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                        Upload Exam Paper (PDF)
+                        上传试卷（PDF）
                       </label>
                       <div className="relative">
                         <input
@@ -496,7 +500,7 @@ export default function QuestionPage() {
                     <div className="flex items-center gap-3">
                       <div className="flex-1 h-px bg-slate-200 dark:bg-slate-600"></div>
                       <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">
-                        OR
+                        或
                       </span>
                       <div className="flex-1 h-px bg-slate-200 dark:bg-slate-600"></div>
                     </div>
@@ -504,7 +508,7 @@ export default function QuestionPage() {
                     {/* Pre-parsed Directory (Optional) */}
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                        Pre-parsed Directory (Optional)
+                        预解析目录（可选）
                       </label>
                       <input
                         type="text"
@@ -516,24 +520,24 @@ export default function QuestionPage() {
                             uploadedFile: null,
                           }))
                         }
-                        placeholder="e.g. 2211asm1"
+                        placeholder="例如：2211asm1"
                         className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/10 transition-all dark:text-slate-200 dark:placeholder:text-slate-500"
                       />
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Or enter a pre-parsed paper directory name
+                        或输入已解析的试卷目录名
                       </p>
                     </div>
 
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                        Max Questions (Optional)
+                        最大题目数（可选）
                       </label>
                       <div className="flex items-center gap-4">
                         <input
                           type="number"
                           min="1"
                           max="20"
-                          placeholder="All"
+                          placeholder="全部"
                           value={questionState.count || ""}
                           onChange={(e) => {
                             const val = e.target.value
@@ -547,23 +551,22 @@ export default function QuestionPage() {
                           className="w-24 p-2 text-center bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/10 dark:text-slate-200"
                         />
                         <span className="text-sm text-slate-500 dark:text-slate-400">
-                          Leave empty to generate all questions from the paper
+                          留空则生成该试卷中的全部题目
                         </span>
                       </div>
                     </div>
 
                     <div className="p-4 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/30 dark:to-blue-900/30 border border-purple-200 dark:border-purple-800 rounded-xl text-sm text-slate-700 dark:text-slate-300">
                       <p className="font-medium mb-2 text-purple-800 dark:text-purple-300">
-                        ✨ How Mimic Mode Works
+                        ✨ 仿真试卷模式说明
                       </p>
                       <ol className="text-xs space-y-1 list-decimal list-inside text-slate-600 dark:text-slate-400">
-                        <li>Upload your exam paper PDF</li>
-                        <li>Select the relevant knowledge base</li>
+                        <li>上传 PDF 试卷文件</li>
+                        <li>选择相关知识库</li>
                         <li>
-                          The system will automatically: parse PDF → extract
-                          questions → generate similar new questions
+                          系统将自动：解析 PDF → 提取题目 → 生成相似新题
                         </li>
-                        <li>Progress will be displayed in real-time</li>
+                        <li>进度将实时显示</li>
                       </ol>
                     </div>
                   </div>
@@ -580,7 +583,7 @@ export default function QuestionPage() {
                   className="w-full py-4 bg-purple-600 text-white rounded-xl font-bold text-lg shadow-lg shadow-purple-500/30 hover:bg-purple-700 hover:shadow-purple-500/50 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   <Sparkles className="w-5 h-5" />
-                  Generate Questions
+                  生成题目
                 </button>
               </div>
             </div>
@@ -594,13 +597,13 @@ export default function QuestionPage() {
                 <div className="mb-6 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                      Questions
+                      题目
                     </span>
                     <span className="text-sm text-slate-500 dark:text-slate-400">
-                      {totalQuestions} / {questionState.count} completed
+                      已完成 {totalQuestions} / {questionState.count}
                       {extendedCount > 0 && (
                         <span className="ml-2 text-amber-600 dark:text-amber-400">
-                          ({extendedCount} extended)
+                          （拓展 {extendedCount}）
                         </span>
                       )}
                     </span>
@@ -643,10 +646,10 @@ export default function QuestionPage() {
                     </div>
                   </div>
                   <p className="font-medium text-slate-600 dark:text-slate-300">
-                    Generating questions...
+                    正在生成题目...
                   </p>
                   <p className="text-sm text-center max-w-xs">
-                    Switch to the Process tab to see detailed progress
+                    切换到「过程」标签页查看详细进度
                   </p>
                 </div>
               )}
@@ -666,7 +669,7 @@ export default function QuestionPage() {
                         {currentQuestion.extended && (
                           <span className="px-3 py-1 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs font-bold uppercase rounded-full border border-amber-200 dark:border-amber-800 flex items-center gap-1">
                             <Zap className="w-3 h-3" />
-                            Extended
+                            拓展
                           </span>
                         )}
                         <button
@@ -674,7 +677,7 @@ export default function QuestionPage() {
                           className="ml-auto text-xs font-medium text-indigo-500 dark:text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 flex items-center gap-1 px-2 py-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
                         >
                           <Book className="w-3 h-3" />
-                          Add to Notebook
+                          加入笔记本
                         </button>
                       </div>
                     </div>
@@ -742,7 +745,7 @@ export default function QuestionPage() {
                           value={userAnswers[activeIdx] || ""}
                           onChange={(e) => handleAnswer(e.target.value)}
                           disabled={submittedMap[activeIdx]}
-                          placeholder="Type your answer here..."
+                          placeholder="在此输入你的答案..."
                           className="w-full h-48 p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-500/10 outline-none resize-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                         />
                       )}
@@ -756,20 +759,20 @@ export default function QuestionPage() {
                           disabled={!userAnswers[activeIdx]}
                           className="flex-1 py-3 bg-purple-600 text-white rounded-xl font-bold shadow-lg shadow-purple-500/20 hover:bg-purple-700 disabled:opacity-50 disabled:shadow-none transition-all"
                         >
-                          Submit Answer
+                          提交答案
                         </button>
                       ) : (
                         <>
                           <div className="flex-1 py-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 rounded-xl font-medium text-center border border-emerald-200 dark:border-emerald-800 flex items-center justify-center gap-2">
                             <CheckCircle2 className="w-4 h-4" />
-                            Submitted
+                            已提交
                           </div>
                           {activeIdx < questionState.results.length - 1 && (
                             <button
                               onClick={() => setActiveIdx(activeIdx + 1)}
                               className="flex-1 py-3 bg-purple-600 text-white rounded-xl font-bold shadow-lg shadow-purple-500/20 hover:bg-purple-700 transition-all flex items-center justify-center gap-2"
                             >
-                              Next Question
+                              下一题
                               <ChevronRight className="w-4 h-4" />
                             </button>
                           )}
@@ -962,7 +965,7 @@ export default function QuestionPage() {
                                 {currentQuestion.validation?.reasoning && (
                                   <div>
                                     <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                                      Reasoning
+                                      推理过程
                                     </p>
                                     <div className="text-slate-700 dark:text-slate-300 text-xs leading-relaxed prose prose-xs dark:prose-invert max-w-none">
                                       <ReactMarkdown
@@ -986,13 +989,13 @@ export default function QuestionPage() {
                           <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 bg-emerald-50 dark:bg-emerald-900/30">
                             <h4 className="text-emerald-800 dark:text-emerald-300 font-semibold flex items-center gap-2">
                               <BookOpen className="w-4 h-4" />
-                              Answer & Explanation
+                              答案与解析
                             </h4>
                           </div>
                           <div className="p-4 flex-1 overflow-y-auto">
                             <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg border border-emerald-100 dark:border-emerald-800">
                               <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">
-                                Correct Answer
+                                正确答案
                               </p>
                               <div className="text-emerald-800 dark:text-emerald-200 text-base leading-relaxed [&_.katex]:text-emerald-800 dark:[&_.katex]:text-emerald-200 [&_.katex-display]:my-3 [&_.katex-display]:overflow-x-auto prose prose-emerald dark:prose-invert max-w-none prose-p:my-2 prose-p:leading-relaxed">
                                 <ReactMarkdown
@@ -1026,9 +1029,9 @@ export default function QuestionPage() {
                       <div className="flex-1 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center">
                         <div className="text-center text-slate-400 dark:text-slate-500 p-6">
                           <BookOpen className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                          <p className="text-sm font-medium">Answer Hidden</p>
+                          <p className="text-sm font-medium">答案已隐藏</p>
                           <p className="text-xs mt-1">
-                            Submit your answer to reveal
+                            提交答案后显示
                           </p>
                         </div>
                       </div>
@@ -1071,14 +1074,14 @@ export default function QuestionPage() {
           onClose={() => setShowNotebookModal(false)}
           recordType="question"
           title={`${questionState.topic} - ${currentQuestion.question.type || currentQuestion.question.question_type}`}
-          userQuery={`Topic: ${questionState.topic}\nDifficulty: ${questionState.difficulty}\nType: ${questionState.type}`}
-          output={`**Question:**\n${currentQuestion.question.question}\n\n**Options:**\n${
+          userQuery={`主题：${questionState.topic}\n难度：${questionState.difficulty}\n题型：${questionState.type}`}
+          output={`**题目：**\n${currentQuestion.question.question}\n\n**选项：**\n${
             currentQuestion.question.options
               ? Object.entries(currentQuestion.question.options)
                   .map(([k, v]) => `${k}. ${v}`)
                   .join("\n")
-              : "N/A"
-          }\n\n**Correct Answer:** ${currentQuestion.question.correct_answer}\n\n**Explanation:**\n${currentQuestion.question.explanation}`}
+              : "无"
+          }\n\n**正确答案：** ${currentQuestion.question.correct_answer}\n\n**解析：**\n${currentQuestion.question.explanation}`}
           metadata={{
             difficulty: questionState.difficulty,
             question_type: questionState.type,

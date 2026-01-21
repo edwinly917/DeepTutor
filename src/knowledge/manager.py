@@ -63,6 +63,33 @@ class KnowledgeBaseManager:
 
         return sorted(kb_list)
 
+    def create_knowledge_base(self, name: str, description: str = "", set_default: bool = False):
+        """Create a new knowledge base"""
+        kb_dir = self.base_dir / name
+        if kb_dir.exists():
+            # If it exists, just register it
+             pass 
+        else:
+            kb_dir.mkdir(parents=True, exist_ok=True)
+            # Create subdirectories
+            (kb_dir / "raw").mkdir(exist_ok=True)
+            (kb_dir / "images").mkdir(exist_ok=True)
+            (kb_dir / "rag_storage").mkdir(exist_ok=True)
+            (kb_dir / "content_list").mkdir(exist_ok=True)
+
+            # Create metadata file
+            metadata = {
+                "name": name,
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "description": description,
+                "version": "1.0",
+            }
+            with open(kb_dir / "metadata.json", "w", encoding="utf-8") as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+        self.register_knowledge_base(name, description, set_default)
+        return str(kb_dir)
+
     def register_knowledge_base(self, name: str, description: str = "", set_default: bool = False):
         """Register a knowledge base"""
         kb_dir = self.base_dir / name

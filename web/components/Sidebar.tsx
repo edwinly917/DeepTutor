@@ -5,19 +5,14 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
-  Home,
   History,
   BookOpen,
-  PenTool,
-  Calculator,
-  Microscope,
   Edit3,
   Settings,
   Book,
-  GraduationCap,
-  Lightbulb,
   ChevronsLeft,
   ChevronsRight,
+  MessageSquare,
 } from "lucide-react";
 import { useGlobal } from "@/context/GlobalContext";
 import { getTranslation } from "@/lib/i18n";
@@ -43,25 +38,15 @@ export default function Sidebar() {
     {
       name: "",
       items: [
-        { name: t("Home"), href: "/", icon: Home },
-        { name: t("History"), href: "/history", icon: History },
+        { name: t("Notebooks"), href: "/notebooks", icon: Book },
         { name: t("Knowledge Bases"), href: "/knowledge", icon: BookOpen },
-        { name: t("Notebooks"), href: "/notebook", icon: Book },
+        { name: t("History"), href: "/history", icon: History },
       ],
     },
     {
-      name: t("Learn"),
+      name: t("Tools"),
       items: [
-        { name: t("Question Generator"), href: "/question", icon: PenTool },
-        { name: t("Smart Solver"), href: "/solver", icon: Calculator },
-        { name: t("Guided Learning"), href: "/guide", icon: GraduationCap },
-      ],
-    },
-    {
-      name: t("Research"),
-      items: [
-        { name: t("IdeaGen"), href: "/ideagen", icon: Lightbulb },
-        { name: t("Deep Research"), href: "/research", icon: Microscope },
+        { name: t("Chat"), href: "/chat", icon: MessageSquare },
         { name: t("Co-Writer"), href: "/co_writer", icon: Edit3 },
       ],
     },
@@ -107,20 +92,18 @@ export default function Sidebar() {
                   <div key={item.href} className="relative">
                     <Link
                       href={item.href}
-                      className={`group flex items-center justify-center p-2 rounded-md border ${
-                        isActive
-                          ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm border-slate-100 dark:border-slate-600"
-                          : "text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:text-blue-600 dark:hover:text-blue-400 hover:shadow-sm border-transparent hover:border-slate-100 dark:hover:border-slate-600"
-                      }`}
+                      className={`group flex items-center justify-center p-2 rounded-md border ${isActive
+                        ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm border-slate-100 dark:border-slate-600"
+                        : "text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:text-blue-600 dark:hover:text-blue-400 hover:shadow-sm border-transparent hover:border-slate-100 dark:hover:border-slate-600"
+                        }`}
                       onMouseEnter={() => setShowTooltip(item.href)}
                       onMouseLeave={() => setShowTooltip(null)}
                     >
                       <item.icon
-                        className={`w-5 h-5 flex-shrink-0 ${
-                          isActive
-                            ? "text-blue-500 dark:text-blue-400"
-                            : "text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400"
-                        }`}
+                        className={`w-5 h-5 flex-shrink-0 ${isActive
+                          ? "text-blue-500 dark:text-blue-400"
+                          : "text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400"
+                          }`}
                       />
                     </Link>
                     {showTooltip === item.href && (
@@ -144,20 +127,18 @@ export default function Sidebar() {
           <div className="relative">
             <Link
               href="/settings"
-              className={`flex items-center justify-center p-2 rounded-md ${
-                pathname === "/settings"
-                  ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm border border-slate-100 dark:border-slate-600"
-                  : "text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-100"
-              }`}
+              className={`flex items-center justify-center p-2 rounded-md ${pathname === "/settings"
+                ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm border border-slate-100 dark:border-slate-600"
+                : "text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-100"
+                }`}
               onMouseEnter={() => setShowTooltip("/settings")}
               onMouseLeave={() => setShowTooltip(null)}
             >
               <Settings
-                className={`w-5 h-5 flex-shrink-0 ${
-                  pathname === "/settings"
-                    ? "text-blue-500 dark:text-blue-400"
-                    : "text-slate-400 dark:text-slate-500"
-                }`}
+                className={`w-5 h-5 flex-shrink-0 ${pathname === "/settings"
+                  ? "text-blue-500 dark:text-blue-400"
+                  : "text-slate-400 dark:text-slate-500"
+                  }`}
               />
             </Link>
             {showTooltip === "/settings" && (
@@ -239,18 +220,16 @@ export default function Sidebar() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`group flex items-center gap-2.5 px-3 py-1.5 rounded-md border ${
-                      isActive
-                        ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm border-slate-100 dark:border-slate-600"
-                        : "text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:text-blue-600 dark:hover:text-blue-400 hover:shadow-sm border-transparent hover:border-slate-100 dark:hover:border-slate-600"
-                    }`}
+                    className={`group flex items-center gap-2.5 px-3 py-1.5 rounded-md border ${isActive
+                      ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm border-slate-100 dark:border-slate-600"
+                      : "text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:text-blue-600 dark:hover:text-blue-400 hover:shadow-sm border-transparent hover:border-slate-100 dark:hover:border-slate-600"
+                      }`}
                   >
                     <item.icon
-                      className={`w-4 h-4 flex-shrink-0 ${
-                        isActive
-                          ? "text-blue-500 dark:text-blue-400"
-                          : "text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400"
-                      }`}
+                      className={`w-4 h-4 flex-shrink-0 ${isActive
+                        ? "text-blue-500 dark:text-blue-400"
+                        : "text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400"
+                        }`}
                     />
                     <span className="font-medium text-sm truncate">
                       {item.name}
@@ -267,18 +246,16 @@ export default function Sidebar() {
       <div className="px-3 py-2 border-t border-slate-100 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-800/30">
         <Link
           href="/settings"
-          className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm ${
-            pathname === "/settings"
-              ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm border border-slate-100 dark:border-slate-600"
-              : "text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-100"
-          }`}
+          className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm ${pathname === "/settings"
+            ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm border border-slate-100 dark:border-slate-600"
+            : "text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-100"
+            }`}
         >
           <Settings
-            className={`w-4 h-4 flex-shrink-0 ${
-              pathname === "/settings"
-                ? "text-blue-500 dark:text-blue-400"
-                : "text-slate-400 dark:text-slate-500"
-            }`}
+            className={`w-4 h-4 flex-shrink-0 ${pathname === "/settings"
+              ? "text-blue-500 dark:text-blue-400"
+              : "text-slate-400 dark:text-slate-500"
+              }`}
           />
           <span>{t("Settings")}</span>
         </Link>

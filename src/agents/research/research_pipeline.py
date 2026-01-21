@@ -433,6 +433,9 @@ class ResearchPipeline:
                     json.dump(report_result["outline"], f, ensure_ascii=False, indent=2)
                 self.logger.success(f"Report Outline: {outline_file}")
 
+            # Extract sources
+            sources = report_result.get("sources", {"web": [], "rag": []})
+
             # Save metadata
             metadata = {
                 "research_id": self.research_id,
@@ -440,6 +443,8 @@ class ResearchPipeline:
                 "optimized_topic": optimized_topic,
                 "statistics": self.queue.get_statistics(),
                 "report_word_count": report_result["word_count"],
+                "web_sources": sources.get("web", []),  # Flatten for frontend
+                "rag_sources": sources.get("rag", []),  # Flatten for frontend
                 "completed_at": datetime.now().isoformat(),
             }
 

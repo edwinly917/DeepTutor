@@ -81,6 +81,8 @@ def init_user_directories(project_root: Path | None = None) -> None:
         "research",  # Research outputs (will have cache/ and reports/ subdirs)
         "guide",  # Guided learning outputs
         "notebook",  # Notebook data
+        "notebook/exports",  # Notebook export outputs
+        "notebook/ppt_templates",  # PPT templates for notebook exports
         "co-writer",  # Co-writer outputs
         "logs",  # User logs
         "run_code_workspace",  # Code execution workspace

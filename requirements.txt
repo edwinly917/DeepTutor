@@ -47,6 +47,7 @@ raganything>=0.1.0
 # ============================================
 arxiv>=2.0.0
 python-pptx>=0.6.23
+reportlab>=4.2.0
 
 # ============================================
 # Scientific computing (optional, for code execution)

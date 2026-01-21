@@ -19,6 +19,7 @@ from .loader import (
     _deep_merge,
     get_agent_params,
     get_path_from_config,
+    get_ppt_config,
     load_config_with_main,
     parse_language,
 )
@@ -29,5 +30,7 @@ __all__ = [
     "get_path_from_config",
     "parse_language",
     "get_agent_params",
+    "get_ppt_config",
     "_deep_merge",
 ]
+

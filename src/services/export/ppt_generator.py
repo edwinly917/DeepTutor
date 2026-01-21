@@ -43,6 +43,7 @@ class PPTGenerator:
         style_api_key: Optional[str] = None,
         style_base_url: Optional[str] = None,
         max_slides: int = 15,
+        template_path: Optional[Union[str, Path]] = None,
     ) -> Dict[str, Any]:
         """
         Generate a PPTX file from markdown.
@@ -88,8 +89,16 @@ class PPTGenerator:
                 spec = None
 
         # 4. Create Presentation
-        prs = Presentation()
-        self._build_presentation(prs, final_title, sections, spec, max_slides)
+        template = Path(template_path) if template_path else None
+        if template:
+            if not template.exists():
+                raise FileNotFoundError(f"Template not found: {template}")
+            prs = Presentation(str(template))
+        else:
+            prs = Presentation()
+
+        apply_theme = template is None
+        self._build_presentation(prs, final_title, sections, spec, max_slides, apply_theme)
 
         # 5. Save
         prs.save(str(output_path))
@@ -266,15 +275,16 @@ class PPTGenerator:
         sections: List[Tuple[str, str]],
         spec: Optional[Dict[str, Any]],
         max_slides: int,
+        apply_theme: bool,
     ):
         """Builds the PPT slides based on spec or fallback to sections."""
         
         # 1. Determine Theme
         theme = spec.get("theme", {}) if spec else {}
-        theme_config = self._parse_theme(theme)
+        theme_config = self._parse_theme(theme) if apply_theme else None
         
         # 2. Title Slide
-        self._add_title_slide(prs, title, theme_config)
+        self._add_title_slide(prs, title, theme_config, apply_theme)
 
         # 3. Content Slides
         slide_budget = max_slides - 1  # Minus title slide
@@ -312,17 +322,17 @@ class PPTGenerator:
                 break
             
             slide = prs.slides.add_slide(bullet_layout)
-            self._apply_slide_style(slide, prs, theme_config)
+            self._apply_slide_style(slide, prs, theme_config, apply_theme)
             
             # Set Title
             if slide.shapes.title:
                 slide.shapes.title.text = slide_data["title"]
-                self._style_text(slide.shapes.title.text_frame, theme_config, is_title=True)
+                self._style_text(slide.shapes.title.text_frame, theme_config, apply_theme, is_title=True)
             
             # Set Body
             body_shape = self._find_body_placeholder(slide)
             if body_shape:
-                 self._set_bullets(body_shape, slide_data["bullets"], theme_config)
+                 self._set_bullets(body_shape, slide_data["bullets"], theme_config, apply_theme)
             
             slide_budget -= 1
 
@@ -347,17 +357,18 @@ class PPTGenerator:
         except:
             return None
 
-    def _add_title_slide(self, prs, title: str, theme: Dict[str, Any]):
+    def _add_title_slide(self, prs, title: str, theme: Optional[Dict[str, Any]], apply_theme: bool):
         layout = prs.slide_layouts[0]
         slide = prs.slides.add_slide(layout)
         
         # Background
-        slide.background.fill.solid()
-        slide.background.fill.fore_color.rgb = RGBColor(*theme["background"])
+        if apply_theme and theme:
+            slide.background.fill.solid()
+            slide.background.fill.fore_color.rgb = RGBColor(*theme["background"])
         
         if slide.shapes.title:
             slide.shapes.title.text = title
-            self._style_text(slide.shapes.title.text_frame, theme, is_title=True, font_size=44)
+            self._style_text(slide.shapes.title.text_frame, theme, apply_theme, is_title=True, font_size=44)
             
         # Clear subtitle if exists
         if len(slide.placeholders) > 1:
@@ -365,7 +376,10 @@ class PPTGenerator:
             if subtitle:
                 subtitle.text = ""
 
-    def _apply_slide_style(self, slide, prs, theme: Dict[str, Any]):
+    def _apply_slide_style(self, slide, prs, theme: Optional[Dict[str, Any]], apply_theme: bool):
+        if not apply_theme or not theme:
+            return
+
         slide.background.fill.solid()
         slide.background.fill.fore_color.rgb = RGBColor(*theme["background"])
         
@@ -378,8 +392,17 @@ class PPTGenerator:
         bar.fill.fore_color.rgb = RGBColor(*theme["accent"])
         bar.line.fill.background()
 
-    def _style_text(self, text_frame, theme: Dict[str, Any], is_title=False, font_size=None):
+    def _style_text(
+        self,
+        text_frame,
+        theme: Optional[Dict[str, Any]],
+        apply_theme: bool,
+        is_title: bool = False,
+        font_size: Optional[int] = None,
+    ):
         if not text_frame.paragraphs:
+            return
+        if not apply_theme or not theme:
             return
             
         # If font_size not provided, set defaults
@@ -394,7 +417,13 @@ class PPTGenerator:
             p.font.size = Pt(font_size)
             p.font.color.rgb = RGBColor(*color)
 
-    def _set_bullets(self, body_shape, bullets: List[str], theme: Dict[str, Any]):
+    def _set_bullets(
+        self,
+        body_shape,
+        bullets: List[str],
+        theme: Optional[Dict[str, Any]],
+        apply_theme: bool,
+    ):
         if not hasattr(body_shape, "text_frame"):
             return
         tf = body_shape.text_frame
@@ -405,9 +434,10 @@ class PPTGenerator:
             p.text = item
             p.level = 0
             
-            p.font.name = theme["font"]
-            p.font.size = Pt(20)
-            p.font.color.rgb = RGBColor(*theme["body_color"])
+            if apply_theme and theme:
+                p.font.name = theme["font"]
+                p.font.size = Pt(20)
+                p.font.color.rgb = RGBColor(*theme["body_color"])
 
     def _find_body_placeholder(self, slide):
         for shape in slide.placeholders:

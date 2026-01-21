@@ -155,3 +155,14 @@ export:
     # Default style prompt (used when frontend doesn't provide one)
     default_style_prompt: ""
 
+    # Preset style templates for PPT generation
+    style_templates:
+      - id: "clean"
+        name: "Clean Minimal"
+        prompt: "Use a clean, minimal layout with ample white space, subtle gray dividers, and a calm, professional tone."
+      - id: "academic"
+        name: "Academic Report"
+        prompt: "Use a formal academic style with muted colors, clear section hierarchy, and emphasis on concise bullet points."
+      - id: "business"
+        name: "Business Pitch"
+        prompt: "Use a modern business deck style with bold accent color, sharp contrast, and short impactful bullets."

@@ -35,6 +35,20 @@ async def lifespan(app: FastAPI):
     """
     # Execute on startup
     logger.info("Application startup")
+    
+    # Ensure "User Notes" Knowledge Base exists
+    try:
+        from src.knowledge.manager import KnowledgeBaseManager
+        kb_manager = KnowledgeBaseManager()
+        kb_manager.create_knowledge_base(
+            "User Notes", 
+            description="Auto-generated knowledge base for user notes", 
+            set_default=False
+        )
+        logger.info("Ensured 'User Notes' knowledge base exists")
+    except Exception as e:
+        logger.error(f"Failed to initialize 'User Notes' knowledge base: {e}")
+        
     yield
     # Execute on shutdown
     logger.info("Application shutdown")

@@ -75,8 +75,8 @@ class ReportingAgent(BaseAgent):
         self.citation_manager = None  # Will be set during process
 
         # Citation configuration: read from config, default off
-        self.enable_citation_list = self.reporting_config.get("enable_citation_list", False)
-        self.enable_inline_citations = self.reporting_config.get("enable_inline_citations", False)
+        self.enable_citation_list = self.reporting_config.get("enable_citation_list", True)
+        self.enable_inline_citations = True # Force enable inline citations for Deep Research
 
     def set_citation_manager(self, citation_manager):
         """Set citation manager"""
@@ -119,22 +119,29 @@ class ReportingAgent(BaseAgent):
             progress_callback, "deduplicate_completed", kept_blocks=len(cleaned_blocks)
         )
 
-        # 2) Outline
-        print("\n📋 Step 2: Generating outline...")
-        outline = await self._generate_outline(topic, cleaned_blocks)
-        print("✓ Outline generation completed")
-        self._notify_progress(
-            progress_callback, "outline_completed", sections=len(outline.get("sections", []))
-        )
+        if self.reporting_config.get("report_type") == "summary":
+            # Summary mode: Fast generation without outline
+            print("\n✍️  Step 2: Writing summary report...")
+            report_markdown = await self._write_summary_report(topic, cleaned_blocks)
+            print("✓ Summary report writing completed")
+            self._notify_progress(progress_callback, "writing_completed")
+        else:
+            # 2) Outline
+            print("\n📋 Step 2: Generating outline...")
+            outline = await self._generate_outline(topic, cleaned_blocks)
+            print("✓ Outline generation completed")
+            self._notify_progress(
+                progress_callback, "outline_completed", sections=len(outline.get("sections", []))
+            )
 
-        # Save outline for later use
-        self._current_outline = outline
+            # Save outline for later use
+            self._current_outline = outline
 
-        # 3) Writing
-        print("\n✍️  Step 3: Writing report...")
-        report_markdown = await self._write_report(topic, cleaned_blocks, outline)
-        print("✓ Report writing completed")
-        self._notify_progress(progress_callback, "writing_completed")
+            # 3) Writing
+            print("\n✍️  Step 3: Writing report...")
+            report_markdown = await self._write_report(topic, cleaned_blocks, outline)
+            print("✓ Report writing completed")
+            self._notify_progress(progress_callback, "writing_completed")
 
         word_count = len(report_markdown)
         sections = len(cleaned_blocks)
@@ -152,11 +159,15 @@ class ReportingAgent(BaseAgent):
             citations=citations,
         )
 
+        # Prepare structured sources for frontend
+        structured_sources = self._get_structured_sources()
+
         result = {
             "report": report_markdown,
             "word_count": word_count,
             "sections": sections,
             "citations": citations,
+            "sources": structured_sources,  # Add structured sources
         }
 
         # If outline has been generated, add it to result
@@ -165,6 +176,45 @@ class ReportingAgent(BaseAgent):
             delattr(self, "_current_outline")
 
         return result
+
+    def _get_structured_sources(self) -> dict[str, list[dict]]:
+        """Extract structured sources for frontend display"""
+        sources = {"web": [], "rag": []}
+        
+        if not self.citation_manager:
+            return sources
+            
+        all_citations = self.citation_manager.get_all_citations()
+        
+        for citation in all_citations.values():
+            tool_type = citation.get("tool_type", "").lower()
+            
+            if tool_type == "web_search":
+                # Extract web links
+                web_items = citation.get("web_sources", []) or citation.get("citations", [])
+                # If individual items not found, try to use the citation itself if it looks like a web source
+                if not web_items and citation.get("url"):
+                    web_items = [citation]
+
+                for item in web_items:
+                    sources["web"].append({
+                        "title": item.get("title", "Untitled"),
+                        "url": item.get("url", ""),
+                        "content": item.get("snippet", "") or item.get("content", "") or citation.get("summary", ""),
+                        "id": str(item.get("id", "")) or citation.get("citation_id", ""),
+                    })
+            elif tool_type in ("rag_naive", "rag_hybrid", "query_item"):
+                # Extract RAG documents
+                rag_items = citation.get("sources", [])
+                for item in rag_items:
+                    sources["rag"].append({
+                        "title": item.get("title", "") or item.get("source_file", ""),
+                        "content": item.get("content_preview", ""),
+                        "page": item.get("page", ""),
+                        "kb_name": citation.get("kb_name", ""),
+                    })
+                    
+        return sources
 
     async def _deduplicate_blocks(self, blocks: list[TopicBlock]) -> list[TopicBlock]:
         if len(blocks) <= 1:
@@ -408,19 +458,21 @@ class ReportingAgent(BaseAgent):
         )
 
         resp = await self.call_llm(filled, system_prompt, stage="write_introduction", verbose=False)
-        data = extract_json_from_text(resp)
-
         try:
+            data = extract_json_from_text(resp)
             obj = ensure_json_dict(data)
             ensure_keys(obj, ["introduction"])
             intro = obj.get("introduction", "")
             if isinstance(intro, str) and intro.strip():
-                return intro
-            raise ValueError("LLM returned empty or invalid introduction field")
-        except Exception as e:
-            raise ValueError(
-                f"Unable to parse LLM returned introduction content: {e!s}. Report generation failed."
-            )
+                 return intro
+        except Exception:
+             # Fallback: if JSON parsing fails, check if the response itself looks like content
+             # Only accept if it's substantial enough
+             if len(resp) > 50:
+                 self.logger.warning("Introduction JSON parsing failed, using raw response as fallback")
+                 return resp.strip()
+        
+        raise ValueError("LLM returned empty or invalid introduction field")
 
     async def _write_section_body(
         self, topic: str, block: TopicBlock, section_outline: dict[str, Any]
@@ -471,19 +523,20 @@ class ReportingAgent(BaseAgent):
         )
 
         resp = await self.call_llm(filled, system_prompt, stage="write_section_body", verbose=False)
-        data = extract_json_from_text(resp)
-
         try:
+            data = extract_json_from_text(resp)
             obj = ensure_json_dict(data)
             ensure_keys(obj, ["section_content"])
             content = obj.get("section_content", "")
             if isinstance(content, str) and content.strip():
                 return content
-            raise ValueError("LLM returned empty or invalid section_content field")
-        except Exception as e:
-            raise ValueError(
-                f"Unable to parse LLM returned section content: {e!s}. Report generation failed."
-            )
+        except Exception:
+            # Fallback: if JSON parsing fails, assume the LLM returned raw markdown
+            if len(resp) > 100:
+                self.logger.warning(f"Section {section_outline.get('title')} JSON parsing failed, using raw response as fallback")
+                return resp.strip()
+        
+        raise ValueError("LLM returned empty or invalid section_content field")
 
     async def _write_conclusion(
         self, topic: str, blocks: list[TopicBlock], outline: dict[str, Any]
@@ -530,19 +583,20 @@ class ReportingAgent(BaseAgent):
         )
 
         resp = await self.call_llm(filled, system_prompt, stage="write_conclusion", verbose=False)
-        data = extract_json_from_text(resp)
-
         try:
+            data = extract_json_from_text(resp)
             obj = ensure_json_dict(data)
             ensure_keys(obj, ["conclusion"])
             conclusion = obj.get("conclusion", "")
             if isinstance(conclusion, str) and conclusion.strip():
                 return conclusion
-            raise ValueError("LLM returned empty or invalid conclusion field")
-        except Exception as e:
-            raise ValueError(
-                f"Unable to parse LLM returned conclusion content: {e!s}. Report generation failed."
-            )
+        except Exception:
+             # Fallback
+             if len(resp) > 50:
+                 self.logger.warning("Conclusion JSON parsing failed, using raw response as fallback")
+                 return resp.strip()
+                 
+        raise ValueError("LLM returned empty or invalid conclusion field")
 
     def _build_citation_number_map(self, blocks: list[TopicBlock]) -> dict[str, int]:
         """Build citation_id to reference number mapping with deduplication
@@ -779,84 +833,45 @@ class ReportingAgent(BaseAgent):
         return result
 
     def _format_web_search_citation(self, citation: dict) -> str:
-        """Format web search citation with collapsible links"""
-        query = citation.get("query", "")
-        summary = citation.get("summary", "")
-        web_sources = citation.get("web_sources", [])
+        """Format web search citation - Links Only"""
+        web_sources = citation.get("web_sources", []) or citation.get("citations", [])
 
-        result = "**Web Search**\n\n"
-        result += f"- **Query**: {query}\n"
-        if summary:
-            # Clean summary to avoid markdown rendering issues
-            clean_summary = self._strip_markdown(summary)
-            summary_text = clean_summary[:300] + ("..." if len(clean_summary) > 300 else "")
-            result += f"- **Summary**: {summary_text}\n"
+        if not web_sources:
+             # Fallback if no specific links but query exists
+             return f"**Web Search**: {citation.get('query', '')} (No links provided)\n\n"
 
-        # Add collapsible links section
-        if web_sources:
-            result += "\n<details>\n<summary>📎 Retrieved Sources ({} links)</summary>\n\n".format(
-                len(web_sources)
-            )
-            for i, source in enumerate(web_sources, 1):
-                title = source.get("title", "Untitled")
-                url = source.get("url", "")
-                snippet = source.get("snippet", "")
-                if url:
-                    result += f"{i}. [{title}]({url})"
-                    if snippet:
-                        clean_snippet = self._strip_markdown(snippet)
-                        result += f"\n   > {clean_snippet[:150]}{'...' if len(clean_snippet) > 150 else ''}"
-                    result += "\n\n"
-            result += "</details>"
-
+        result = ""
+        # Just list the links as requested, no query/summary noise
+        for i, source in enumerate(web_sources, 1):
+            title = source.get("title", "Untitled")
+            url = source.get("url", "")
+            if url:
+                result += f"[{i}] [{title}]({url})\n"
+        
+        result += "\n"
         return result
 
     def _format_rag_citation(self, citation: dict) -> str:
-        """Format RAG/Query citation"""
-        tool_type = citation.get("tool_type", "")
-        query = citation.get("query", "")
-        summary = citation.get("summary", "")
-        kb_name = citation.get("kb_name", "")
+        """Format RAG/Query citation - Documents Only"""
         sources = citation.get("sources", [])
+        kb_name = citation.get("kb_name", "")
 
-        # Tool name display
-        tool_display = {
-            "rag_naive": "RAG Retrieval",
-            "rag_hybrid": "Hybrid RAG Retrieval",
-            "query_item": "Knowledge Base Query",
-        }.get(tool_type, tool_type)
+        if not sources:
+            # Fallback
+            return f"**RAG Retrieval** (KB: {kb_name}) - No specific documents cited.\n\n"
 
-        result = f"**{tool_display}**"
-        if kb_name:
-            result += f" (KB: {kb_name})"
-        result += "\n\n"
-        result += f"- **Query**: {query}\n"
-        if summary:
-            # Clean summary: remove markdown formatting to avoid rendering issues
-            clean_summary = self._strip_markdown(summary)
-            summary_text = clean_summary[:300] + ("..." if len(clean_summary) > 300 else "")
-            result += f"- **Summary**: {summary_text}\n"
+        result = ""
+        # Just list the documents as requested
+        for i, source in enumerate(sources, 1):
+            title = source.get("title", "") or source.get("source_file", f"Document {i}")
+            page = source.get("page", "")
+            
+            result += f"[{i}] {title}"
+            if page:
+                result += f" (Page {page})"
+            result += "\n"
 
-        # Add source documents if available
-        if sources:
-            result += "\n<details>\n<summary>📄 Source Documents ({} docs)</summary>\n\n".format(
-                len(sources)
-            )
-            for i, source in enumerate(sources, 1):
-                title = source.get("title", "") or source.get("source_file", f"Document {i}")
-                content = source.get("content_preview", "")
-                page = source.get("page", "")
-                result += f"{i}. **{title}**"
-                if page:
-                    result += f" (Page {page})"
-                if content:
-                    clean_content = self._strip_markdown(content)
-                    result += (
-                        f"\n   > {clean_content[:150]}{'...' if len(clean_content) > 150 else ''}"
-                    )
-                result += "\n\n"
-            result += "</details>"
-
+        result += "\n"
         return result
 
     def _strip_markdown(self, text: str) -> str:
@@ -1307,6 +1322,11 @@ class ReportingAgent(BaseAgent):
                 return content
             raise ValueError("LLM returned empty or invalid section_content field")
         except Exception as e:
+            # Fallback: if JSON parsing fails, assume the LLM returned raw markdown
+            if len(resp) > 100:
+                self.logger.warning(f"Section {section.get('title')} JSON parsing failed, using raw response as fallback: {e}")
+                return resp.strip()
+            
             raise ValueError(
                 f"Unable to parse LLM returned section content: {e!s}. Report generation failed."
             )
@@ -1323,5 +1343,44 @@ class ReportingAgent(BaseAgent):
         except Exception:
             pass
 
+
+    async def _write_summary_report(self, topic: str, blocks: list[TopicBlock]) -> str:
+        """Write a comprehensive summary report from blocks (for Fast Research)"""
+        # Collect all context
+        context_parts = []
+        for b in blocks:
+            for t in b.tool_traces:
+                if t.tool_type == "web_search":
+                     # For web search, include query and snippet/summary
+                     context_parts.append(f"Source: Web Search\nQuery: {t.query}\nContent: {t.summary}")
+                elif t.tool_type in ("rag_naive", "rag_hybrid", "query_item"):
+                     context_parts.append(f"Source: Knowledge Base\nQuery: {t.query}\nContent: {t.summary}")
+        
+        full_context = "\n\n".join(context_parts)
+        
+        system_prompt = self.get_prompt(
+            "system",
+            "role",
+            "You are a helpful AI assistant capable of synthesizing information from multiple sources."
+        )
+        
+        # Simple prompt for summary
+        user_prompt = (
+            f"Please provide a comprehensive answer to the topic: {topic}\n\n"
+            f"Based STRICTLY on the following research results:\n\n{full_context}\n\n"
+            f"Instructions:\n"
+            f"- Synthesize the information into a cohesive summary.\n"
+            f"- Do not just list links or sources.\n"
+            f"- Provide a clear and readable response.\n"
+            f"- If the research results are insufficient/irrelevant, state that clearly."
+        )
+        
+        # Reuse call_llm
+        resp = await self.call_llm(user_prompt, system_prompt, stage="write_summary_report", verbose=False)
+        
+        # Clean up response (if it's JSON wrapped, though typically call_llm returns string processing result if configured, but base_agent usually returns string)
+        # BaseAgent.call_llm returns string.
+        
+        return resp
 
 __all__ = ["ReportingAgent"]

@@ -232,6 +232,8 @@ class ChatAgent(BaseAgent):
         message: str,
         history: list[dict[str, str]],
         context: str = "",
+        enable_rag: bool = False,
+        enable_web_search: bool = False,
     ) -> list[dict[str, str]]:
         """
         Build the messages array for the LLM API call.
@@ -240,19 +242,40 @@ class ChatAgent(BaseAgent):
             message: Current user message
             history: Truncated conversation history
             context: Retrieved context (RAG/Web)
+            enable_rag: Whether RAG is enabled
+            enable_web_search: Whether Web Search is enabled
 
         Returns:
             List of message dicts for OpenAI API
         """
         messages = []
 
-        # System prompt
-        system_prompt = self.get_prompt("system", "You are a helpful AI assistant.")
+        # Construct System Prompt based on mode
+        base_system_prompt = self.get_prompt("system", "You are a knowledgeable AI assistant.")
+        
+        instructions = []
+        if context:
+            # Enforce strict context usage if context is present
+            instructions.append("Answer the user's question based STRICTLY on the provided Reference Information.")
+            instructions.append("Do NOT use your own internal knowledge to answer. You must only use the information present in the Reference Information.")
+            instructions.append("If the answer is not found in the Reference Information, explicitly state that you cannot find the answer in the provided sources.")
+
+            if enable_web_search:
+                instructions.append("The Reference Information contains Web Search Results.")
+                instructions.append("Please summarize these search results to provide a comprehensive and readable answer.")
+                instructions.append("Do not just list links; synthesize the information.")
+
+        # Combine instructions
+        if instructions:
+            system_prompt = f"{base_system_prompt}\n\nInstructions:\n" + "\n".join(f"- {i}" for i in instructions)
+        else:
+            system_prompt = base_system_prompt
+
         messages.append({"role": "system", "content": system_prompt})
 
         # Add context if available
         if context:
-            context_template = self.get_prompt("context_template", "Reference context:\n{context}")
+            context_template = self.get_prompt("context_template", "Reference Information:\n{context}")
             context_msg = context_template.format(context=context)
             messages.append({"role": "system", "content": context_msg})
 
@@ -402,6 +425,8 @@ class ChatAgent(BaseAgent):
             message=message,
             history=truncated_history,
             context=context,
+            enable_rag=enable_rag,
+            enable_web_search=enable_web_search,
         )
 
         if stream:

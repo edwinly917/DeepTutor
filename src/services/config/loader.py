@@ -9,7 +9,7 @@ Provides YAML configuration loading, path resolution, and language parsing.
 """
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -210,6 +210,7 @@ class PPTConfig:
     max_tokens: int = 2000
     max_slides: int = 15
     default_style_prompt: str = ""
+    style_templates: list[dict[str, str]] = field(default_factory=list)
 
 
 def get_ppt_config(project_root: Optional[Path] = None) -> PPTConfig:
@@ -255,6 +256,7 @@ def get_ppt_config(project_root: Optional[Path] = None) -> PPTConfig:
     max_tokens = int(ppt_config.get("max_tokens", 2000))
     max_slides = int(ppt_config.get("max_slides", 15))
     default_style_prompt = ppt_config.get("default_style_prompt", "")
+    style_templates = ppt_config.get("style_templates", []) or []
 
     return PPTConfig(
         model=model,
@@ -265,6 +267,7 @@ def get_ppt_config(project_root: Optional[Path] = None) -> PPTConfig:
         max_tokens=max_tokens,
         max_slides=max_slides,
         default_style_prompt=default_style_prompt,
+        style_templates=style_templates,
     )
 
 
@@ -278,4 +281,3 @@ __all__ = [
     "PPTConfig",
     "_deep_merge",
 ]
-

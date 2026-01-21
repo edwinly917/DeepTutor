@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   BookOpen,
   Database,
@@ -45,6 +46,7 @@ interface ProgressInfo {
 }
 
 export default function KnowledgePage() {
+  const router = useRouter();
   const [kbs, setKbs] = useState<KnowledgeBase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -633,7 +635,8 @@ export default function KnowledgePage() {
           {kbs.map((kb) => (
             <div
               key={kb.name}
-              className="group bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all duration-300 hover:-translate-y-1 overflow-hidden flex flex-col"
+              onClick={() => router.push(`/knowledge/${encodeURIComponent(kb.name)}`)}
+              className="group bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all duration-300 hover:-translate-y-1 overflow-hidden flex flex-col cursor-pointer"
             >
               {/* Card Header */}
               <div className="p-6 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-start">
@@ -654,7 +657,8 @@ export default function KnowledgePage() {
                 </div>
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       setTargetKb(kb.name);
                       setFiles(null);
                       setUploadModalOpen(true);
@@ -665,7 +669,10 @@ export default function KnowledgePage() {
                     <Upload className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => handleDelete(kb.name)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(kb.name);
+                    }}
                     className="p-2 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-lg text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                     title="删除知识库"
                   >
@@ -878,8 +885,8 @@ export default function KnowledgePage() {
                 </label>
                 <div
                   className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${dragActive
-                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30"
-                      : "border-slate-200 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500 bg-slate-50 dark:bg-slate-700/50"
+                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30"
+                    : "border-slate-200 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500 bg-slate-50 dark:bg-slate-700/50"
                     }`}
                   onDragEnter={handleDrag}
                   onDragLeave={handleDrag}

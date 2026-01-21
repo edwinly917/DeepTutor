@@ -1641,12 +1641,6 @@ export default function NotebookDetailPage() {
                                                             预计剩余 {estimatedTimeRemaining}
                                                         </span>
                                                     )}
-                                                    <button
-                                                        onClick={cancelResearch}
-                                                        className="px-2 py-0.5 text-[10px] bg-red-50 text-red-600 rounded hover:bg-red-100 transition-colors"
-                                                    >
-                                                        取消
-                                                    </button>
                                                 </div>
                                             </div>
                                         </div>

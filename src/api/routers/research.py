@@ -610,53 +610,12 @@ async def websocket_research_run(websocket: WebSocket):
             await safe_send(
                 {"type": "status", "content": "started", "research_id": pipeline.research_id}
             )
-            # 8. Execute Research (Concurrent with WebSocket listener to handle cancel)
-            research_task = asyncio.create_task(pipeline.run(topic))
             
-            result = None
-            
-            # Listen for cancel messages while research is running
-            while not research_task.done():
-                # Wait for either research component or websocket message
-                ws_task = asyncio.create_task(websocket.receive_json())
-                
-                done, pending = await asyncio.wait(
-                    [research_task, ws_task], 
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-                
-                if research_task in done:
-                    # Research finished normally or with error
-                    ws_task.cancel()  # Cancel waiting for ws message
-                    try:
-                        result = research_task.result()
-                    except asyncio.CancelledError:
-                        # Cancelled by us
-                        await safe_send({"type": "cancelled", "content": "Research cancelled by user"})
-                        return
-                    except Exception as e:
-                        raise e
-                    break
-                
-                if ws_task in done:
-                    # Received message from frontend
-                    try:
-                        msg = ws_task.result()
-                        if msg.get("type") == "cancel":
-                            research_logger.warning(f"[{task_id}] Received cancel signal")
-                            research_task.cancel()
-                            # Wait for task to actually cancel
-                            try:
-                                await research_task
-                            except asyncio.CancelledError:
-                                pass
-                            await safe_send({"type": "cancelled", "content": "Research cancelled by user"})
-                            return
-                    except Exception:
-                        # WebSocket disconnected or error
-                        research_logger.warning(f"[{task_id}] WebSocket disconnected/error, cancelling research")
-                        research_task.cancel()
-                        return
+            # 8. Execute Research directly
+            # Note: We removed the concurrent WebSocket listener pattern because
+            # cancelling a pending websocket.receive_json() corrupts the connection,
+            # preventing subsequent sends from working.
+            result = await pipeline.run(topic)
 
             # 9. Handle Result
             if result:

@@ -164,6 +164,7 @@ class ChatAgent(BaseAgent):
         self,
         message: str,
         kb_name: str | None = None,
+        sources_kb_name: str | None = None,
         enable_rag: bool = False,
         enable_web_search: bool = False,
     ) -> tuple[str, dict[str, Any]]:
@@ -173,6 +174,7 @@ class ChatAgent(BaseAgent):
         Args:
             message: User message to search for
             kb_name: Knowledge base name for RAG
+            sources_kb_name: Knowledge base name for selected sources
             enable_rag: Whether to use RAG
             enable_web_search: Whether to use Web Search
 
@@ -205,6 +207,30 @@ class ChatAgent(BaseAgent):
                     self.logger.info(f"RAG retrieved {len(rag_answer)} chars")
             except Exception as e:
                 self.logger.warning(f"RAG search failed: {e}")
+
+        # Selected sources KB retrieval (always-on if provided)
+        if sources_kb_name and sources_kb_name != kb_name:
+            try:
+                self.logger.info(f"Sources KB search: {message[:50]}...")
+                sources_result = await rag_search(
+                    query=message,
+                    kb_name=sources_kb_name,
+                    mode="hybrid",
+                )
+                sources_answer = sources_result.get("answer", "")
+                if sources_answer:
+                    context_parts.append(f"[Selected Sources]\n{sources_answer}")
+                    sources["rag"].append(
+                        {
+                            "kb_name": sources_kb_name,
+                            "content": sources_answer[:500] + "..."
+                            if len(sources_answer) > 500
+                            else sources_answer,
+                        }
+                    )
+                    self.logger.info(f"Sources KB retrieved {len(sources_answer)} chars")
+            except Exception as e:
+                self.logger.warning(f"Sources KB search failed: {e}")
 
         # Web search
         if enable_web_search:
@@ -388,8 +414,10 @@ class ChatAgent(BaseAgent):
         message: str,
         history: list[dict[str, str]] | None = None,
         kb_name: str | None = None,
+        sources_kb_name: str | None = None,
         enable_rag: bool = False,
         enable_web_search: bool = False,
+        require_sources: bool = False,
         stream: bool = False,
     ) -> dict[str, Any] | AsyncGenerator[dict[str, Any], None]:
         """
@@ -399,8 +427,10 @@ class ChatAgent(BaseAgent):
             message: User message
             history: Conversation history (will be truncated if needed)
             kb_name: Knowledge base name for RAG
+            sources_kb_name: Knowledge base name for selected sources
             enable_rag: Whether to enable RAG retrieval
             enable_web_search: Whether to enable web search
+            require_sources: Whether to require sources before answering
             stream: Whether to stream the response
 
         Returns:
@@ -416,9 +446,28 @@ class ChatAgent(BaseAgent):
         context, sources = await self.retrieve_context(
             message=message,
             kb_name=kb_name,
+            sources_kb_name=sources_kb_name,
             enable_rag=enable_rag,
             enable_web_search=enable_web_search,
         )
+
+        if require_sources and not context.strip():
+            fallback = "未在已选来源或知识库中找到相关信息。"
+            if stream:
+                async def stream_generator():
+                    yield {
+                        "type": "complete",
+                        "response": fallback,
+                        "sources": sources,
+                        "truncated_history": truncated_history,
+                    }
+
+                return stream_generator()
+            return {
+                "response": fallback,
+                "sources": sources,
+                "truncated_history": truncated_history,
+            }
 
         # Build messages for LLM
         messages = self.build_messages(

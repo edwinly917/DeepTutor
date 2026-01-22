@@ -12,6 +12,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from src.agents.research.utils import coerce_text
+
 
 class TopicStatus(Enum):
     """Topic block status enumeration"""
@@ -253,7 +255,7 @@ class DynamicTopicQueue:
 
     @staticmethod
     def _normalize_topic(text: str) -> str:
-        return (text or "").strip().lower()
+        return coerce_text(text).strip().lower()
 
     def add_block(self, sub_topic: str, overview: str) -> TopicBlock:
         """

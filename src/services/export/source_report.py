@@ -46,7 +46,9 @@ class SourceReportGenerator:
 
             content = ""
             try:
-                if source_type == "web" and url:
+                if source_type == "report":
+                    content = source.get("content") or ""
+                elif source_type == "web" and url:
                     content = self._fetch_web_content(url)
                 elif source_type == "kb":
                     content = await self._fetch_kb_summary(title, topic)

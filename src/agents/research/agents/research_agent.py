@@ -19,6 +19,7 @@ from src.agents.base_agent import BaseAgent
 from src.agents.research.data_structures import DynamicTopicQueue, TopicBlock
 
 from ..utils.json_utils import extract_json_from_text
+from ..utils.text_utils import coerce_text
 
 
 class ResearchAgent(BaseAgent):
@@ -420,13 +421,38 @@ Tools already used: {", ".join(used_tools) if used_tools else "None"}
         response = await self.call_llm(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
+            response_format={"type": "json_object"},
             stage="generate_query_plan",
             verbose=False,
         )
         from ..utils.json_utils import ensure_json_dict, ensure_keys
 
+        def coerce_json_obj(value: Any) -> dict[str, Any] | None:
+            if isinstance(value, dict):
+                return value
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        return item
+            return None
+
         data = extract_json_from_text(response)
-        obj = ensure_json_dict(data)
+        obj = coerce_json_obj(data)
+        if obj is None:
+            retry_prompt = (
+                f"{user_prompt}\n\nIMPORTANT: Output ONLY a JSON object. "
+                "Do not include any extra text, explanations, or code fences."
+            )
+            response = await self.call_llm(
+                user_prompt=retry_prompt,
+                system_prompt=system_prompt,
+                response_format={"type": "json_object"},
+                stage="generate_query_plan_retry",
+                verbose=False,
+            )
+            data = extract_json_from_text(response)
+            obj = coerce_json_obj(data)
+        obj = ensure_json_dict(obj)
         ensure_keys(obj, ["query", "tool_type", "rationale"])
         return obj
 
@@ -576,9 +602,9 @@ Tools already used: {", ".join(used_tools) if used_tools else "None"}
                 if new_topic_reason:
                     print(f"{block_id_prefix}     Reason: {new_topic_reason}")
 
-            query = plan.get("query", "").strip()
-            tool_type = plan.get("tool_type", "rag_hybrid")
-            rationale = plan.get("rationale", "")
+            query = coerce_text(plan.get("query")).strip()
+            tool_type = (coerce_text(plan.get("tool_type")) or "rag_hybrid").strip()
+            rationale = coerce_text(plan.get("rationale"))
 
             if not query:
                 print(f"{block_id_prefix}   ⚠️ Generated query is empty, skipping this iteration")

@@ -98,8 +98,10 @@ async def websocket_chat(websocket: WebSocket):
         "session_id": str | null,    # Session ID (null for new session)
         "history": [...] | null,     # Optional: explicit history override
         "kb_name": str,              # Knowledge base name (for RAG)
+        "sources_kb_name": str,      # Knowledge base for selected sources
         "enable_rag": bool,          # Enable RAG retrieval
-        "enable_web_search": bool    # Enable Web Search
+        "enable_web_search": bool,   # Enable Web Search
+        "require_sources": bool      # Require sources before answering
     }
 
     Response format:
@@ -123,8 +125,10 @@ async def websocket_chat(websocket: WebSocket):
             session_id = data.get("session_id")
             explicit_history = data.get("history")  # Optional override
             kb_name = data.get("kb_name", "")
+            sources_kb_name = data.get("sources_kb_name") or ""
             enable_rag = data.get("enable_rag", False)
             enable_web_search = data.get("enable_web_search", False)
+            require_sources = data.get("require_sources", False)
 
             if not message:
                 await websocket.send_json({"type": "error", "message": "Message is required"})
@@ -145,6 +149,7 @@ async def websocket_chat(websocket: WebSocket):
                             title=message[:50] + ("..." if len(message) > 50 else ""),
                             settings={
                                 "kb_name": kb_name,
+                                "sources_kb_name": sources_kb_name,
                                 "enable_rag": enable_rag,
                                 "enable_web_search": enable_web_search,
                             },
@@ -156,6 +161,7 @@ async def websocket_chat(websocket: WebSocket):
                         title=message[:50] + ("..." if len(message) > 50 else ""),
                         settings={
                             "kb_name": kb_name,
+                            "sources_kb_name": sources_kb_name,
                             "enable_rag": enable_rag,
                             "enable_web_search": enable_web_search,
                         },
@@ -200,6 +206,15 @@ async def websocket_chat(websocket: WebSocket):
                         }
                     )
 
+                if sources_kb_name:
+                    await websocket.send_json(
+                        {
+                            "type": "status",
+                            "stage": "sources",
+                            "message": "Searching selected sources...",
+                        }
+                    )
+
                 if enable_web_search:
                     await websocket.send_json(
                         {
@@ -225,8 +240,10 @@ async def websocket_chat(websocket: WebSocket):
                     message=message,
                     history=history,
                     kb_name=kb_name,
+                    sources_kb_name=sources_kb_name,
                     enable_rag=enable_rag,
                     enable_web_search=enable_web_search,
+                    require_sources=require_sources,
                     stream=True,
                 )
 

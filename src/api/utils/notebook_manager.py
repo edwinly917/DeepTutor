@@ -69,6 +69,8 @@ class NotebookManager:
 
         self.base_dir = base_dir_path
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.sessions_dir = self.base_dir / "sessions"
+        self.sessions_dir.mkdir(parents=True, exist_ok=True)
 
         # Notebook index file
         self.index_file = self.base_dir / "notebooks_index.json"
@@ -97,6 +99,10 @@ class NotebookManager:
         """Get notebook file path"""
         return self.base_dir / f"{notebook_id}.json"
 
+    def _get_sessions_file(self, notebook_id: str) -> Path:
+        """Get notebook sessions file path"""
+        return self.sessions_dir / f"{notebook_id}.json"
+
     def _load_notebook(self, notebook_id: str) -> dict | None:
         """Load single notebook"""
         filepath = self._get_notebook_file(notebook_id)
@@ -113,6 +119,113 @@ class NotebookManager:
         filepath = self._get_notebook_file(notebook["id"])
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(notebook, f, indent=2, ensure_ascii=False)
+
+    def _load_sessions(self, notebook_id: str) -> dict:
+        """Load sessions for a notebook"""
+        filepath = self._get_sessions_file(notebook_id)
+        if not filepath.exists():
+            return {"sessions": []}
+        try:
+            with open(filepath, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {"sessions": []}
+
+    def _save_sessions(self, notebook_id: str, data: dict):
+        """Save sessions for a notebook"""
+        filepath = self._get_sessions_file(notebook_id)
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+    @staticmethod
+    def _derive_session_title(session: dict) -> str:
+        created_at = session.get("created_at") or time.time()
+        time_label = time.strftime("%Y-%m-%d %H:%M", time.localtime(created_at))
+        messages = session.get("messages", []) or []
+        for msg in messages:
+            if msg.get("role") == "user" and msg.get("content"):
+                title = " ".join(msg["content"].split())
+                short = title[:40] + "..." if len(title) > 40 else title
+                return f"{time_label} · {short}"
+        return time_label
+
+    def list_sessions(self, notebook_id: str) -> list[dict]:
+        """List all sessions for a notebook"""
+        data = self._load_sessions(notebook_id)
+        sessions = data.get("sessions", [])
+        sessions.sort(key=lambda s: s.get("created_at", 0))
+        return sessions
+
+    def get_latest_session(self, notebook_id: str) -> dict | None:
+        """Get latest session by updated_at"""
+        sessions = self._load_sessions(notebook_id).get("sessions", [])
+        if not sessions:
+            return None
+        return max(sessions, key=lambda s: s.get("updated_at", 0))
+
+    def upsert_session(self, notebook_id: str, session: dict) -> dict:
+        """Create or update a session for a notebook"""
+        data = self._load_sessions(notebook_id)
+        sessions = data.get("sessions", [])
+
+        session_id = session.get("session_id") or session.get("id") or str(uuid.uuid4())[:8]
+        now = time.time()
+
+        existing_index = next(
+            (idx for idx, s in enumerate(sessions) if s.get("session_id") == session_id), None
+        )
+
+        created_at = session.get("created_at")
+        existing = sessions[existing_index] if existing_index is not None else {}
+        if existing_index is not None:
+            created_at = sessions[existing_index].get("created_at", created_at)
+
+        incoming_title = session.get("title")
+        if incoming_title == "未命名会话":
+            incoming_title = None
+        incoming_report = session.get("research_report")
+        if existing and not incoming_report and existing.get("research_report"):
+            incoming_report = existing.get("research_report")
+        incoming_messages = session.get("messages", [])
+        if existing:
+            existing_messages = existing.get("messages", [])
+            existing_has_report = any(
+                isinstance(msg.get("content"), str) and "📚 深度研究完成" in msg.get("content", "")
+                for msg in existing_messages
+            )
+            incoming_has_report = any(
+                isinstance(msg.get("content"), str) and "📚 深度研究完成" in msg.get("content", "")
+                for msg in incoming_messages
+            )
+            if existing_has_report and not incoming_has_report:
+                incoming_messages = existing_messages
+        incoming_sources = session.get("sources", [])
+        if existing:
+            existing_report_sources = [
+                source for source in existing.get("sources", []) if source.get("type") == "report"
+            ]
+            incoming_has_report = any(source.get("type") == "report" for source in incoming_sources)
+            if existing_report_sources and not incoming_has_report:
+                incoming_sources = [*incoming_sources, *existing_report_sources]
+        merged = {
+            "session_id": session_id,
+            "title": incoming_title or self._derive_session_title(session),
+            "messages": incoming_messages,
+            "sources": incoming_sources,
+            "research_report": incoming_report,
+            "research_state": session.get("research_state"),
+            "created_at": created_at or now,
+            "updated_at": session.get("updated_at") or now,
+        }
+
+        if existing_index is None:
+            sessions.append(merged)
+        else:
+            sessions[existing_index] = merged
+
+        data["sessions"] = sessions
+        self._save_sessions(notebook_id, data)
+        return merged
 
     # === Notebook Operations ===
 

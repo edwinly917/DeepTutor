@@ -161,6 +161,17 @@ class ReportingAgent(BaseAgent):
 
         # Prepare structured sources for frontend
         structured_sources = self._get_structured_sources()
+        if not structured_sources.get("web"):
+            fallback_urls = self._extract_urls(report_markdown)
+            for url in fallback_urls:
+                structured_sources["web"].append(
+                    {
+                        "title": url,
+                        "url": url,
+                        "content": "",
+                        "id": "",
+                    }
+                )
 
         result = {
             "report": report_markdown,
@@ -207,14 +218,32 @@ class ReportingAgent(BaseAgent):
                 # Extract RAG documents
                 rag_items = citation.get("sources", [])
                 for item in rag_items:
+                    source_title = item.get("title", "") or item.get("source_file", "") or item.get(
+                        "source", ""
+                    )
                     sources["rag"].append({
-                        "title": item.get("title", "") or item.get("source_file", ""),
+                        "title": source_title,
+                        "source": item.get("source_file", "") or item.get("source", ""),
                         "content": item.get("content_preview", ""),
                         "page": item.get("page", ""),
+                        "chunk_id": item.get("chunk_id", ""),
                         "kb_name": citation.get("kb_name", ""),
                     })
                     
         return sources
+
+    @staticmethod
+    def _extract_urls(text: str) -> list[str]:
+        if not text:
+            return []
+        urls = re.findall(r"https?://[^\s)\]]+", text)
+        seen = set()
+        ordered = []
+        for url in urls:
+            if url not in seen:
+                seen.add(url)
+                ordered.append(url)
+        return ordered
 
     async def _deduplicate_blocks(self, blocks: list[TopicBlock]) -> list[TopicBlock]:
         if len(blocks) <= 1:

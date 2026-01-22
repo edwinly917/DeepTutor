@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 import re
 import sys
+import time
 import traceback
 from typing import Any, Literal
 
@@ -14,6 +15,7 @@ from pydantic import BaseModel
 from src.agents.research.agents import RephraseAgent
 from src.agents.research.research_pipeline import ResearchPipeline
 from src.api.utils.history import ActivityType, history_manager
+from src.api.utils.notebook_manager import notebook_manager
 from src.api.utils.task_id_manager import TaskIDManager
 from src.logging import get_logger
 from src.services.config import get_ppt_config, load_config_with_main
@@ -35,6 +37,102 @@ router = APIRouter()
 def load_config():
     project_root = Path(__file__).parent.parent.parent.parent
     return load_config_with_main("research_config.yaml", project_root)
+
+
+def _persist_research_session(
+    notebook_id: str | None,
+    session_id: str | None,
+    report_content: str,
+    topic: str,
+    metadata: dict | None = None,
+) -> None:
+    if not notebook_id or not session_id:
+        return
+    try:
+        sessions = notebook_manager.list_sessions(notebook_id)
+        existing = next((s for s in sessions if s.get("session_id") == session_id), None)
+        if not existing:
+            return
+        updated = dict(existing)
+        updated["research_report"] = report_content
+        updated["research_state"] = None
+        updated["updated_at"] = time.time()
+        sources = list(updated.get("sources", []) or [])
+
+        def source_key(item: dict) -> str:
+            return f"{item.get('type')}-{item.get('url') or item.get('title') or item.get('id') or ''}"
+
+        existing_keys = {source_key(s) for s in sources}
+
+        def add_source(item: dict) -> None:
+            key = source_key(item)
+            if key in existing_keys:
+                return
+            existing_keys.add(key)
+            sources.append(item)
+
+        if report_content:
+            title = f"深度研究报告 - {topic}" if topic else "深度研究报告"
+            sources = [s for s in sources if s.get("type") != "report"]
+            existing_keys = {source_key(s) for s in sources}
+            add_source(
+                {
+                    "id": f"report-{int(time.time() * 1000)}",
+                    "type": "report",
+                    "title": title,
+                    "selected": True,
+                    "content": report_content,
+                }
+            )
+
+        if metadata:
+            web_sources = metadata.get("web_sources") or []
+            for idx, source in enumerate(web_sources):
+                add_source(
+                    {
+                        "id": f"research-web-{int(time.time() * 1000)}-{idx}",
+                        "type": "web",
+                        "title": source.get("title") or source.get("url") or f"网络来源 {idx + 1}",
+                        "url": source.get("url") or "",
+                        "content": source.get("content") or source.get("snippet") or "",
+                        "selected": True,
+                    }
+                )
+
+            rag_sources = metadata.get("rag_sources") or []
+            for idx, source in enumerate(rag_sources):
+                add_source(
+                    {
+                        "id": f"research-rag-{int(time.time() * 1000)}-{idx}",
+                        "type": "kb",
+                        "title": source.get("title")
+                        or source.get("source")
+                        or source.get("source_file")
+                        or source.get("kb_name")
+                        or f"知识库来源 {idx + 1}",
+                        "url": source.get("url") or "",
+                        "content": source.get("content") or source.get("content_preview") or "",
+                        "selected": True,
+                    }
+                )
+
+            misc_sources = metadata.get("sources") or []
+            for idx, source in enumerate(misc_sources):
+                add_source(
+                    {
+                        "id": source.get("id") or f"research-src-{int(time.time() * 1000)}-{idx}",
+                        "type": source.get("type") or "web",
+                        "title": source.get("title") or source.get("url") or f"来源 {idx + 1}",
+                        "url": source.get("url") or "",
+                        "content": source.get("content") or source.get("snippet") or "",
+                        "selected": True,
+                    }
+                )
+
+        updated["sources"] = sources
+        notebook_manager.upsert_session(notebook_id, updated)
+    except Exception as exc:
+        logger.warning(f"Failed to persist research session: {exc}")
 
 
 # Initialize logger with config
@@ -67,9 +165,10 @@ class ExportPdfRequest(BaseModel):
 
 
 class SourceItem(BaseModel):
-    type: Literal["web", "kb", "file"]
+    type: Literal["web", "kb", "file", "report"]
     title: str
     url: str | None = None
+    content: str | None = None
 
 
 class ComposeFromSourcesRequest(BaseModel):
@@ -342,9 +441,14 @@ async def websocket_research_run(websocket: WebSocket):
         data = await websocket.receive_json()
         topic = data.get("topic")
         kb_name = data.get("kb_name", "ai_textbook")
+        notebook_id = data.get("notebook_id")
+        session_id = data.get("session_id")
         # New unified parameters
         plan_mode = data.get("plan_mode", "medium")  # quick, medium, deep, auto
         enabled_tools = data.get("enabled_tools", ["RAG"])  # RAG, Paper, Web
+        if "Web" not in enabled_tools:
+            enabled_tools = ["Web", *enabled_tools]
+        enabled_tools = list(dict.fromkeys(enabled_tools))
         skip_rephrase = data.get("skip_rephrase", False)
         # Legacy support
         preset = data.get("preset")  # For backward compatibility
@@ -621,6 +725,13 @@ async def websocket_research_run(websocket: WebSocket):
             if result:
                 report_content = result.get("report", "")
                 final_report_path = result.get("final_report_path", "")
+                if not report_content and final_report_path:
+                    try:
+                        report_path = Path(final_report_path)
+                        if report_path.exists():
+                            report_content = report_path.read_text(encoding="utf-8")
+                    except Exception as exc:
+                        logger.warning(f"Failed to read report from {final_report_path}: {exc}")
                 
                 # Send completion message
                 # For backward compatibility with simpler client
@@ -646,6 +757,13 @@ async def websocket_research_run(websocket: WebSocket):
                     await asyncio.sleep(1.0)
                 else:
                     research_logger.error(f"[{task_id}] Failed to send result message")
+                _persist_research_session(
+                    notebook_id,
+                    session_id,
+                    report_content,
+                    topic,
+                    metadata=result.get("metadata"),
+                )
 
             # Update task status to completed
             try:

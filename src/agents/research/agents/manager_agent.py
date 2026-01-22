@@ -15,6 +15,7 @@ sys.path.insert(0, str(project_root))
 
 from src.agents.base_agent import BaseAgent
 from src.agents.research.data_structures import DynamicTopicQueue, TopicBlock
+from src.agents.research.utils import coerce_text
 
 
 class ManagerAgent(BaseAgent):
@@ -167,7 +168,7 @@ class ManagerAgent(BaseAgent):
         if not self.queue:
             raise RuntimeError("Queue not initialized")
 
-        normalized = (sub_topic or "").strip()
+        normalized = coerce_text(sub_topic).strip()
         if not normalized:
             raise ValueError("New topic title cannot be empty")
         if self.queue.has_topic(normalized):

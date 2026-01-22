@@ -355,25 +355,57 @@ class CitationManager:
             answer_data = json.loads(raw_answer)
 
             web_sources = []
+            seen_urls = set()
+
+            def add_web_source(title: str, url: str, snippet: str = "", domain: str = "") -> None:
+                cleaned_url = (url or "").strip()
+                if not cleaned_url or cleaned_url in seen_urls:
+                    return
+                seen_urls.add(cleaned_url)
+                web_sources.append(
+                    {
+                        "title": (title or "").strip(),
+                        "url": cleaned_url,
+                        "snippet": (snippet or "")[:200],
+                        "domain": (domain or "").strip(),
+                    }
+                )
 
             # Try different field names for web results
             for field_name in ["results", "web_results", "search_results", "urls"]:
-                if field_name in answer_data:
-                    result_list = answer_data[field_name]
-                    if isinstance(result_list, list):
-                        for result in result_list[:5]:  # Limit to 5 sources
-                            if isinstance(result, dict):
-                                web_source = {
-                                    "title": result.get("title", ""),
-                                    "url": result.get("url", result.get("link", "")),
-                                    "snippet": result.get("snippet", result.get("description", ""))[
-                                        :200
-                                    ],
-                                    "domain": result.get("domain", ""),
-                                }
-                                if web_source["url"]:  # Only add if URL exists
-                                    web_sources.append(web_source)
-                    break
+                if field_name not in answer_data:
+                    continue
+                result_list = answer_data[field_name]
+                if not isinstance(result_list, list):
+                    continue
+                for result in result_list[:10]:
+                    if isinstance(result, dict):
+                        add_web_source(
+                            result.get("title", ""),
+                            result.get("url", result.get("link", "")),
+                            result.get("snippet", result.get("description", "")),
+                            result.get("domain", ""),
+                        )
+                    elif isinstance(result, str):
+                        add_web_source("", result)
+
+            # Perplexity/Baidu citations/references
+            for field_name in ["citations", "references"]:
+                if field_name not in answer_data:
+                    continue
+                citation_list = answer_data[field_name]
+                if not isinstance(citation_list, list):
+                    continue
+                for item in citation_list[:10]:
+                    if isinstance(item, dict):
+                        add_web_source(
+                            item.get("title", "") or item.get("reference", ""),
+                            item.get("url", item.get("link", item.get("href", ""))),
+                            item.get("snippet", item.get("content", item.get("text", ""))),
+                            item.get("website", ""),
+                        )
+                    elif isinstance(item, str):
+                        add_web_source("", item)
 
             citation_info["web_sources"] = web_sources
             citation_info["total_sources"] = len(web_sources)

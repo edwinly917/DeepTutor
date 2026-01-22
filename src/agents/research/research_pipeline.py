@@ -54,6 +54,7 @@ from src.agents.research.agents import (
     ResearchAgent,
 )
 from src.agents.research.data_structures import DynamicTopicQueue
+from src.agents.research.utils import coerce_text
 from src.agents.research.utils.citation_manager import CitationManager
 from src.logging import get_logger
 from src.tools.code_executor import run_code
@@ -676,8 +677,8 @@ class ResearchPipeline:
         # Add subtopics to queue
         self.logger.info("\n【Step 3】Initializing Queue...")
         for sub_topic_data in decompose_result.get("sub_topics", []):
-            title = (sub_topic_data.get("title") or "").strip()
-            overview = sub_topic_data.get("overview", "")
+            title = coerce_text(sub_topic_data.get("title")).strip()
+            overview = coerce_text(sub_topic_data.get("overview"))
             if not title:
                 continue
             try:

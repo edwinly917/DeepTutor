@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
     ArrowLeft,
@@ -20,6 +20,7 @@ import {
     Trash2,
     ChevronRight,
     ChevronLeft,
+    ChevronDown,
     Upload,
     AlertCircle,
     PenTool,
@@ -93,21 +94,52 @@ interface ChatMessage {
     role: "user" | "assistant";
     content: string;
     isStreaming?: boolean;
+    isSeparator?: boolean;
 }
 
 // Source types for the left panel
 interface Source {
     id: string;
-    type: "web" | "file" | "kb";
+    type: "web" | "file" | "kb" | "report";
     title: string;
     url?: string;
     selected: boolean;
+    content?: string;
 }
+
+interface ResearchState {
+    topic: string;
+    running: boolean;
+    phase: "planning" | "researching" | "reporting" | "idle";
+    progress: { current: number; total: number };
+    currentSubTopic?: string;
+    startedAt?: number;
+    estimatedTimeRemaining?: string;
+    planMode?: "quick" | "medium" | "deep" | "auto";
+}
+
+interface SessionSnapshot {
+    session_id: string;
+    title: string;
+    messages: ChatMessage[];
+    sources: Source[];
+    research_report?: string;
+    research_state?: ResearchState | null;
+    created_at: number;
+    updated_at: number;
+}
+
+const normalizeSources = (list: Source[] = []) =>
+    list.map((source) => ({
+        ...source,
+        selected: source.selected !== false,
+    }));
 
 export default function NotebookDetailPage() {
     const params = useParams();
     const router = useRouter();
     const notebookId = params.id as string;
+    const sourcesKbName = `notebook_${notebookId}_sources`;
 
     // Notebook state
     const [notebook, setNotebook] = useState<Notebook | null>(null);
@@ -131,6 +163,12 @@ export default function NotebookDetailPage() {
     // Chat switches
     const [enableRag, setEnableRag] = useState(true);
     const [researchMode, setResearchMode] = useState<"fast" | "deep">("fast");
+    const [sessions, setSessions] = useState<SessionSnapshot[]>([]);
+    const [currentSessionId, setCurrentSessionId] = useState("");
+    const [hasSessionActivity, setHasSessionActivity] = useState(false);
+    const sessionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const sessionCacheKey = `notebook-session-cache-${notebookId}`;
+    const [collapsedSessionIds, setCollapsedSessionIds] = useState<Record<string, boolean>>({});
 
     // Sources panel (new)
     const [sources, setSources] = useState<Source[]>([]);
@@ -139,7 +177,7 @@ export default function NotebookDetailPage() {
 
     // Deep Research config (from original research page)
     const [planMode, setPlanMode] = useState<"quick" | "medium" | "deep" | "auto">("medium");
-    const [enabledTools, setEnabledTools] = useState<string[]>(["RAG"]);
+    const [enabledTools, setEnabledTools] = useState<string[]>(["Web", "RAG"]);
     const [enableOptimization, setEnableOptimization] = useState(true);
     const [exportContentSource, setExportContentSource] = useState<"research" | "sources">("research");
     const [pptStyleMode, setPptStyleMode] = useState<"default" | "preset" | "template" | "sources">("default");
@@ -167,6 +205,196 @@ export default function NotebookDetailPage() {
 
     // Studio state
     const [studioMode, setStudioMode] = useState<"idle" | "research" | "question" | "solver" | "guide" | "ideagen" | "pdf" | "ppt" | "mindmap">("idle");
+
+    const normalizeTimestamp = (value?: number) => {
+        if (!value) return Date.now();
+        return value < 1000000000000 ? value * 1000 : value;
+    };
+
+    const formatSessionTime = (value?: number) => {
+        return new Date(normalizeTimestamp(value)).toLocaleString();
+    };
+
+    const resetResearchUiState = (clearQuery: boolean) => {
+        setResearchRunning(false);
+        setResearchPhase("idle");
+        setResearchProgress({ current: 0, total: 0 });
+        setCurrentSubTopic("");
+        setResearchStartTime(null);
+        setEstimatedTimeRemaining("");
+        if (clearQuery) {
+            setSearchQuery("");
+            setResearchTopic("");
+        }
+    };
+
+    const formatSessionTitle = (createdAt: number | undefined, messages: ChatMessage[]) => {
+        const timeLabel = formatSessionTime(createdAt);
+        const firstUser = messages.find((msg) => msg.role === "user" && msg.content.trim());
+        if (!firstUser) return timeLabel;
+        const cleaned = firstUser.content.trim().replace(/\s+/g, " ");
+        const short = cleaned.length > 40 ? `${cleaned.slice(0, 40)}...` : cleaned;
+        return `${timeLabel} · ${short}`;
+    };
+
+    const buildResearchState = (): ResearchState | null => {
+        if (!researchRunning) return null;
+        return {
+            topic: researchTopic || searchQuery || "",
+            running: true,
+            phase: researchPhase,
+            progress: researchProgress,
+            currentSubTopic: currentSubTopic || "",
+            startedAt: researchStartTime || undefined,
+            estimatedTimeRemaining: estimatedTimeRemaining || undefined,
+            planMode,
+        };
+    };
+
+    const ensureResearchReportMessage = (messages: ChatMessage[], report: string): ChatMessage[] => {
+        if (!report) return messages;
+        const banner = "**📚 深度研究完成**";
+        const hasReport = messages.some(
+            (msg) => msg.role === "assistant" && msg.content && msg.content.includes(banner)
+        );
+        if (hasReport) return messages;
+        let replaced = false;
+        const next = messages.map((msg) => {
+            if (msg.isStreaming) {
+                replaced = true;
+                return { ...msg, content: `${banner}\n\n${report}`, isStreaming: false };
+            }
+            return msg;
+        });
+        if (replaced) return next;
+        const appended: ChatMessage = {
+            id: `result-${Date.now()}`,
+            role: "assistant",
+            content: `${banner}\n\n${report}`,
+        };
+        return [...next, appended];
+    };
+
+    const hydrateSessionReport = (session: SessionSnapshot) => {
+        if (!session.research_report) return session;
+        const messages = session.messages || [];
+        const updated = ensureResearchReportMessage(messages, session.research_report);
+        if (updated === messages) return session;
+        return { ...session, messages: updated };
+    };
+
+    const applyResearchState = (state?: ResearchState | null) => {
+        if (state && state.running) {
+            setResearchMode("deep");
+            if (state.topic) {
+                setSearchQuery(state.topic);
+                setResearchTopic(state.topic);
+            }
+            setResearchRunning(true);
+            setResearchPhase(state.phase || "planning");
+            setResearchProgress(state.progress || { current: 0, total: 0 });
+            setCurrentSubTopic(state.currentSubTopic || "");
+            setResearchStartTime(state.startedAt || null);
+            setEstimatedTimeRemaining(state.estimatedTimeRemaining || "");
+            return;
+        }
+        resetResearchUiState(true);
+    };
+
+    const buildSessionSnapshot = (sessionIdOverride?: string): SessionSnapshot | null => {
+        const sessionId = sessionIdOverride || currentSessionId;
+        if (!sessionId) return null;
+        const existing = sessions.find((session) => session.session_id === sessionId);
+        const now = Date.now();
+        const createdAt = existing ? existing.created_at : now;
+        const derivedTitle = formatSessionTitle(createdAt, chatMessages);
+        return {
+            session_id: sessionId,
+            title: derivedTitle,
+            messages: chatMessages,
+            sources,
+            research_report: researchReport || "",
+            research_state: buildResearchState() || undefined,
+            created_at: createdAt,
+            updated_at: now,
+        };
+    };
+
+    const getSessionDisplayTitle = (session: SessionSnapshot, messages: ChatMessage[]) => {
+        return formatSessionTitle(session.created_at, messages);
+    };
+
+    const upsertSessionState = (snapshot: SessionSnapshot) => {
+        setSessions((prev) => {
+            const index = prev.findIndex((session) => session.session_id === snapshot.session_id);
+            if (index === -1) {
+                return [...prev, snapshot];
+            }
+            const next = [...prev];
+            next[index] = { ...next[index], ...snapshot };
+            return next;
+        });
+    };
+
+    const saveSessionSnapshot = async (snapshot: SessionSnapshot) => {
+        if (!notebookId) return;
+        if (!snapshot.messages.length && !snapshot.sources.length && !snapshot.research_report) {
+            return;
+        }
+        try {
+            const res = await fetch(apiUrl(`/api/v1/notebook/${notebookId}/sessions`), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(snapshot),
+            });
+            const data = await res.json();
+            if (data.session?.session_id) {
+                upsertSessionState({
+                    ...data.session,
+                    sources: normalizeSources(data.session.sources || []),
+                });
+            }
+        } catch (err) {
+            console.error("Failed to save session:", err);
+        }
+    };
+
+    const scheduleSessionSave = (immediate = false, sessionIdOverride?: string) => {
+        const snapshot = buildSessionSnapshot(sessionIdOverride);
+        if (!snapshot) return;
+        upsertSessionState(snapshot);
+        if (sessionSaveTimerRef.current) {
+            clearTimeout(sessionSaveTimerRef.current);
+        }
+        if (immediate) {
+            void saveSessionSnapshot(snapshot);
+            return;
+        }
+        sessionSaveTimerRef.current = setTimeout(() => {
+            void saveSessionSnapshot(snapshot);
+        }, 1200);
+    };
+
+    const ensureActiveSession = () => {
+        if (currentSessionId) return currentSessionId;
+        const newSessionId = `session-${Date.now()}`;
+        setCurrentSessionId(newSessionId);
+        return newSessionId;
+    };
+
+    const handleNewSession = async () => {
+        const currentSnapshot = buildSessionSnapshot();
+        if (currentSnapshot) {
+            await saveSessionSnapshot(currentSnapshot);
+        }
+        const newSessionId = `session-${Date.now()}`;
+        setCurrentSessionId(newSessionId);
+        setChatMessages([]);
+        setSources([]);
+        setResearchReport("");
+        setResearchError(null);
+        resetResearchUiState(true);
+    };
     const [researchTopic, setResearchTopic] = useState("");
     const [researchRunning, setResearchRunning] = useState(false);
     const [researchReport, setResearchReport] = useState("");
@@ -188,7 +416,32 @@ export default function NotebookDetailPage() {
     const chatWsRef = useRef<WebSocket | null>(null);
     const pptTemplateInputRef = useRef<HTMLInputElement>(null);
 
-    const hasSelectedSources = sources.some((source) => source.selected);
+    const aggregatedSources = useMemo(() => {
+        const result: Source[] = [];
+        const seenSessions = new Set<string>();
+        sessions.forEach((session) => {
+            const sessionSources = session.session_id === currentSessionId ? sources : session.sources;
+            result.push(...normalizeSources(sessionSources || []));
+            seenSessions.add(session.session_id);
+        });
+        if (currentSessionId && !seenSessions.has(currentSessionId)) {
+            result.push(...normalizeSources(sources));
+        }
+        return result;
+    }, [sessions, currentSessionId, sources]);
+
+    const selectedSourcesList = useMemo(
+        () => aggregatedSources.filter((source) => source.selected),
+        [aggregatedSources]
+    );
+    const hasSelectedSources = selectedSourcesList.length > 0;
+    const selectedSourcesCount = selectedSourcesList.length;
+    const totalSourceCount = aggregatedSources.length;
+    const allSourcesSelected = totalSourceCount > 0 && selectedSourcesCount === totalSourceCount;
+
+    const activeKbName = enableRag ? selectedKb : "";
+    const ragEnabled = enableRag && !!selectedKb;
+
     const canExport = exportContentSource === "research" ? !!researchReport : hasSelectedSources;
     const hasPptPresets = pptStyleTemplates.length > 0 && !!selectedPptStyleId;
     const needsSourceForStyle =
@@ -202,10 +455,158 @@ export default function NotebookDetailPage() {
     const canUseTemplateStyle = pptStyleMode !== "template" || !!selectedPptTemplate;
     const canExportPpt = canExport && canUseSourceStyle && canUsePresetStyle && canUseTemplateStyle;
 
+    useEffect(() => {
+        setEnabledTools((prev) => {
+            const next = new Set(prev);
+            next.add("Web");
+            if (ragEnabled) {
+                next.add("RAG");
+            } else {
+                next.delete("RAG");
+            }
+            return Array.from(next);
+        });
+    }, [ragEnabled]);
+
+    const sortedSessions = useMemo(() => {
+        const list = [...sessions];
+        if (currentSessionId && !list.some((session) => session.session_id === currentSessionId)) {
+            const fallback = buildSessionSnapshot(currentSessionId);
+            if (fallback) {
+                list.push(fallback);
+            }
+        }
+        return list.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+    }, [sessions, currentSessionId, chatMessages, sources, researchReport]);
+
+    const currentSessionTitle = useMemo(() => {
+        const current = sessions.find((session) => session.session_id === currentSessionId);
+        if (!current) {
+            return formatSessionTitle(Date.now(), chatMessages);
+        }
+        return getSessionDisplayTitle(current, chatMessages);
+    }, [sessions, currentSessionId, chatMessages]);
+
+    const displayMessages = useMemo(() => {
+        const merged: ChatMessage[] = [];
+        sortedSessions.forEach((session) => {
+            const isCurrent = session.session_id === currentSessionId;
+            const sessionMessages = isCurrent ? chatMessages : session.messages;
+            if (!sessionMessages || sessionMessages.length === 0) {
+                return;
+            }
+            const sessionTitle = getSessionDisplayTitle(session, sessionMessages);
+            merged.push({
+                id: `session-${session.session_id}`,
+                role: "assistant",
+                content: `—— ${sessionTitle} ——`,
+                isSeparator: true,
+            });
+            merged.push(...sessionMessages);
+        });
+        return merged;
+    }, [sortedSessions, currentSessionId, chatMessages]);
+
+    const groupedSources = useMemo(() => {
+        return sortedSessions
+            .map((session) => {
+                const isCurrent = session.session_id === currentSessionId;
+                const sessionMessages = isCurrent ? chatMessages : session.messages;
+                const sessionSources = normalizeSources(isCurrent ? sources : session.sources);
+                const selectedCount = sessionSources.filter((source) => source.selected).length;
+                return {
+                    session_id: session.session_id,
+                    title: getSessionDisplayTitle(session, sessionMessages || []),
+                    created_at: session.created_at,
+                    isCurrent,
+                    sources: sessionSources || [],
+                    selectedCount,
+                    allSelected: sessionSources.length > 0 && selectedCount === sessionSources.length,
+                };
+            })
+            .filter((group) => group.sources.length > 0);
+    }, [sortedSessions, currentSessionId, sources]);
+
     // Fetch notebook
     useEffect(() => {
         fetchNotebook();
         fetchKnowledgeBases();
+    }, [notebookId]);
+
+    useEffect(() => {
+        if (!notebookId) return;
+        let cachedSessions: SessionSnapshot[] = [];
+        try {
+            const raw = localStorage.getItem(sessionCacheKey);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed.sessions)) {
+                    cachedSessions = parsed.sessions.map((session: SessionSnapshot) =>
+                        hydrateSessionReport({
+                            ...session,
+                            sources: normalizeSources(session.sources || []),
+                        })
+                    );
+                    setSessions(cachedSessions);
+                    const cachedId =
+                        parsed.currentSessionId ||
+                        cachedSessions[cachedSessions.length - 1]?.session_id ||
+                        "";
+                    setCurrentSessionId(cachedId);
+                    const active = cachedSessions.find((s: SessionSnapshot) => s.session_id === cachedId);
+                    if (active) {
+                        setChatMessages(
+                            ensureResearchReportMessage(active.messages || [], active.research_report || "")
+                        );
+                        setSources(normalizeSources(active.sources || []));
+                        setResearchReport(active.research_report || "");
+                        applyResearchState(active.research_state);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Failed to load session cache:", err);
+        }
+
+        const loadSessions = async () => {
+            try {
+                const res = await fetch(apiUrl(`/api/v1/notebook/${notebookId}/sessions`));
+                if (!res.ok) return;
+                const data = await res.json();
+                const loaded = Array.isArray(data.sessions) ? data.sessions : [];
+                const normalized = loaded.map((session: SessionSnapshot) =>
+                    hydrateSessionReport({
+                        ...session,
+                        sources: normalizeSources(session.sources || []),
+                    })
+                );
+                if (loaded.length === 0 && cachedSessions.length === 0) {
+                    return;
+                }
+                setSessions(normalized);
+                const latest = normalized.reduce((acc: SessionSnapshot | null, session: SessionSnapshot) => {
+                    if (!acc) return session;
+                    return (session.updated_at || 0) > (acc.updated_at || 0) ? session : acc;
+                }, null);
+                if (latest) {
+                    setCurrentSessionId(latest.session_id);
+                    setChatMessages(
+                        ensureResearchReportMessage(latest.messages || [], latest.research_report || "")
+                    );
+                    setSources(normalizeSources(latest.sources || []));
+                    setResearchReport(latest.research_report || "");
+                    applyResearchState(latest.research_state);
+                }
+                localStorage.setItem(
+                    sessionCacheKey,
+                    JSON.stringify({ sessions: normalized, currentSessionId: latest?.session_id || "" })
+                );
+            } catch (err) {
+                console.error("Failed to load sessions:", err);
+            }
+        };
+
+        void loadSessions();
     }, [notebookId]);
 
     useEffect(() => {
@@ -226,7 +627,47 @@ export default function NotebookDetailPage() {
                 behavior: "smooth",
             });
         }
-    }, [chatMessages]);
+    }, [displayMessages]);
+
+    useEffect(() => {
+        if (!currentSessionId || !hasSessionActivity) return;
+        const snapshot = buildSessionSnapshot();
+        if (!snapshot) return;
+        if (!snapshot.messages.length && !snapshot.sources.length && !snapshot.research_report) {
+            return;
+        }
+        upsertSessionState(snapshot);
+    }, [chatMessages, sources, researchReport, currentSessionId, hasSessionActivity]);
+
+    useEffect(() => {
+        if (!currentSessionId || !hasSessionActivity) return;
+        if (!researchRunning) return;
+        scheduleSessionSave(false, currentSessionId);
+    }, [
+        researchRunning,
+        researchPhase,
+        researchProgress,
+        currentSubTopic,
+        researchStartTime,
+        estimatedTimeRemaining,
+        searchQuery,
+        researchTopic,
+        planMode,
+        currentSessionId,
+        hasSessionActivity,
+    ]);
+
+    useEffect(() => {
+        if (!notebookId) return;
+        try {
+            localStorage.setItem(
+                sessionCacheKey,
+                JSON.stringify({ sessions, currentSessionId })
+            );
+        } catch (err) {
+            console.error("Failed to persist session cache:", err);
+        }
+    }, [sessions, currentSessionId, notebookId]);
 
     const fetchNotebook = async () => {
         try {
@@ -246,10 +687,21 @@ export default function NotebookDetailPage() {
         try {
             const res = await fetch(apiUrl("/api/v1/knowledge/list"));
             const data = await res.json();
-            setKbs(data || []);
-            if (data.length > 0) {
-                const defaultKb = data.find((kb: KnowledgeBase) => kb.is_default);
-                setSelectedKb(defaultKb?.name || data[0].name);
+            const filtered = (data || []).filter(
+                (kb: KnowledgeBase) =>
+                    !(kb.name.startsWith("notebook_") && kb.name.endsWith("_sources"))
+            );
+            setKbs(filtered);
+            if (filtered.length > 0) {
+                const defaultKb = filtered.find((kb: KnowledgeBase) => kb.is_default);
+                setSelectedKb((prev) => {
+                    if (filtered.some((kb: KnowledgeBase) => kb.name === prev)) {
+                        return prev;
+                    }
+                    return defaultKb?.name || filtered[0].name;
+                });
+            } else {
+                setSelectedKb("");
             }
         } catch (err) {
             console.error("Failed to fetch KBs:", err);
@@ -314,23 +766,8 @@ export default function NotebookDetailPage() {
     // Chat function using WebSocket
     const handleSendChat = () => {
         if (!chatInput.trim() || isChatting) return;
-
-        // If Deep Research mode is active, trigger full research flow
-        if (researchMode === "deep") {
-            setResearchTopic(chatInput);
-            setChatInput("");
-            // Add user message to chat
-            setChatMessages((prev) => [
-                ...prev,
-                { id: Date.now().toString(), role: "user", content: chatInput },
-                { id: (Date.now() + 1).toString(), role: "assistant", content: "正在启动深度研究...", isStreaming: true },
-            ]);
-            // Start research with the topic
-            setTimeout(() => {
-                startResearchWithTopic(chatInput);
-            }, 100);
-            return;
-        }
+        const activeSessionId = ensureActiveSession();
+        setHasSessionActivity(true);
 
         const userMessage: ChatMessage = {
             id: Date.now().toString(),
@@ -342,6 +779,10 @@ export default function NotebookDetailPage() {
         setChatInput("");
         setIsChatting(true);
         setChatError(null);
+        setTimeout(() => {
+            const needsSourceSync = selectedSourcesList.length > 0;
+            scheduleSessionSave(needsSourceSync, activeSessionId);
+        }, 0);
 
         // Close existing WebSocket
         if (chatWsRef.current) {
@@ -374,9 +815,11 @@ export default function NotebookDetailPage() {
                 JSON.stringify({
                     message: userMessage.content,
                     history,
-                    kb_name: enableRag ? selectedKb : undefined,
+                    kb_name: enableRag ? selectedKb || undefined : undefined,
+                    sources_kb_name: hasSelectedSources ? sourcesKbName : undefined,
                     enable_rag: enableRag && !!selectedKb,
-                    enable_web_search: false, // 笔记本内禁用联网，使用纯 RAG 对话
+                    enable_web_search: false, // 笔记本内禁用联网，使用来源 + 知识库问答
+                    require_sources: true,
                 })
             );
 
@@ -407,6 +850,7 @@ export default function NotebookDetailPage() {
                                 : msg
                         )
                     );
+                    setTimeout(() => scheduleSessionSave(true), 0);
                     ws.close();
                 } else if (data.type === "error") {
                     setChatError(data.message || "发生未知错误");
@@ -417,6 +861,7 @@ export default function NotebookDetailPage() {
                                 : msg
                         )
                     );
+                    setTimeout(() => scheduleSessionSave(true), 0);
                 }
             } catch {
                 // Ignore parse errors for malformed messages
@@ -438,6 +883,8 @@ export default function NotebookDetailPage() {
     // Fast Research - Quick web search using chat API with web_search enabled
     const handleFastResearch = () => {
         if (!searchQuery.trim() || isSearching) return;
+        ensureActiveSession();
+        setHasSessionActivity(true);
 
         const url = wsUrl("/api/v1/chat");
         console.log("Fast Research connecting to:", url);
@@ -464,8 +911,8 @@ export default function NotebookDetailPage() {
             ws.send(JSON.stringify({
                 message: `请搜索以下内容并返回相关网页链接：${searchQuery}`,
                 history: [],
-                kb_name: selectedKb || undefined,
-                enable_rag: false,
+                kb_name: enableRag ? selectedKb || undefined : undefined,
+                enable_rag: enableRag && !!selectedKb,
                 enable_web_search: true,
                 model: "gpt-3.5-turbo",
                 stream: true,
@@ -477,26 +924,54 @@ export default function NotebookDetailPage() {
                 const data = JSON.parse(event.data);
                 if (data.type === "stream" && data.content) {
                     fullResponse += data.content;
+                } else if (data.type === "sources") {
+                    // Handle structured sources from backend
+                    const newSources: Source[] = [];
+
+                    // Handle web sources
+                    if (data.web && Array.isArray(data.web)) {
+                        data.web.forEach((s: any, idx: number) => {
+                            newSources.push({
+                                id: `web-${Date.now()}-${idx}`,
+                                type: "web" as const,
+                                title: s.title || s.url || `网络来源 ${idx + 1}`,
+                                url: s.url,
+                                content: s.content || s.snippet || "",
+                                selected: true,
+                            });
+                        });
+                    }
+
+                    // Handle RAG sources
+                    if (data.rag && Array.isArray(data.rag)) {
+                        data.rag.forEach((s: any, idx: number) => {
+                            newSources.push({
+                                id: `rag-${Date.now()}-${idx}`,
+                                type: "kb" as const,
+                                title: s.title || s.source || `知识库来源 ${idx + 1}`,
+                                url: s.url || "",
+                                content: s.content || "",
+                                selected: true,
+                            });
+                        });
+                    }
+
+                    if (newSources.length > 0) {
+                        setSources(prev => {
+                            // Avoid duplicates by URL/Content
+                            const existingUrls = new Set(prev.map(s => s.url));
+                            const uniqueNewAndOld = [...prev];
+                            newSources.forEach(s => {
+                                if (!s.url || !existingUrls.has(s.url)) {
+                                    uniqueNewAndOld.push(s);
+                                }
+                            });
+                            return uniqueNewAndOld;
+                        });
+                    }
                 } else if (data.type === "result") {
                     // Use final result content if available
                     const finalContent = data.content || fullResponse;
-                    // Parse URLs from the response
-                    const urlRegex = /https?:\/\/[^\s\]\)]+/g;
-                    const urls = finalContent.match(urlRegex) || [];
-                    const uniqueUrls = [...new Set(urls)] as string[];
-
-                    // Add as sources
-                    const newSources: Source[] = uniqueUrls.slice(0, 10).map((url: string, idx: number) => ({
-                        id: `web-${Date.now()}-${idx}`,
-                        type: "web" as const,
-                        title: url.replace(/https?:\/\/(www\.)?/, "").split("/")[0],
-                        url: url,
-                        selected: true,
-                    }));
-
-                    if (newSources.length > 0) {
-                        setSources(prev => [...prev, ...newSources]);
-                    }
 
                     // Also add the AI summary as a chat message
                     if (finalContent.trim()) {
@@ -505,6 +980,7 @@ export default function NotebookDetailPage() {
                             { id: `fast-${Date.now()}`, role: "assistant", content: `**快速搜索结果：** ${searchQuery}\n\n${finalContent}` }
                         ]);
                     }
+                    setTimeout(() => scheduleSessionSave(true), 0);
 
                     setSearchQuery("");
                     ws.close();
@@ -512,6 +988,7 @@ export default function NotebookDetailPage() {
                 } else if (data.type === "error") {
                     console.error("Fast Research Error:", data.content);
                     setChatError(data.content || "搜索失败");
+                    setTimeout(() => scheduleSessionSave(true), 0);
                     ws.close();
                     setIsSearching(false);
                 }
@@ -535,20 +1012,88 @@ export default function NotebookDetailPage() {
     };
 
     // Toggle source selection
-    const toggleSourceSelection = (sourceId: string) => {
-        setSources(prev =>
-            prev.map(s => (s.id === sourceId ? { ...s, selected: !s.selected } : s))
-        );
+    const toggleSourceSelection = (sessionId: string, sourceId: string) => {
+        setHasSessionActivity(true);
+        if (sessionId === currentSessionId) {
+            setSources((prev) =>
+                prev.map((s) => (s.id === sourceId ? { ...s, selected: !s.selected } : s))
+            );
+            setTimeout(() => scheduleSessionSave(true, sessionId), 0);
+            return;
+        }
+        let updatedSession: SessionSnapshot | null = null;
+        setSessions((prev) => {
+            const next = prev.map((session) => {
+                if (session.session_id !== sessionId) return session;
+                const nextSources = normalizeSources(session.sources || []).map((source) =>
+                    source.id === sourceId ? { ...source, selected: !source.selected } : source
+                );
+                updatedSession = { ...session, sources: nextSources, updated_at: Date.now() };
+                return updatedSession;
+            });
+            return next;
+        });
+        if (updatedSession) {
+            void saveSessionSnapshot(updatedSession);
+        }
+    };
+
+    const toggleSessionSources = (sessionId: string, selected: boolean) => {
+        setHasSessionActivity(true);
+        if (sessionId === currentSessionId) {
+            setSources((prev) => prev.map((s) => ({ ...s, selected })));
+            setTimeout(() => scheduleSessionSave(true, sessionId), 0);
+            return;
+        }
+        let updatedSession: SessionSnapshot | null = null;
+        setSessions((prev) => {
+            const next = prev.map((session) => {
+                if (session.session_id !== sessionId) return session;
+                const nextSources = normalizeSources(session.sources || []).map((source) => ({
+                    ...source,
+                    selected,
+                }));
+                updatedSession = { ...session, sources: nextSources, updated_at: Date.now() };
+                return updatedSession;
+            });
+            return next;
+        });
+        if (updatedSession) {
+            void saveSessionSnapshot(updatedSession);
+        }
     };
 
     // Select/deselect all sources
     const toggleAllSources = (selected: boolean) => {
-        setSources(prev => prev.map(s => ({ ...s, selected })));
+        setHasSessionActivity(true);
+        setSources((prev) => prev.map((s) => ({ ...s, selected })));
+        let updatedSessions: SessionSnapshot[] = [];
+        setSessions((prev) => {
+            updatedSessions = prev.map((session) => ({
+                ...session,
+                sources: normalizeSources(session.sources || []).map((source) => ({
+                    ...source,
+                    selected,
+                })),
+                updated_at: Date.now(),
+            }));
+            return updatedSessions;
+        });
+        if (currentSessionId) {
+            setTimeout(() => scheduleSessionSave(true, currentSessionId), 0);
+        }
+        updatedSessions.forEach((session) => {
+            if (session.session_id !== currentSessionId) {
+                void saveSessionSnapshot(session);
+            }
+        });
     };
 
     // Remove a source
     const removeSource = (sourceId: string) => {
-        setSources(prev => prev.filter(s => s.id !== sourceId));
+        setHasSessionActivity(true);
+        setSources((prev) => prev.filter((s) => s.id !== sourceId));
+        setTimeout(() => scheduleSessionSave(true), 0);
     };
 
     // Save content to notebook as a record
@@ -565,9 +1110,9 @@ export default function NotebookDetailPage() {
                     user_query: title,
                     output: content,
                     metadata: {
-                        sources: sources.filter(s => s.selected).map(s => ({ title: s.title, url: s.url })),
+                        sources: selectedSourcesList.map((s) => ({ title: s.title, url: s.url })),
                     },
-                    kb_name: selectedKb || undefined,
+                    kb_name: activeKbName || undefined,
                 }),
             });
             const data = await res.json();
@@ -625,6 +1170,23 @@ export default function NotebookDetailPage() {
         if (!notebook) return;
 
         try {
+            const extractTitleLine = (raw: string) => {
+                const lines = raw.split("\n");
+                const normalizedFirst = lines.length > 0
+                    ? lines[0].replace(/^[#>*\s]+/, "").replace(/\*\*/g, "").trim()
+                    : "";
+                const startIndex = normalizedFirst.includes("深度研究完成") ? 1 : 0;
+                const tail = lines.slice(startIndex);
+                const h1 = tail.find((line) => /^#\s+\S/.test(line));
+                if (h1) return h1.replace(/^#\s+/, "").trim();
+                const heading = tail.find((line) => /^#{2,6}\s+\S/.test(line));
+                if (heading) return heading.replace(/^#{2,6}\s+/, "").trim();
+                for (const line of tail) {
+                    const cleaned = line.replace(/^[#>*\s]+/, "").replace(/\*\*/g, "").trim();
+                    if (cleaned) return cleaned;
+                }
+                return "";
+            };
             // Generate title using LLM for higher quality
             const res = await fetch(apiUrl("/api/v1/notebook/generate_title"), {
                 method: "POST",
@@ -632,7 +1194,7 @@ export default function NotebookDetailPage() {
                 body: JSON.stringify({ content })
             });
             const data = await res.json();
-            const title = data.title || "AI 生成笔记";
+            const title = data.title || extractTitleLine(content) || "AI 生成笔记";
 
             setNoteTitle(title);
             setNoteContent(content);
@@ -640,9 +1202,25 @@ export default function NotebookDetailPage() {
         } catch (err) {
             console.error("Failed to generate title:", err);
             // Fallback to first line extraction
-            const firstLine = content.split('\n')[0].replace(/^#+\s*/, '').trim();
+            const firstLine = (() => {
+                const lines = content.split("\n");
+                const normalizedFirst = lines.length > 0
+                    ? lines[0].replace(/^[#>*\s]+/, "").replace(/\*\*/g, "").trim()
+                    : "";
+                const startIndex = normalizedFirst.includes("深度研究完成") ? 1 : 0;
+                const tail = lines.slice(startIndex);
+                const h1 = tail.find((line) => /^#\s+\S/.test(line));
+                if (h1) return h1.replace(/^#\s+/, "").trim();
+                const heading = tail.find((line) => /^#{2,6}\s+\S/.test(line));
+                if (heading) return heading.replace(/^#{2,6}\s+/, "").trim();
+                for (const line of tail) {
+                    const cleaned = line.replace(/^[#>*\s]+/, "").replace(/\*\*/g, "").trim();
+                    if (cleaned) return cleaned;
+                }
+                return "";
+            })();
             const autoTitle = firstLine.length > 30
-                ? firstLine.substring(0, 30) + '...'
+                ? firstLine.substring(0, 30) + "..."
                 : firstLine || "新 AI 笔记";
             setNoteTitle(autoTitle);
             setNoteContent(content);
@@ -692,26 +1270,11 @@ export default function NotebookDetailPage() {
             url: sourceUrl,
             selected: true,
         };
+        setHasSessionActivity(true);
         setSources(prev => [...prev, newSource]);
+        setTimeout(() => scheduleSessionSave(true), 0);
         setSourceUrl("");
         setShowAddSourceModal(false);
-    };
-    const cancelResearch = () => {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({ type: "cancel" }));
-        }
-        setResearchRunning(false);
-        setIsChatting(false);
-        setResearchPhase("idle");
-        setResearchStartTime(null);
-        setEstimatedTimeRemaining("");
-        setChatMessages((prev) =>
-            prev.map((msg) =>
-                msg.isStreaming
-                    ? { ...msg, content: msg.content + "\n\n[研究已取消]", isStreaming: false }
-                    : msg
-            )
-        );
     };
 
 
@@ -720,6 +1283,10 @@ export default function NotebookDetailPage() {
     const startResearchWithTopic = (topic?: string) => {
         const researchTopicToUse = topic || researchTopic;
         if (!researchTopicToUse.trim() || researchRunning) return;
+        const activeSessionId = ensureActiveSession();
+        setHasSessionActivity(true);
+        setResearchTopic(researchTopicToUse);
+        setSearchQuery(researchTopicToUse);
 
         if (wsRef.current) wsRef.current.close();
 
@@ -764,7 +1331,7 @@ export default function NotebookDetailPage() {
             }
         }, 15000);
 
-        // Research timeout (45 minutes max for complex topics)
+        // Research timeout (90 minutes max for complex topics)
         const researchTimeout = setTimeout(() => {
             if (wsRef.current === ws && ws.readyState === WebSocket.OPEN) {
                 ws.close();
@@ -773,18 +1340,24 @@ export default function NotebookDetailPage() {
                 setResearchRunning(false);
                 setIsChatting(false);
             }
-        }, 2700000);
+        }, 5400000);
 
         ws.onopen = () => {
             clearTimeout(connectionTimeout);
             console.log("Deep Research WS Connected");
+            const baseTools = ragEnabled
+                ? enabledTools
+                : enabledTools.filter((tool) => tool !== "RAG");
+            const toolsToUse = Array.from(new Set(["Web", ...baseTools]));
             ws.send(
                 JSON.stringify({
                     topic: researchTopicToUse,
-                    kb_name: selectedKb,
+                    kb_name: ragEnabled ? activeKbName : undefined,
                     plan_mode: planMode,
-                    enabled_tools: enabledTools,
+                    enabled_tools: toolsToUse,
                     skip_rephrase: !enableOptimization,
+                    notebook_id: notebookId,
+                    session_id: activeSessionId,
                 })
             );
         };
@@ -796,6 +1369,22 @@ export default function NotebookDetailPage() {
                     clearTimeout(researchTimeout);
                     const report = data.report || "";
                     setResearchReport(report);
+                    if (report) {
+                        const reportTitle = researchTopicToUse
+                            ? `深度研究报告 - ${researchTopicToUse}`
+                            : "深度研究报告";
+                        const reportSource: Source = {
+                            id: `report-${data.research_id || Date.now()}`,
+                            type: "report",
+                            title: reportTitle,
+                            selected: true,
+                            content: report,
+                        };
+                        setSources((prev) => {
+                            const withoutReports = prev.filter((source) => source.type !== "report");
+                            return [...withoutReports, reportSource];
+                        });
+                    }
                     setResearchRunning(false);
                     setIsChatting(false);
                     setResearchPhase("idle");
@@ -803,6 +1392,8 @@ export default function NotebookDetailPage() {
                     setCurrentSubTopic("");
                     setResearchStartTime(null);
                     setEstimatedTimeRemaining("");
+                    setSearchQuery("");
+                    setResearchTopic("");
 
                     // Update chat with research result - ensure report is displayed
                     if (report) {
@@ -836,6 +1427,7 @@ export default function NotebookDetailPage() {
                                     type: "web" as const,
                                     title: s.title || s.url || `网络来源 ${idx + 1}`,
                                     url: s.url,
+                                    content: s.content || s.snippet || "",
                                     selected: true,
                                 });
                             });
@@ -844,11 +1436,22 @@ export default function NotebookDetailPage() {
                         // Handle RAG sources
                         if (data.metadata.rag_sources && Array.isArray(data.metadata.rag_sources)) {
                             data.metadata.rag_sources.forEach((s: any, idx: number) => {
+                                const ragTitle =
+                                    s.title ||
+                                    s.source ||
+                                    s.source_file ||
+                                    s.kb_name ||
+                                    `知识库来源 ${idx + 1}`;
+                                const ragDetailParts: string[] = [];
+                                if (s.page) ragDetailParts.push(`页 ${s.page}`);
+                                if (s.chunk_id) ragDetailParts.push(`段落 ${s.chunk_id}`);
+                                const ragDetail = ragDetailParts.join(" · ");
                                 newSources.push({
                                     id: `research-rag-${Date.now()}-${idx}`,
                                     type: "kb" as const,
-                                    title: s.title || s.source || `知识库来源 ${idx + 1}`,
-                                    url: s.url || "",
+                                    title: ragTitle,
+                                    url: ragDetail || "",
+                                    content: s.content || s.content_preview || "",
                                     selected: true,
                                 });
                             });
@@ -862,6 +1465,7 @@ export default function NotebookDetailPage() {
                                     type: (s.type === "web" ? "web" : "kb") as "web" | "kb",
                                     title: s.title || s.url || `来源 ${idx + 1}`,
                                     url: s.url || "",
+                                    content: s.content || s.snippet || "",
                                     selected: true,
                                 });
                             });
@@ -871,6 +1475,7 @@ export default function NotebookDetailPage() {
                             setSources(prev => [...prev, ...newSources]);
                         }
                     }
+                    setTimeout(() => scheduleSessionSave(true), 0);
                 } else if (data.type === "error") {
                     clearTimeout(researchTimeout);
                     console.error("Deep Research Error:", data);
@@ -886,6 +1491,7 @@ export default function NotebookDetailPage() {
                                 : msg
                         )
                     );
+                    setTimeout(() => scheduleSessionSave(true), 0);
                 } else if (data.type === "progress") {
                     // Handle progress events from backend
                     const stage = data.stage as "planning" | "researching" | "reporting";
@@ -1002,6 +1608,7 @@ export default function NotebookDetailPage() {
                 }
                 return prev;
             });
+            setTimeout(() => scheduleSessionSave(true, activeSessionId), 0);
         };
     };
 
@@ -1011,8 +1618,7 @@ export default function NotebookDetailPage() {
             return researchReport;
         }
 
-        const selectedSources = sources.filter((source) => source.selected);
-        if (selectedSources.length === 0) {
+        if (selectedSourcesList.length === 0) {
             alert("请先选择来源");
             return "";
         }
@@ -1021,10 +1627,11 @@ export default function NotebookDetailPage() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                sources: selectedSources.map((source) => ({
+                sources: selectedSourcesList.map((source) => ({
                     type: source.type,
                     title: source.title,
                     url: source.url,
+                    content: source.content,
                 })),
                 topic: notebook?.name || undefined,
             }),
@@ -1042,8 +1649,7 @@ export default function NotebookDetailPage() {
     };
 
     const getSourcesStylePrompt = async () => {
-        const selectedSources = sources.filter((source) => source.selected);
-        if (selectedSources.length === 0) {
+        if (selectedSourcesList.length === 0) {
             alert("请先选择来源以生成风格");
             return "";
         }
@@ -1051,10 +1657,11 @@ export default function NotebookDetailPage() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                sources: selectedSources.map((source) => ({
+                sources: selectedSourcesList.map((source) => ({
                     type: source.type,
                     title: source.title,
                     url: source.url,
+                    content: source.content,
                 })),
                 topic: notebook?.name || undefined,
             }),
@@ -1391,7 +1998,7 @@ export default function NotebookDetailPage() {
                         根据已选来源生成风格提示词。
                     </p>
                     <div className="text-[11px] text-slate-400">
-                        {hasSelectedSources ? `已选来源 ${sources.filter((s) => s.selected).length} 个` : "暂无已选来源"}
+                        {hasSelectedSources ? `已选来源 ${selectedSourcesCount} 个` : "暂无已选来源"}
                     </div>
                 </div>
             )}
@@ -1661,21 +2268,21 @@ export default function NotebookDetailPage() {
                 {/* Sources List Header */}
                 <div className="px-3 pt-3 pb-2 flex items-center justify-between">
                     <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                        已选来源 ({sources.filter(s => s.selected).length})
+                        已选来源 ({selectedSourcesCount}/{totalSourceCount})
                     </div>
-                    {sources.length > 0 && (
+                    {totalSourceCount > 0 && (
                         <button
-                            onClick={() => toggleAllSources(true)}
+                            onClick={() => toggleAllSources(!allSourcesSelected)}
                             className="text-xs text-blue-600 hover:underline"
                         >
-                            全选
+                            {allSourcesSelected ? "取消全选" : "全选"}
                         </button>
                     )}
                 </div>
 
                 {/* Sources List Content */}
                 <div className="flex-1 overflow-y-auto px-3 pb-3">
-                    {sources.length === 0 ? (
+                    {groupedSources.length === 0 ? (
                         <div className="text-center py-8">
                             <FileText className="w-10 h-10 text-slate-200 mx-auto mb-3" />
                             <p className="text-sm text-slate-500 mb-1">暂无来源</p>
@@ -1684,36 +2291,86 @@ export default function NotebookDetailPage() {
                             </p>
                         </div>
                     ) : (
-                        <div className="space-y-1">
-                            {sources.map((source) => (
-                                <div
-                                    key={source.id}
-                                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 group"
-                                >
-                                    <button
-                                        onClick={() => toggleSourceSelection(source.id)}
-                                        className="shrink-0"
-                                    >
-                                        {source.selected ? (
-                                            <CheckSquare className="w-4 h-4 text-blue-600" />
-                                        ) : (
-                                            <Square className="w-4 h-4 text-slate-300" />
-                                        )}
-                                    </button>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm text-slate-700 truncate">{source.title}</p>
-                                        {source.url && (
-                                            <p className="text-xs text-slate-400 truncate">{source.url}</p>
+                        <div className="space-y-3">
+                            {groupedSources.map((group) => {
+                                const isCollapsed = !!collapsedSessionIds[group.session_id];
+                                return (
+                                    <div key={group.session_id}>
+                                        <div className="text-[11px] text-slate-400 uppercase tracking-wide mb-1 flex items-center justify-between">
+                                            <button
+                                                onClick={() =>
+                                                    setCollapsedSessionIds((prev) => ({
+                                                        ...prev,
+                                                        [group.session_id]: !prev[group.session_id],
+                                                    }))
+                                                }
+                                                className="flex items-center gap-1 text-slate-400 hover:text-slate-500"
+                                            >
+                                                {isCollapsed ? (
+                                                    <ChevronRight className="w-3 h-3" />
+                                                ) : (
+                                                    <ChevronDown className="w-3 h-3" />
+                                                )}
+                                                <span className="truncate">{group.title}</span>
+                                            </button>
+                                            <div className="flex items-center gap-2 text-[10px] normal-case text-slate-300">
+                                                <span className="tabular-nums">
+                                                    {group.selectedCount}/{group.sources.length}
+                                                </span>
+                                                <button
+                                                    onClick={() =>
+                                                        toggleSessionSources(group.session_id, !group.allSelected)
+                                                    }
+                                                    className="text-blue-600 hover:underline"
+                                                >
+                                                    {group.allSelected ? "取消" : "全选"}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {!isCollapsed && (
+                                            <div className="space-y-1">
+                                                {group.sources.map((source) => (
+                                                    <div
+                                                        key={source.id}
+                                                        className={`flex items-center gap-2 p-2 rounded-lg ${group.isCurrent ? "hover:bg-slate-50" : "hover:bg-slate-50/70"} group`}
+                                                    >
+                                                        <button
+                                                            onClick={() =>
+                                                                toggleSourceSelection(group.session_id, source.id)
+                                                            }
+                                                            className="shrink-0"
+                                                        >
+                                                            {source.selected ? (
+                                                                <CheckSquare className="w-4 h-4 text-blue-600" />
+                                                            ) : (
+                                                                <Square className="w-4 h-4 text-slate-300" />
+                                                            )}
+                                                        </button>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-sm text-slate-700 truncate">
+                                                                {source.title}
+                                                            </p>
+                                                            {source.url && (
+                                                                <p className="text-xs text-slate-400 truncate">
+                                                                    {source.url}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                        {group.isCurrent && (
+                                                            <button
+                                                                onClick={() => removeSource(source.id)}
+                                                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 rounded"
+                                                            >
+                                                                <X className="w-3 h-3 text-red-500" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
                                         )}
                                     </div>
-                                    <button
-                                        onClick={() => removeSource(source.id)}
-                                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 rounded"
-                                    >
-                                        <X className="w-3 h-3 text-red-500" />
-                                    </button>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
 
@@ -1766,9 +2423,9 @@ export default function NotebookDetailPage() {
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <h3 className="font-semibold text-slate-900">对话</h3>
-                            {sources.filter(s => s.selected).length > 0 && (
+                            {selectedSourcesList.length > 0 && (
                                 <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full font-medium">
-                                    引用 {sources.filter(s => s.selected).length} 个来源
+                                    引用 {selectedSourcesList.length} 个来源
                                 </span>
                             )}
                         </div>
@@ -1780,7 +2437,7 @@ export default function NotebookDetailPage() {
                     ref={chatContainerRef}
                     className="flex-1 overflow-y-auto p-4 space-y-4"
                 >
-                    {chatMessages.length === 0 ? (
+                    {displayMessages.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-center">
                             <Bot className="w-12 h-12 text-slate-200 mb-3" />
                             <p className="text-slate-500 text-sm">开始对话吧</p>
@@ -1789,58 +2446,67 @@ export default function NotebookDetailPage() {
                             </p>
                         </div>
                     ) : (
-                        chatMessages.map((msg) => (
-                            <div
-                                key={msg.id}
-                                className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"
-                                    }`}
-                            >
-                                {msg.role === "assistant" && (
-                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0">
-                                        <Bot className="w-4 h-4 text-white" />
-                                    </div>
-                                )}
+                        displayMessages.map((msg) => (
+                            msg.isSeparator ? (
                                 <div
-                                    className={`max-w-[70%] rounded-2xl px-4 py-3 ${msg.role === "user"
-                                        ? "bg-blue-600 text-white rounded-br-none"
-                                        : "bg-white border border-slate-200 text-slate-700 rounded-bl-none"
+                                    key={msg.id}
+                                    className="flex justify-center text-[11px] text-slate-400 py-2"
+                                >
+                                    {msg.content}
+                                </div>
+                            ) : (
+                                <div
+                                    key={msg.id}
+                                    className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"
                                         }`}
                                 >
-                                    {msg.role === "assistant" ? (
-                                        <>
-                                            <div className="prose prose-sm prose-slate max-w-none">
-                                                <ReactMarkdown
-                                                    remarkPlugins={[remarkMath]}
-                                                    rehypePlugins={[rehypeKatex]}
-                                                >
-                                                    {processLatexContent(msg.content)}
-                                                </ReactMarkdown>
-                                            </div>
-                                            {!msg.isStreaming && (
-                                                <div className="mt-2 flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                                                    <button
-                                                        onClick={() => handleQuickAddNote(msg.content)}
-                                                        className="flex items-center gap-1 text-xs text-slate-500 hover:text-blue-600 transition-colors"
-                                                        title="添加到笔记"
-                                                    >
-                                                        <FilePlus className="w-3.5 h-3.5" />
-                                                        <span>存为笔记</span>
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <p className="text-sm">{msg.content}</p>
-                                    )}
-                                </div>
-                                {
-                                    msg.role === "user" && (
-                                        <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
-                                            <User className="w-4 h-4 text-slate-500" />
+                                    {msg.role === "assistant" && (
+                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0">
+                                            <Bot className="w-4 h-4 text-white" />
                                         </div>
-                                    )
-                                }
-                            </div>
+                                    )}
+                                    <div
+                                        className={`max-w-[70%] rounded-2xl px-4 py-3 ${msg.role === "user"
+                                            ? "bg-blue-600 text-white rounded-br-none"
+                                            : "bg-white border border-slate-200 text-slate-700 rounded-bl-none"
+                                            }`}
+                                    >
+                                        {msg.role === "assistant" ? (
+                                            <>
+                                                <div className="prose prose-sm prose-slate max-w-none">
+                                                    <ReactMarkdown
+                                                        remarkPlugins={[remarkMath]}
+                                                        rehypePlugins={[rehypeKatex]}
+                                                    >
+                                                        {processLatexContent(msg.content)}
+                                                    </ReactMarkdown>
+                                                </div>
+                                                {!msg.isStreaming && (
+                                                    <div className="mt-2 flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                                                        <button
+                                                            onClick={() => handleQuickAddNote(msg.content)}
+                                                            className="flex items-center gap-1 text-xs text-slate-500 hover:text-blue-600 transition-colors"
+                                                            title="添加到笔记"
+                                                        >
+                                                            <FilePlus className="w-3.5 h-3.5" />
+                                                            <span>存为笔记</span>
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <p className="text-sm">{msg.content}</p>
+                                        )}
+                                    </div>
+                                    {
+                                        msg.role === "user" && (
+                                            <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
+                                                <User className="w-4 h-4 text-slate-500" />
+                                            </div>
+                                        )
+                                    }
+                                </div>
+                            )
                         ))
                     )}
                 </div>
@@ -1861,6 +2527,16 @@ export default function NotebookDetailPage() {
 
                 {/* Chat Input */}
                 <div className="p-4 border-t border-slate-200 bg-white">
+                    <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
+                        <span className="truncate">当前会话：{currentSessionTitle}</span>
+                        <button
+                            onClick={handleNewSession}
+                            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                            新会话
+                        </button>
+                    </div>
                     <div className="flex gap-2">
                         <input
                             type="text"
@@ -2487,6 +3163,7 @@ export default function NotebookDetailPage() {
                                                         title: e.target.value,
                                                         selected: true,
                                                     };
+                                                    setHasSessionActivity(true);
                                                     setSources(prev => [...prev, newSource]);
                                                 }
                                             }}

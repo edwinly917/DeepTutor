@@ -28,7 +28,7 @@
 - No explicit coverage thresholds are documented.
 
 ## Commit & Pull Request Guidelines
-- Use Conventional Commit style when possible: `feat: ...`, `fix: ...`, `docs: ...`, `chore: ...` (matches recent history and `CONTRIBUTING.md`).
+- Recent history mostly uses Conventional Commit prefixes (`feat:`, `fix:`, `docs:`, `chore:`) with occasional `exp:` or plain `update`/`fix lint`; follow Conventional Commits unless a workflow says otherwise.
 - Branch from `dev` and open PRs targeting `dev`.
 - Run `pre-commit run --all-files` before opening a PR.
 - PRs should include a concise summary, testing notes, linked issues, and screenshots for UI changes when applicable.

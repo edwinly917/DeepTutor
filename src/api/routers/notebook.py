@@ -4,7 +4,11 @@ Provides notebook creation, querying, updating, deletion, and record management 
 """
 
 from pathlib import Path
+import hashlib
+import json
+import re
 import sys
+import time
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks
@@ -18,11 +22,208 @@ if str(project_root) not in sys.path:
 from src.api.utils.notebook_manager import notebook_manager
 from src.services.llm import get_llm_config
 from src.api.routers.knowledge import run_upload_processing_task, _kb_base_dir
+from src.knowledge.manager import KnowledgeBaseManager
 
 router = APIRouter()
 
 
 # === Helper Functions ===
+def _strip_research_banner(content: str) -> str:
+    lines = content.splitlines()
+    if not lines:
+        return content
+
+    first_line = re.sub(r"^[#>*\\s]+", "", lines[0]).strip()
+    first_line = first_line.replace("*", "").strip()
+    if "深度研究完成" in first_line:
+        return "\n".join(lines[1:]).lstrip()
+    return content
+
+
+def _extract_markdown_title(content: str) -> str:
+    lines = content.splitlines()
+    # Prefer first H1 after banner
+    for line in lines:
+        if re.match(r"^#\\s+\\S", line):
+            return re.sub(r"^#\\s+", "", line).strip()
+    # Fallback to any heading
+    for line in lines:
+        if re.match(r"^#{2,6}\\s+\\S", line):
+            return re.sub(r"^#{2,6}\\s+", "", line).strip()
+    # Final fallback to first non-empty text line
+    for line in lines:
+        cleaned = re.sub(r"^[#>*\\s]+", "", line).strip()
+        cleaned = cleaned.replace("*", "").strip()
+        if cleaned:
+            return cleaned
+    return ""
+
+
+MAX_SOURCE_CONTENT_CHARS = 8000
+REPORT_SOURCE_CONTENT_CHARS = 20000
+SOURCES_KB_DESCRIPTION = "Notebook selected sources"
+
+
+def _get_notebook_sources_kb_name(notebook_id: str) -> str:
+    return f"notebook_{notebook_id}_sources"
+
+
+def _normalize_source_payload(source: dict) -> dict:
+    content = (source.get("content") or "").strip()
+    max_chars = (
+        REPORT_SOURCE_CONTENT_CHARS
+        if source.get("type") == "report"
+        else MAX_SOURCE_CONTENT_CHARS
+    )
+    if len(content) > max_chars:
+        content = content[:max_chars] + "\n\n[truncated]"
+    return {
+        "id": source.get("id") or "",
+        "type": source.get("type") or "web",
+        "title": source.get("title") or source.get("url") or "Source",
+        "url": source.get("url") or "",
+        "content": content,
+    }
+
+
+def _source_key(source: dict) -> str:
+    key = source.get("url") or source.get("id") or source.get("title") or ""
+    return f"{source.get('type','')}-{key}"
+
+
+def _dedupe_sources(sources: list[dict]) -> list[dict]:
+    seen = set()
+    deduped = []
+    for source in sources:
+        key = _source_key(source)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(source)
+    return deduped
+
+
+def _collect_selected_sources(sessions: list[dict]) -> list[dict]:
+    selected = []
+    for session in sessions:
+        for source in session.get("sources", []) or []:
+            if not source:
+                continue
+            if source.get("selected", True):
+                selected.append(_normalize_source_payload(source))
+    return _dedupe_sources(selected)
+
+
+def _source_digest(source: dict) -> dict:
+    content = source.get("content") or ""
+    content_hash = hashlib.sha1(content.encode("utf-8")).hexdigest()
+    return {
+        "id": source.get("id") or "",
+        "type": source.get("type") or "",
+        "title": source.get("title") or "",
+        "url": source.get("url") or "",
+        "content_hash": content_hash,
+    }
+
+
+def _sources_signature(sources: list[dict]) -> str:
+    payload = [_source_digest(source) for source in sources]
+    payload.sort(key=lambda item: (item["type"], item["url"], item["id"], item["title"]))
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=True)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _load_sources_manifest(kb_dir: Path) -> dict:
+    manifest_path = kb_dir / "sources_manifest.json"
+    if not manifest_path.exists():
+        return {}
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _write_sources_manifest(kb_dir: Path, signature: str, sources: list[dict]) -> None:
+    manifest = {
+        "signature": signature,
+        "count": len(sources),
+        "updated_at": time.time(),
+        "sources": [
+            {
+                "id": source.get("id") or "",
+                "type": source.get("type") or "",
+                "title": source.get("title") or "",
+                "url": source.get("url") or "",
+            }
+            for source in sources
+        ],
+    }
+    manifest_path = kb_dir / "sources_manifest.json"
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=True, indent=2)
+
+
+def _format_source_markdown(source: dict) -> str:
+    title = source.get("title") or source.get("url") or "Source"
+    lines = [f"# {title}"]
+    if source.get("type"):
+        lines.append(f"\nType: {source['type']}")
+    if source.get("url"):
+        lines.append(f"\nSource: {source['url']}")
+    if source.get("content"):
+        lines.append(f"\n\n{source['content']}")
+    return "\n".join(lines).strip() + "\n"
+
+
+def _write_source_files(raw_dir: Path, sources: list[dict]) -> list[str]:
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    file_paths = []
+    for source in sources:
+        key = _source_key(source) or f"source-{len(file_paths)}"
+        digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+        filename = f"source_{digest}.md"
+        file_path = raw_dir / filename
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(_format_source_markdown(source))
+        file_paths.append(str(file_path))
+    return file_paths
+
+
+def _sync_sources_kb(notebook_id: str, background_tasks: BackgroundTasks) -> str | None:
+    sessions = notebook_manager.list_sessions(notebook_id)
+    selected_sources = _collect_selected_sources(sessions)
+    if not selected_sources:
+        return None
+
+    signature = _sources_signature(selected_sources)
+    kb_name = _get_notebook_sources_kb_name(notebook_id)
+    kb_manager = KnowledgeBaseManager(base_dir=str(_kb_base_dir))
+
+    if kb_name in kb_manager.list_knowledge_bases():
+        kb_dir = kb_manager.get_knowledge_base_path(kb_name)
+        manifest = _load_sources_manifest(kb_dir)
+        if manifest.get("signature") == signature:
+            return kb_name
+        kb_manager.delete_knowledge_base(kb_name, confirm=True)
+
+    kb_dir = Path(kb_manager.create_knowledge_base(kb_name, description=SOURCES_KB_DESCRIPTION))
+    raw_dir = kb_dir / "raw"
+    file_paths = _write_source_files(raw_dir, selected_sources)
+    _write_sources_manifest(kb_dir, signature, selected_sources)
+
+    if file_paths:
+        llm_cfg = get_llm_config()
+        background_tasks.add_task(
+            run_upload_processing_task,
+            kb_name=kb_name,
+            base_dir=str(_kb_base_dir),
+            api_key=llm_cfg.api_key,
+            base_url=llm_cfg.base_url,
+            uploaded_file_paths=file_paths,
+        )
+
+    return kb_name
 
 async def _trigger_kb_indexing(kb_sync_info: dict, background_tasks: BackgroundTasks):
     """Trigger KB indexing for a synced note"""
@@ -94,6 +295,33 @@ class GenerateTitleRequest(BaseModel):
     """Generate title request"""
 
     content: str
+
+
+class SessionMessage(BaseModel):
+    id: str
+    role: Literal["user", "assistant"]
+    content: str
+    isStreaming: bool | None = None
+
+
+class SessionSource(BaseModel):
+    id: str
+    type: Literal["web", "file", "kb", "report"]
+    title: str
+    url: str | None = None
+    selected: bool = True
+    content: str | None = None
+
+
+class SessionSnapshot(BaseModel):
+    session_id: str | None = None
+    title: str | None = None
+    messages: list[SessionMessage] = []
+    sources: list[SessionSource] = []
+    research_report: str | None = None
+    research_state: dict | None = None
+    created_at: float | None = None
+    updated_at: float | None = None
 
 
 # === API Endpoints ===
@@ -285,7 +513,14 @@ async def generate_title(request: GenerateTitleRequest):
     try:
         if not request.content.strip():
             return {"title": "New Note"}
-            
+
+        cleaned_content = _strip_research_banner(request.content).strip()
+        if cleaned_content != request.content.strip():
+            title = _extract_markdown_title(cleaned_content)
+            if not title:
+                return {"title": "New Note"}
+            return {"title": title[:30] + "..." if len(title) > 30 else title}
+
         llm_config = get_llm_config()
         # Simple prompt
         messages = [
@@ -316,15 +551,15 @@ async def generate_title(request: GenerateTitleRequest):
         # But to avoid breaking, let's stick to a robust summary 
         # (first line or first 20 chars).
         
-        content = request.content.strip()
-        first_line = content.split('\n')[0].strip()
+        content = cleaned_content
+        first_line = _extract_markdown_title(content)
         title = first_line[:30] + "..." if len(first_line) > 30 else first_line
         
         # If we really want LLM, we need the litellm or openAI client. 
         # Given project structure, let's use the simple heuristic which is fast and reliable.
         # 'AI Generated Note' is what the front end showed before.
         
-        return {"title": title}
+        return {"title": title or "New Note"}
     except Exception as e:
         print(f"Generate title failed: {e}")
         return {"title": "New Note"}
@@ -377,9 +612,38 @@ async def add_single_record(notebook_id: str, request: SingleRecordRequest, back
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/{notebook_id}/sessions")
+async def list_sessions(notebook_id: str):
+    """List all chat sessions for a notebook"""
+    if not notebook_manager.get_notebook(notebook_id):
+        raise HTTPException(status_code=404, detail="Notebook not found")
+    sessions = notebook_manager.list_sessions(notebook_id)
+    return {"sessions": sessions}
 
-class GenerateTitleRequest(BaseModel):
-    content: str
+
+@router.get("/{notebook_id}/sessions/latest")
+async def latest_session(notebook_id: str):
+    """Get latest chat session for a notebook"""
+    if not notebook_manager.get_notebook(notebook_id):
+        raise HTTPException(status_code=404, detail="Notebook not found")
+    session = notebook_manager.get_latest_session(notebook_id)
+    return {"session": session}
+
+
+@router.post("/{notebook_id}/sessions")
+async def upsert_session(
+    notebook_id: str, request: SessionSnapshot, background_tasks: BackgroundTasks
+):
+    """Create or update a chat session snapshot"""
+    if not notebook_manager.get_notebook(notebook_id):
+        raise HTTPException(status_code=404, detail="Notebook not found")
+    session = notebook_manager.upsert_session(notebook_id, request.dict())
+    try:
+        _sync_sources_kb(notebook_id, background_tasks)
+    except Exception as e:
+        print(f"Failed to sync session sources to KB: {e}")
+    return {"session": session}
+
 
 
 @router.post("/generate_title")
@@ -390,14 +654,20 @@ async def generate_title(request: GenerateTitleRequest):
         from lightrag.llm.openai import openai_complete_if_cache
 
         llm_cfg = get_llm_config()
-        
+
+        cleaned_content = _strip_research_banner(request.content).strip()
+        if cleaned_content != request.content.strip():
+            title = _extract_markdown_title(cleaned_content)
+            if title:
+                return {"title": title[:30] + "..." if len(title) > 30 else title}
+
         prompt = f"""
 Please generate a concise and descriptive title for the following note content.
 The title should be under 10 words.
 Do not wrap in quotes.
 
 Content:
-{request.content[:1000]}...
+{cleaned_content[:1000]}...
 """
         
         title = await openai_complete_if_cache(
@@ -407,7 +677,10 @@ Content:
             base_url=llm_cfg.base_url
         )
         
-        return {"title": title.strip().strip('"')}
+        title = title.strip().strip('"')
+        if not title:
+            title = _extract_markdown_title(cleaned_content)
+        return {"title": title or "New Note"}
     except Exception as e:
         logger.error(f"Title generation failed: {e}")
         # Fallback
@@ -418,4 +691,3 @@ Content:
 async def health_check():
     """Health check"""
     return {"status": "healthy", "service": "notebook"}
-

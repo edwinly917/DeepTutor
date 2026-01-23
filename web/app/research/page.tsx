@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/exhaustive-deps */
+
 import React, { useState, useEffect, useRef } from "react";
 import {
   Settings,
@@ -11,10 +13,6 @@ import {
   Database,
   GraduationCap,
   Globe,
-  FileText,
-  Book,
-  Download,
-  FileDown,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -42,11 +40,35 @@ interface ChatMsg {
   isOptimizing?: boolean;
 }
 
+interface SourceItem {
+  id: string;
+  type: "web" | "kb" | "report";
+  title: string;
+  url?: string;
+  content?: string;
+  selected: boolean;
+  groupId?: string;
+  groupTitle?: string;
+  addedAt?: number;
+}
+
+interface PersistedResearchState {
+  research_id?: string;
+  task_id?: string;
+  topic?: string;
+  kb_name?: string;
+  plan_mode?: string;
+  enabled_tools?: string[];
+  started_at?: number;
+  report_url?: string;
+  metadata_url?: string;
+}
+
+const RESEARCH_STORAGE_KEY = "deeptutor.research.state";
+const RESEARCH_SOURCES_KEY = "deeptutor.research.sources";
+
 export default function ResearchPage() {
-  const {
-    researchState: globalResearchState,
-    setResearchState: setGlobalResearchState,
-  } = useGlobal();
+  const { setResearchState: setGlobalResearchState } = useGlobal();
 
   // Local Reducer State for Deep Research Dashboard
   const [state, dispatch] = useResearchReducer();
@@ -64,6 +86,9 @@ export default function ResearchPage() {
   const [inputTopic, setInputTopic] = useState("");
   const [isOptimizing, setIsOptimizing] = useState(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const [sources, setSources] = useState<SourceItem[]>([]);
+  const [isRestoring, setIsRestoring] = useState(true);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   // Notebook modal state
   const [showNotebookModal, setShowNotebookModal] = useState(false);
@@ -80,6 +105,304 @@ export default function ResearchPage() {
 
   // WebSocket Ref
   const wsRef = useRef<WebSocket | null>(null);
+
+  const readPersistedState = (): PersistedResearchState | null => {
+    try {
+      const raw = localStorage.getItem(RESEARCH_STORAGE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw) as PersistedResearchState;
+    } catch {
+      return null;
+    }
+  };
+
+  const writePersistedState = (updates: Partial<PersistedResearchState>) => {
+    try {
+      const current = readPersistedState() || {};
+      const next = { ...current, ...updates };
+      localStorage.setItem(RESEARCH_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Ignore storage failures
+    }
+  };
+
+  const clearPersistedState = () => {
+    try {
+      localStorage.removeItem(RESEARCH_STORAGE_KEY);
+    } catch {
+      // Ignore storage failures
+    }
+  };
+
+  const sourceKey = (item: SourceItem) =>
+    `${item.groupId || "ungrouped"}:${item.type}:${item.url || item.title || item.id}`;
+
+  const mergeSources = (existing: SourceItem[], incoming: SourceItem[]) => {
+    const seen = new Set(existing.map(sourceKey));
+    const merged = [...existing];
+    incoming.forEach((item) => {
+      const key = sourceKey(item);
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push(item);
+    });
+    return merged;
+  };
+
+  const readStoredSources = (): SourceItem[] => {
+    try {
+      const raw = localStorage.getItem(RESEARCH_SOURCES_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed as SourceItem[];
+    } catch {
+      return [];
+    }
+  };
+
+  const writeStoredSources = (nextSources: SourceItem[]) => {
+    try {
+      localStorage.setItem(RESEARCH_SOURCES_KEY, JSON.stringify(nextSources));
+    } catch {
+      // Ignore storage failures
+    }
+  };
+
+  const formatGroupTitle = (topic: string, metadata?: any) => {
+    const completedAt = metadata?.completed_at;
+    if (completedAt) {
+      const date = new Date(completedAt);
+      if (!Number.isNaN(date.getTime())) {
+        return `${topic || "未命名研究"} · ${date.toLocaleString()}`;
+      }
+    }
+    return topic || "未命名研究";
+  };
+
+  const buildSourcesFromMetadata = (
+    metadata: any,
+    report: string,
+    topic: string,
+    researchId?: string,
+  ): SourceItem[] => {
+    const groupId = researchId || metadata?.research_id || "ungrouped";
+    const groupTitle = formatGroupTitle(topic, metadata);
+    const addedAt = Date.now();
+    const items: SourceItem[] = [];
+    if (report) {
+      items.push({
+        id: `report-${Date.now()}`,
+        type: "report",
+        title: topic ? `深度研究报告 - ${topic}` : "深度研究报告",
+        content: report,
+        selected: true,
+        groupId,
+        groupTitle,
+        addedAt,
+      });
+    }
+
+    const webSources = metadata?.web_sources;
+    if (Array.isArray(webSources)) {
+      webSources.forEach((s: any, idx: number) => {
+        items.push({
+          id: `web-${Date.now()}-${idx}`,
+          type: "web",
+          title: s.title || s.url || `网络来源 ${idx + 1}`,
+          url: s.url || "",
+          content: s.content || s.snippet || "",
+          selected: true,
+          groupId,
+          groupTitle,
+          addedAt,
+        });
+      });
+    }
+
+    const ragSources = metadata?.rag_sources;
+    if (Array.isArray(ragSources)) {
+      ragSources.forEach((s: any, idx: number) => {
+        const title =
+          s.title || s.source || s.source_file || s.kb_name || `知识库来源 ${idx + 1}`;
+        const detailParts: string[] = [];
+        if (s.page) detailParts.push(`页 ${s.page}`);
+        if (s.chunk_id) detailParts.push(`段落 ${s.chunk_id}`);
+        const detail = detailParts.join(" · ");
+        items.push({
+          id: `rag-${Date.now()}-${idx}`,
+          type: "kb",
+          title,
+          url: detail,
+          content: s.content || s.content_preview || "",
+          selected: true,
+          groupId,
+          groupTitle,
+          addedAt,
+        });
+      });
+    }
+
+    const miscSources = metadata?.sources;
+    if (Array.isArray(miscSources)) {
+      miscSources.forEach((s: any, idx: number) => {
+        items.push({
+          id: `src-${Date.now()}-${idx}`,
+          type: s.type === "web" ? "web" : "kb",
+          title: s.title || s.url || `来源 ${idx + 1}`,
+          url: s.url || "",
+          content: s.content || s.snippet || "",
+          selected: true,
+          groupId,
+          groupTitle,
+          addedAt,
+        });
+      });
+    }
+
+    return items;
+  };
+
+  const appendReportToChat = (report: string) => {
+    if (!report) return;
+    setChatHistory((prev) => {
+      const existing = prev.find((msg) => msg.id === "research-report");
+      const content = `**📚 深度研究完成**\n\n${report}`;
+      if (existing) {
+        return prev.map((msg) =>
+          msg.id === "research-report" ? { ...msg, content } : msg,
+        );
+      }
+      return [
+        ...prev,
+        {
+          id: "research-report",
+          role: "assistant",
+          content,
+        },
+      ];
+    });
+  };
+
+  const fetchReportText = async (reportUrl: string) => {
+    if (!reportUrl) return "";
+    const url = reportUrl.startsWith("http") ? reportUrl : apiUrl(reportUrl);
+    const res = await fetch(url);
+    if (!res.ok) return "";
+    return res.text();
+  };
+
+  const restoreResearchState = async (reason: string) => {
+    setRestoreError(null);
+    const persisted = readPersistedState();
+    if (!persisted) return;
+    let researchId = persisted.research_id;
+    if (!researchId && persisted.topic) {
+      try {
+        const res = await fetch(
+          apiUrl(`/api/v1/research/latest?topic=${encodeURIComponent(persisted.topic)}`),
+        );
+        if (res.ok) {
+          const data = await res.json();
+          researchId = data.research_id;
+          if (researchId) {
+            writePersistedState({ research_id: researchId });
+          }
+        }
+      } catch {
+        // Ignore lookup failures
+      }
+    }
+
+    if (!researchId) return;
+
+    try {
+      const res = await fetch(apiUrl(`/api/v1/research/status/${researchId}`));
+      if (!res.ok) {
+        return;
+      }
+      const data = await res.json();
+      if (data.metadata?.topic) {
+        writePersistedState({ topic: data.metadata.topic });
+      }
+      dispatch({ type: "reset" });
+      const storedSources = readStoredSources();
+      setSources(storedSources);
+
+      const applyProgress = (progress: any) => {
+        if (!progress?.events || !Array.isArray(progress.events)) return;
+        progress.events.forEach((event: any) => {
+          if (!event?.status) return;
+          const { status, ...rest } = event;
+          dispatch({ type: status as any, ...rest } as ResearchEvent);
+        });
+      };
+
+      applyProgress(data.progress?.planning);
+      applyProgress(data.progress?.researching);
+      applyProgress(data.progress?.reporting);
+
+      if (data.stage && data.stage !== "idle") {
+        setGlobalResearchState((prev) => ({
+          ...prev,
+          status: data.stage === "completed" ? "completed" : "running",
+          topic: persisted.topic || data.metadata?.topic || prev.topic,
+        }));
+      }
+
+      let reportContent = "";
+      if (data.report_url) {
+        reportContent = await fetchReportText(data.report_url);
+      }
+
+      const reportingEvents = data.progress?.reporting?.events || [];
+      const completedEvent = [...reportingEvents]
+        .reverse()
+        .find((event: any) => event.status === "reporting_completed");
+
+      if (reportContent) {
+        dispatch({
+          type: "reporting_completed",
+          word_count:
+            completedEvent?.word_count ||
+            data.metadata?.report_word_count ||
+            reportContent.length,
+          sections: completedEvent?.sections || 0,
+          citations: completedEvent?.citations || 0,
+          report: reportContent,
+        } as ResearchEvent);
+        appendReportToChat(reportContent);
+        setGlobalResearchState((prev) => ({
+          ...prev,
+          status: "completed",
+          report: reportContent,
+          topic: persisted.topic || data.metadata?.topic || prev.topic,
+        }));
+      }
+
+      if (data.metadata || reportContent) {
+        const nextSources = buildSourcesFromMetadata(
+          data.metadata,
+          reportContent,
+          persisted.topic || data.metadata?.topic || "",
+          researchId,
+        );
+        const merged = mergeSources(readStoredSources(), nextSources);
+        setSources(merged);
+        writeStoredSources(merged);
+      }
+
+      writePersistedState({
+        research_id: researchId,
+        report_url: data.report_url || persisted.report_url,
+        metadata_url: data.metadata_url || persisted.metadata_url,
+      });
+    } catch (error) {
+      setRestoreError(
+        `恢复失败${reason ? `(${reason})` : ""}: ${String(error)}`,
+      );
+    }
+  };
 
   // Initialize Knowledge Bases
   useEffect(() => {
@@ -109,8 +432,31 @@ export default function ResearchPage() {
     }
   }, [chatHistory]);
 
+  useEffect(() => {
+    const runRestore = async () => {
+      const persisted = readPersistedState();
+      if (persisted?.kb_name) {
+        setSelectedKb(persisted.kb_name);
+      }
+      if (persisted?.plan_mode) {
+        setPlanMode(persisted.plan_mode);
+      }
+      if (persisted?.enabled_tools) {
+        setEnabledTools(persisted.enabled_tools);
+      }
+      const storedSources = readStoredSources();
+      if (storedSources.length > 0) {
+        setSources(storedSources);
+      }
+      await restoreResearchState("mount");
+      setIsRestoring(false);
+    };
+    runRestore();
+  }, []);
+
   // Initial Greeting
   useEffect(() => {
+    if (isRestoring) return;
     if (chatHistory.length === 0) {
       setChatHistory([
         {
@@ -121,7 +467,7 @@ export default function ResearchPage() {
         },
       ]);
     }
-  }, []);
+  }, [chatHistory.length, isRestoring]);
 
   // Select latest active task automatically if none selected
   useEffect(() => {
@@ -133,9 +479,25 @@ export default function ResearchPage() {
   // Start Research Function (Local)
   const startResearchLocal = (topic: string) => {
     if (wsRef.current) wsRef.current.close();
+    clearPersistedState();
+    dispatch({ type: "reset" });
+    setSelectedTaskId(null);
+    setRestoreError(null);
+    writePersistedState({
+      topic,
+      kb_name: selectedKb,
+      plan_mode: planMode,
+      enabled_tools: enabledTools,
+      started_at: Date.now(),
+    });
 
     // Update Global State to "running" for sidebar status
-    setGlobalResearchState((prev) => ({ ...prev, status: "running", topic }));
+    setGlobalResearchState((prev) => ({
+      ...prev,
+      status: "running",
+      topic,
+      report: null,
+    }));
 
     const ws = new WebSocket(wsUrl("/api/v1/research/run"));
     wsRef.current = ws;
@@ -156,12 +518,40 @@ export default function ResearchPage() {
       try {
         const data = JSON.parse(event.data);
 
+        if (data.type === "task_id") {
+          if (data.task_id) {
+            writePersistedState({ task_id: data.task_id });
+          }
+          return;
+        }
+
+        if (data.type === "status") {
+          if (data.research_id) {
+            writePersistedState({ research_id: data.research_id });
+          }
+          return;
+        }
+
+        if (data.type === "report_path") {
+          if (typeof data.path === "string") {
+            if (data.path.includes("/api/outputs/")) {
+              writePersistedState({ report_url: data.path });
+            }
+          }
+          return;
+        }
+
+        if (data.type === "ping") {
+          return;
+        }
+
         // Dispatch all events to reducer
         if (data.type === "progress") {
           // Flatten progress event to match ResearchEvent
-          const { type, ...rest } = data;
+          const rest = { ...data };
+          delete rest.type;
           // Map stage/status to event type if specific type is generic
-          let eventType = data.status as string;
+          const eventType = data.status as string;
           // Map known statuses to specific event types if needed or pass through
           dispatch({
             type: eventType as any, // dynamic mapping
@@ -173,6 +563,9 @@ export default function ResearchPage() {
             content: data.content.content || data.content, // Handle different log formats
           });
         } else if (data.type === "result") {
+          if (data.research_id) {
+            writePersistedState({ research_id: data.research_id });
+          }
           dispatch({
             type: "reporting_completed",
             word_count: data.metadata?.report_word_count || 0,
@@ -185,7 +578,34 @@ export default function ResearchPage() {
             ...prev,
             status: "completed",
             report: data.report,
+            topic:
+              data.metadata?.topic ||
+              state.planning.originalTopic ||
+              state.planning.optimizedTopic ||
+              prev.topic,
           }));
+          appendReportToChat(data.report || "");
+          if (data.metadata || data.report) {
+            const topic =
+              data.metadata?.topic ||
+              state.planning.originalTopic ||
+              state.planning.optimizedTopic ||
+              "";
+            const nextSources = buildSourcesFromMetadata(
+              data.metadata,
+              data.report || "",
+              topic,
+              data.research_id,
+            );
+            setSources((prev) => {
+              const merged = mergeSources(prev, nextSources);
+              writeStoredSources(merged);
+              return merged;
+            });
+          }
+          writePersistedState({
+            research_id: data.research_id || readPersistedState()?.research_id,
+          });
         } else if (data.type === "error") {
           dispatch({ type: "error", content: data.content });
           setGlobalResearchState((prev) => ({ ...prev, status: "idle" }));
@@ -202,10 +622,11 @@ export default function ResearchPage() {
       console.error("WS Error", e);
       dispatch({ type: "error", content: "WebSocket connection failed" });
       setGlobalResearchState((prev) => ({ ...prev, status: "idle" }));
+      restoreResearchState("ws-error");
     };
 
     ws.onclose = () => {
-      // Optional: handle close
+      restoreResearchState("ws-close");
     };
   };
 
@@ -276,7 +697,7 @@ export default function ResearchPage() {
           },
         ]);
       }
-    } catch (error) {
+    } catch {
       setChatHistory((prev) => prev.filter((msg) => msg.id !== "optimizing"));
       setChatHistory((prev) => [
         ...prev,
@@ -361,6 +782,50 @@ export default function ResearchPage() {
     } finally {
       setIsExportingPptx(false);
     }
+  };
+
+  const toggleSourceSelection = (id: string) => {
+    setSources((prev) => {
+      const next = prev.map((source) =>
+        source.id === id ? { ...source, selected: !source.selected } : source,
+      );
+      writeStoredSources(next);
+      return next;
+    });
+  };
+
+  const selectedSourcesCount = sources.filter((s) => s.selected).length;
+  const totalSourcesCount = sources.length;
+  const groupedSources = sources.reduce((acc, source) => {
+    const groupId = source.groupId || "ungrouped";
+    if (!acc[groupId]) {
+      acc[groupId] = {
+        groupId,
+        title: source.groupTitle || "未分组来源",
+        items: [],
+      };
+    }
+    acc[groupId].items.push(source);
+    return acc;
+  }, {} as Record<string, { groupId: string; title: string; items: SourceItem[] }>);
+
+  const sourceGroups = Object.values(groupedSources).sort((a, b) => {
+    const aTime = a.items[0]?.addedAt || 0;
+    const bTime = b.items[0]?.addedAt || 0;
+    return bTime - aTime;
+  });
+
+  const toggleGroupSelection = (groupId: string, selected: boolean) => {
+    setSources((prev) => {
+      const next = prev.map((source) => {
+        if (source.groupId === groupId) {
+          return { ...source, selected };
+        }
+        return source;
+      });
+      writeStoredSources(next);
+      return next;
+    });
   };
 
   return (
@@ -546,6 +1011,73 @@ export default function ResearchPage() {
           </div>
         </div>
 
+        {/* Sources Panel */}
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col max-h-[220px] overflow-hidden">
+          <div className="p-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center justify-between">
+            <span>已选来源</span>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500">
+              {selectedSourcesCount}/{totalSourcesCount}
+            </span>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-2 text-xs">
+            {restoreError && (
+              <div className="text-rose-600 dark:text-rose-400">
+                {restoreError}
+              </div>
+            )}
+            {sourceGroups.length === 0 && !restoreError && (
+              <div className="text-slate-400 dark:text-slate-500">
+                暂无来源
+              </div>
+            )}
+            {sourceGroups.map((group) => {
+              const selectedCount = group.items.filter((s) => s.selected).length;
+              const allSelected = selectedCount === group.items.length;
+              return (
+                <div key={group.groupId} className="space-y-2">
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    <span className="truncate">{group.title}</span>
+                    <button
+                      onClick={() => toggleGroupSelection(group.groupId, !allSelected)}
+                      className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                    >
+                      {allSelected ? "取消全选" : "全选"} {selectedCount}/{group.items.length}
+                    </button>
+                  </div>
+                  {group.items.map((source) => (
+                    <label
+                      key={source.id}
+                      className="flex items-start gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-700/40 border border-slate-100 dark:border-slate-700 hover:border-slate-200 dark:hover:border-slate-600 transition-colors cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={source.selected}
+                        onChange={() => toggleSourceSelection(source.id)}
+                        className="mt-0.5"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-slate-700 dark:text-slate-200 truncate">
+                          {source.title}
+                        </div>
+                        {source.url && (
+                          <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                            {source.url}
+                          </div>
+                        )}
+                        {source.content && (
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-1">
+                            {source.content}
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Chat Interface */}
         <div className="flex-1 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden">
           <div className="p-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
@@ -679,7 +1211,7 @@ export default function ResearchPage() {
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex, rehypeRaw]}
               components={{
-                h1: ({ node, ...props }) => (
+                h1: ({ ...props }) => (
                   <h1
                     style={{
                       fontSize: "26px",
@@ -691,7 +1223,7 @@ export default function ResearchPage() {
                     {...props}
                   />
                 ),
-                h2: ({ node, ...props }) => (
+                h2: ({ ...props }) => (
                   <h2
                     style={{
                       fontSize: "20px",
@@ -703,7 +1235,7 @@ export default function ResearchPage() {
                     {...props}
                   />
                 ),
-                h3: ({ node, ...props }) => (
+                h3: ({ ...props }) => (
                   <h3
                     style={{
                       fontSize: "16px",
@@ -714,13 +1246,13 @@ export default function ResearchPage() {
                     {...props}
                   />
                 ),
-                p: ({ node, ...props }) => (
+                p: ({ ...props }) => (
                   <p
                     style={{ marginBottom: "14px", textAlign: "justify" }}
                     {...props}
                   />
                 ),
-                table: ({ node, ...props }) => (
+                table: ({ ...props }) => (
                   <table
                     style={{
                       width: "100%",
@@ -731,7 +1263,7 @@ export default function ResearchPage() {
                     {...props}
                   />
                 ),
-                th: ({ node, ...props }) => (
+                th: ({ ...props }) => (
                   <th
                     style={{
                       border: "1px solid #cbd5e1",
@@ -743,20 +1275,20 @@ export default function ResearchPage() {
                     {...props}
                   />
                 ),
-                td: ({ node, ...props }) => (
+                td: ({ ...props }) => (
                   <td
                     style={{ border: "1px solid #e2e8f0", padding: "10px" }}
                     {...props}
                   />
                 ),
-                a: ({ node, href, ...props }) => (
+                a: ({ href, ...props }) => (
                   <a
                     href={href}
                     style={{ color: "#4f46e5", textDecoration: "underline" }}
                     {...props}
                   />
                 ),
-                blockquote: ({ node, ...props }) => (
+                blockquote: ({ ...props }) => (
                   <blockquote
                     style={{
                       borderLeft: "4px solid #c7d2fe",
@@ -768,23 +1300,23 @@ export default function ResearchPage() {
                     {...props}
                   />
                 ),
-                ul: ({ node, ...props }) => (
+                ul: ({ ...props }) => (
                   <ul
                     style={{ marginLeft: "24px", marginBottom: "14px" }}
                     {...props}
                   />
                 ),
-                ol: ({ node, ...props }) => (
+                ol: ({ ...props }) => (
                   <ol
                     style={{ marginLeft: "24px", marginBottom: "14px" }}
                     {...props}
                   />
                 ),
-                li: ({ node, ...props }) => (
+                li: ({ ...props }) => (
                   <li style={{ marginBottom: "6px" }} {...props} />
                 ),
                 // Handle details/summary for PDF - render as expanded
-                details: ({ node, children, ...props }) => (
+                details: ({ children }) => (
                   <div
                     style={{
                       marginTop: "8px",
@@ -796,7 +1328,7 @@ export default function ResearchPage() {
                     {children}
                   </div>
                 ),
-                summary: ({ node, children, ...props }) => (
+                summary: ({ children }) => (
                   <div
                     style={{
                       fontWeight: "600",
@@ -807,7 +1339,7 @@ export default function ResearchPage() {
                     {children}
                   </div>
                 ),
-                code: ({ node, className, children, ...props }) => {
+                code: ({ className, children, ...props }) => {
                   const match = /language-(\w+)/.exec(className || "");
                   const language = match ? match[1] : "";
                   const isInline = !match;
@@ -850,7 +1382,7 @@ export default function ResearchPage() {
                     </code>
                   );
                 },
-                pre: ({ node, children, ...props }) => {
+                pre: ({ children, ...props }) => {
                   const child = React.Children.toArray(
                     children,
                   )[0] as React.ReactElement<{ className?: string }>;

@@ -8,8 +8,8 @@ Unified configuration loading for all DeepTutor modules.
 Provides YAML configuration loading, path resolution, and language parsing.
 """
 
-import os
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 from typing import Any, Optional
 

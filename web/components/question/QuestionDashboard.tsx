@@ -20,7 +20,6 @@ import {
   AlertCircle,
   DollarSign,
   Cpu,
-  ChevronRight,
   Database,
   RefreshCw,
   Sparkles,
@@ -233,14 +232,16 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
   // Auto-switch to current stage tab when stage changes
   useEffect(() => {
     if (isPlanning || isResearching || isMimicPlanning) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveProcessTab("planning");
     } else if (isGenerating) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveProcessTab("generating");
     }
   }, [isPlanning, isResearching, isGenerating, isMimicPlanning]);
 
   // Clickable Step Tabs
-  const StepTabs = () => (
+  const renderStepTabs = () => (
     <div className="flex items-center gap-1 bg-slate-100/80 dark:bg-slate-700/80 backdrop-blur-sm p-1 rounded-xl border border-slate-200/50 dark:border-slate-600/50 shadow-sm">
       {steps.map((step, idx) => {
         const available = isTabAvailable(step.id);
@@ -290,7 +291,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
   );
 
   // Planning Content with Timeline
-  const PlanningContent = () => {
+  const renderPlanningContent = () => {
     const progressStatus = globalProgress?.progress?.status;
 
     // Custom mode steps
@@ -443,7 +444,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
 
           {/* Timeline Steps */}
           <div className="space-y-4">
-            {planningSteps.map((step, idx) => (
+            {planningSteps.map((step) => (
               <div key={step.id} className="flex items-start gap-3">
                 <div
                   className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
@@ -550,7 +551,7 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
   };
 
   // Generating Content with Question Progress
-  const GeneratingContent = () => {
+  const renderGeneratingContent = () => {
     const hasContent = Object.keys(tasks).length > 0 || results.length > 0;
 
     if (!hasContent) {
@@ -767,13 +768,13 @@ export const QuestionDashboard: React.FC<QuestionDashboardProps> = ({
           <>
             {/* Step Tabs */}
             <div className="px-6 pt-4 pb-2 flex justify-center shrink-0">
-              <StepTabs />
+              {renderStepTabs()}
             </div>
 
             {/* Tab Content */}
             <div className="flex-1 overflow-hidden p-6 flex flex-col">
-              {activeProcessTab === "planning" && <PlanningContent />}
-              {activeProcessTab === "generating" && <GeneratingContent />}
+              {activeProcessTab === "planning" && renderPlanningContent()}
+              {activeProcessTab === "generating" && renderGeneratingContent()}
             </div>
           </>
         )}
@@ -794,12 +795,6 @@ function buildTasksFromResults(
   // First, create tasks from subFocuses if available (custom mode)
   if (progress?.subFocuses && !isMimicMode) {
     progress.subFocuses.forEach((focus, idx) => {
-      const existingResult = results.find(
-        (r: any) =>
-          r.question?.knowledge_point?.includes(focus.focus.slice(0, 20)) ||
-          idx < results.length,
-      );
-
       tasks[focus.id] = {
         id: focus.id,
         focus: focus.focus,

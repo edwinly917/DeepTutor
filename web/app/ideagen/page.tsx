@@ -9,13 +9,8 @@ import {
   Loader2,
   Check,
   Save,
-  RefreshCw,
   Sparkles,
   Brain,
-  FileText,
-  CheckCircle2,
-  Circle,
-  AlertCircle,
   Zap,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -316,12 +311,6 @@ export default function IdeaGenPage() {
   const selectAllIdeas = () => {
     setGeneratedIdeas((prev) =>
       prev.map((idea) => ({ ...idea, selected: true })),
-    );
-  };
-
-  const deselectAllIdeas = () => {
-    setGeneratedIdeas((prev) =>
-      prev.map((idea) => ({ ...idea, selected: false })),
     );
   };
 

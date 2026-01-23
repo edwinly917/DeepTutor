@@ -14,18 +14,11 @@ import {
   PenTool,
   ChevronRight,
   ChevronLeft,
-  ArrowRight,
   X,
   Check,
-  Palette,
-  MoreVertical,
   FolderOpen,
   Database,
-  Maximize2,
-  Minimize2,
   Download,
-  History,
-  Import,
   Upload,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -163,8 +156,6 @@ export default function NotebookPage() {
   } | null>(null);
 
   // Layout state for expandable detail panel (deprecated, using rightCollapsed instead)
-  const [detailExpanded, setDetailExpanded] = useState(false);
-
   // Import modal state
   const [showImportModal, setShowImportModal] = useState(false);
   const [availableNotebooks, setAvailableNotebooks] = useState<

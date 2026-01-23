@@ -1,26 +1,22 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+/* eslint-disable react-hooks/exhaustive-deps */
+
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
     ArrowLeft,
     FileText,
     Search,
     Upload,
-    MoreVertical,
-    Check,
-    X,
     Loader2,
-    Trash2,
     Eye,
     Download,
-    Database,
-    Calendar,
-    HardDrive
+    Database
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { apiUrl, wsUrl } from "@/lib/api";
+import { apiUrl } from "@/lib/api";
 import Modal from "@/components/ui/Modal";
 
 interface KnowledgeBaseInfo {

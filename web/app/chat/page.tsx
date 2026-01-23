@@ -48,7 +48,14 @@ interface KnowledgeBase {
 
 export default function ChatPage() {
     // State
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [messages, setMessages] = useState<ChatMessage[]>([
+        {
+            id: "welcome",
+            role: "assistant",
+            content:
+                "👋 你好！我是你的智能助手。我可以帮你查询知识库或搜索网络信息。有什么可以帮你的吗？",
+        },
+    ]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [sessionId, setSessionId] = useState<string | null>(null);
@@ -69,6 +76,18 @@ export default function ChatPage() {
     const chatContainerRef = useRef<HTMLDivElement>(null);
     const wsRef = useRef<WebSocket | null>(null);
 
+    const fetchSessions = async () => {
+        try {
+            const res = await fetch(apiUrl("/api/v1/chat/sessions?limit=20"));
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                setSessions(data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch sessions:", err);
+        }
+    };
+
     // Fetch knowledge bases
     useEffect(() => {
         fetch(apiUrl("/api/v1/knowledge/list"))
@@ -85,20 +104,9 @@ export default function ChatPage() {
 
     // Fetch sessions
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchSessions();
     }, []);
-
-    const fetchSessions = async () => {
-        try {
-            const res = await fetch(apiUrl("/api/v1/chat/sessions?limit=20"));
-            const data = await res.json();
-            if (Array.isArray(data)) {
-                setSessions(data);
-            }
-        } catch (err) {
-            console.error("Failed to fetch sessions:", err);
-        }
-    };
 
     // Auto-scroll
     useEffect(() => {
@@ -109,19 +117,6 @@ export default function ChatPage() {
             });
         }
     }, [messages]);
-
-    // Welcome message
-    useEffect(() => {
-        if (messages.length === 0) {
-            setMessages([
-                {
-                    id: "welcome",
-                    role: "assistant",
-                    content: "👋 你好！我是你的智能助手。我可以帮你查询知识库或搜索网络信息。有什么可以帮你的吗？",
-                },
-            ]);
-        }
-    }, []);
 
     // Send message
     const handleSend = () => {

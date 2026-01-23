@@ -38,7 +38,7 @@ export function getStoredTheme(): Theme | null {
     if (stored === "light" || stored === "dark") {
       return stored;
     }
-  } catch (e) {
+  } catch {
     // Silently fail - localStorage may be disabled
   }
 
@@ -54,7 +54,7 @@ export function saveThemeToStorage(theme: Theme): boolean {
   try {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
     return true;
-  } catch (e) {
+  } catch {
     // Silently fail - localStorage may be disabled or full
     return false;
   }

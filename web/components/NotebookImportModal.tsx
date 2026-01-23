@@ -4,12 +4,10 @@ import { useState, useEffect } from "react";
 import {
   X,
   BookOpen,
-  Search,
   ChevronRight,
   ChevronDown,
   Loader2,
   Check,
-  FileText,
   Calendar,
 } from "lucide-react";
 import { apiUrl } from "@/lib/api";

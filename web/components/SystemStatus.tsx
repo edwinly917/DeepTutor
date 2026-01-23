@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import {
   Wifi,
   WifiOff,
-  Server,
   Brain,
   Database,
   Volume2,
@@ -91,7 +90,7 @@ export default function SystemStatus() {
         if (response.ok) {
           fetchSystemStatus();
         }
-      } catch (error) {
+      } catch {
         setBackendConnected(false);
       }
     };
@@ -112,7 +111,7 @@ export default function SystemStatus() {
         const data = await response.json();
         setStatusData(data);
       }
-    } catch (error) {
+    } catch {
       // Silently fail - backend connection check will handle this
     }
   };
@@ -158,20 +157,6 @@ export default function SystemStatus() {
         return "text-red-600 dark:text-red-400";
       default:
         return "text-slate-500 dark:text-slate-400";
-    }
-  };
-
-  const getStatusBg = (status: string) => {
-    switch (status) {
-      case "online":
-      case "configured":
-        return "bg-green-50 dark:bg-green-900/30 border-green-100 dark:border-green-800";
-      case "offline":
-      case "not_configured":
-      case "error":
-        return "bg-red-50 dark:bg-red-900/30 border-red-100 dark:border-red-800";
-      default:
-        return "bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700";
     }
   };
 

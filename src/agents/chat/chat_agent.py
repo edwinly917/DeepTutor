@@ -36,7 +36,7 @@ class ChatAgent(BaseAgent):
     """
 
     # Default token limit for conversation history
-    DEFAULT_MAX_HISTORY_TOKENS = 4000
+    DEFAULT_MAX_HISTORY_TOKENS = 32000
 
     def __init__(
         self,
@@ -137,6 +137,53 @@ class ChatAgent(BaseAgent):
             )
 
         return truncated
+
+    def _extract_research_reports_from_history(self, history: list[dict[str, str]]) -> str:
+        """
+        Extract research reports from conversation history.
+
+        Looks for assistant messages containing research reports (marked with specific patterns).
+
+        Args:
+            history: Conversation history
+
+        Returns:
+            Extracted report content as string
+        """
+        reports = []
+        for msg in history:
+            if msg.get("role") != "assistant":
+                continue
+
+            content = msg.get("content", "")
+
+            # Check for research report markers
+            if "📚 深度研究完成" in content or "# 深度研究报告" in content:
+                # Extract the report content, removing the banner
+                lines = content.split("\n")
+                report_lines = []
+                skip_banner = False
+
+                for line in lines:
+                    # Skip the completion banner
+                    if "📚 深度研究完成" in line or "深度研究完成" in line:
+                        skip_banner = True
+                        continue
+                    if skip_banner and not line.strip():
+                        skip_banner = False
+                        continue
+                    if not skip_banner:
+                        report_lines.append(line)
+
+                report_content = "\n".join(report_lines).strip()
+                if report_content:
+                    reports.append(report_content)
+
+        if reports:
+            combined = "\n\n---\n\n".join(reports)
+            return f"[Conversation History - Research Reports]\n{combined}"
+
+        return ""
 
     def format_history_for_prompt(self, history: list[dict[str, str]]) -> str:
         """
@@ -451,7 +498,21 @@ class ChatAgent(BaseAgent):
             enable_web_search=enable_web_search,
         )
 
+        # Extract research reports from conversation history if available
+        history_context = self._extract_research_reports_from_history(truncated_history)
+        if history_context:
+            if context:
+                context = f"{context}\n\n{history_context}"
+            else:
+                context = history_context
+            self.logger.info(f"Added {len(history_context)} chars from conversation history reports")
+
+        # Check if we should fail without sources
+        # Now we're more lenient: allow answering based on conversation history
         if require_sources and not context.strip():
+            self.logger.warning(
+                f"No context found for query (kb_name={kb_name}, sources_kb_name={sources_kb_name})"
+            )
             fallback = "未在已选来源或知识库中找到相关信息。"
             if stream:
                 async def stream_generator():

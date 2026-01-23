@@ -22,7 +22,7 @@ export default function ActivityDetail({
 }: ActivityDetailProps) {
   const { uiSettings } = useGlobal();
   const t = (key: string) => getTranslation(uiSettings.language, key);
-  const [mounted, setMounted] = useState(false);
+  const [mounted] = useState(true);
 
   const getActivityTypeLabel = (type: string) => {
     if (type === "solve") return t("Smart Solver");
@@ -30,12 +30,6 @@ export default function ActivityDetail({
     if (type === "research") return t("Deep Research");
     return type;
   };
-
-  // Ensure we're on the client before rendering portal
-  useEffect(() => {
-    setMounted(true);
-    return () => setMounted(false);
-  }, []);
 
   // Handle escape key to close modal
   useEffect(() => {

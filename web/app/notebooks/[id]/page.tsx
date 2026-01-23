@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/exhaustive-deps */
+
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -16,12 +18,10 @@ import {
     Database,
     User,
     Bot,
-    Clock,
     Trash2,
     ChevronRight,
     ChevronLeft,
     ChevronDown,
-    Upload,
     AlertCircle,
     PenTool,
     Calculator,
@@ -31,12 +31,7 @@ import {
     Sparkles,
     Globe,
     Zap,
-    Settings,
-    Check,
     X,
-    Link,
-    Save,
-    Settings2,
     Search,
     CheckSquare,
     Square,
@@ -116,6 +111,7 @@ interface ResearchState {
     startedAt?: number;
     estimatedTimeRemaining?: string;
     planMode?: "quick" | "medium" | "deep" | "auto";
+    researchId?: string;
 }
 
 interface SessionSnapshot {
@@ -238,16 +234,17 @@ export default function NotebookDetailPage() {
     };
 
     const buildResearchState = (): ResearchState | null => {
-        if (!researchRunning) return null;
+        if (!researchRunning && !pendingResearchRecovery) return null;
         return {
             topic: researchTopic || searchQuery || "",
-            running: true,
+            running: researchRunning || pendingResearchRecovery,
             phase: researchPhase,
             progress: researchProgress,
             currentSubTopic: currentSubTopic || "",
             startedAt: researchStartTime || undefined,
             estimatedTimeRemaining: estimatedTimeRemaining || undefined,
             planMode,
+            researchId: activeResearchId || undefined,
         };
     };
 
@@ -296,9 +293,218 @@ export default function NotebookDetailPage() {
             setCurrentSubTopic(state.currentSubTopic || "");
             setResearchStartTime(state.startedAt || null);
             setEstimatedTimeRemaining(state.estimatedTimeRemaining || "");
+            setActiveResearchId(state.researchId || null);
+            setPendingResearchRecovery(true);
             return;
         }
+        setActiveResearchId(null);
+        setPendingResearchRecovery(false);
         resetResearchUiState(true);
+    };
+
+    const fetchReportText = async (reportUrl: string) => {
+        if (!reportUrl) return "";
+        const url = reportUrl.startsWith("http") ? reportUrl : apiUrl(reportUrl);
+        const res = await fetch(url);
+        if (!res.ok) return "";
+        return res.text();
+    };
+
+    const applyResearchResult = (
+        report: string,
+        metadata: any,
+        topic: string,
+        researchId?: string
+    ) => {
+        const reportContent = report || "";
+        if (researchId) {
+            setActiveResearchId(researchId);
+        }
+        setResearchReport(reportContent);
+        if (reportContent) {
+            const reportTitle = topic ? `深度研究报告 - ${topic}` : "深度研究报告";
+            const reportSource: Source = {
+                id: `report-${researchId || Date.now()}`,
+                type: "report",
+                title: reportTitle,
+                selected: true,
+                content: reportContent,
+            };
+            setSources((prev) => {
+                const withoutReports = prev.filter((source) => source.type !== "report");
+                return [...withoutReports, reportSource];
+            });
+        }
+        setResearchRunning(false);
+        setIsChatting(false);
+        setResearchPhase("idle");
+        setResearchProgress({ current: 0, total: 0 });
+        setCurrentSubTopic("");
+        setResearchStartTime(null);
+        setEstimatedTimeRemaining("");
+        setSearchQuery("");
+        setResearchTopic("");
+        setPendingResearchRecovery(false);
+
+        if (reportContent) {
+            setChatMessages((prev) => {
+                const hasStreaming = prev.some(msg => msg.isStreaming);
+                if (hasStreaming) {
+                    return prev.map((msg) =>
+                        msg.isStreaming
+                            ? { ...msg, content: `**📚 深度研究完成**\n\n${reportContent}`, isStreaming: false }
+                            : msg
+                    );
+                }
+                return [
+                    ...prev,
+                    { id: `result-${Date.now()}`, role: "assistant" as const, content: `**📚 深度研究完成**\n\n${reportContent}` }
+                ];
+            });
+        }
+
+        if (metadata) {
+            const newSources: Source[] = [];
+
+            if (metadata.web_sources && Array.isArray(metadata.web_sources)) {
+                metadata.web_sources.forEach((s: any, idx: number) => {
+                    newSources.push({
+                        id: `research-web-${Date.now()}-${idx}`,
+                        type: "web" as const,
+                        title: s.title || s.url || `网络来源 ${idx + 1}`,
+                        url: s.url,
+                        content: s.content || s.snippet || "",
+                        selected: true,
+                    });
+                });
+            }
+
+            if (metadata.rag_sources && Array.isArray(metadata.rag_sources)) {
+                metadata.rag_sources.forEach((s: any, idx: number) => {
+                    const ragTitle =
+                        s.title ||
+                        s.source ||
+                        s.source_file ||
+                        s.kb_name ||
+                        `知识库来源 ${idx + 1}`;
+                    const ragDetailParts: string[] = [];
+                    if (s.page) ragDetailParts.push(`页 ${s.page}`);
+                    if (s.chunk_id) ragDetailParts.push(`段落 ${s.chunk_id}`);
+                    const ragDetail = ragDetailParts.join(" · ");
+                    newSources.push({
+                        id: `research-rag-${Date.now()}-${idx}`,
+                        type: "kb" as const,
+                        title: ragTitle,
+                        url: ragDetail || "",
+                        content: s.content || s.content_preview || "",
+                        selected: true,
+                    });
+                });
+            }
+
+            if (metadata.sources && Array.isArray(metadata.sources)) {
+                metadata.sources.forEach((s: any, idx: number) => {
+                    newSources.push({
+                        id: `research-src-${Date.now()}-${idx}`,
+                        type: (s.type === "web" ? "web" : "kb") as "web" | "kb",
+                        title: s.title || s.url || `来源 ${idx + 1}`,
+                        url: s.url || "",
+                        content: s.content || s.snippet || "",
+                        selected: true,
+                    });
+                });
+            }
+
+            if (newSources.length > 0) {
+                setSources(prev => [...prev, ...newSources]);
+            }
+        }
+
+        setTimeout(() => scheduleSessionSave(true), 0);
+    };
+
+    const syncSessionsFromServer = async (reason: string) => {
+        const sessionId = currentSessionIdRef.current;
+        if (!notebookId || sessionSyncInFlightRef.current || !sessionId) return;
+        sessionSyncInFlightRef.current = true;
+        try {
+            const res = await fetch(apiUrl(`/api/v1/notebook/${notebookId}/sessions`));
+            if (!res.ok) return;
+            const data = await res.json();
+            const loaded = Array.isArray(data.sessions) ? data.sessions : [];
+            const normalized = loaded.map((session: SessionSnapshot) =>
+                hydrateSessionReport({
+                    ...session,
+                    sources: normalizeSources(session.sources || []),
+                })
+            );
+            if (normalized.length === 0) return;
+            setSessions(normalized);
+            let target =
+                normalized.find((session: SessionSnapshot) => session.session_id === sessionId) || null;
+            if (!target) {
+                target = normalized.reduce(
+                    (acc: SessionSnapshot | null, session: SessionSnapshot) => {
+                        if (!acc) return session;
+                        return (session.updated_at || 0) > (acc.updated_at || 0) ? session : acc;
+                    },
+                    null
+                );
+                if (target) {
+                    setCurrentSessionId(target.session_id);
+                }
+            }
+            if (target) {
+                setChatMessages(
+                    ensureResearchReportMessage(target.messages || [], target.research_report || "")
+                );
+                setSources(normalizeSources(target.sources || []));
+                setResearchReport(target.research_report || "");
+                applyResearchState(target.research_state);
+                if (target.research_report) {
+                    setPendingResearchRecovery(false);
+                }
+            }
+            localStorage.setItem(
+                sessionCacheKey,
+                JSON.stringify({
+                    sessions: normalized,
+                    currentSessionId: target?.session_id || sessionId,
+                })
+            );
+        } catch (err) {
+            console.error(`Failed to sync sessions (${reason}):`, err);
+        } finally {
+            sessionSyncInFlightRef.current = false;
+        }
+    };
+
+    const recoverResearchIfNeeded = async (reason: string) => {
+        if (!pendingRecoveryRef.current) return;
+        if (researchReport) {
+            setPendingResearchRecovery(false);
+            return;
+        }
+        const researchId = activeResearchIdRef.current;
+        if (researchId) {
+            try {
+                const res = await fetch(apiUrl(`/api/v1/research/status/${researchId}`));
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data?.report_url) {
+                        const reportText = await fetchReportText(data.report_url);
+                        if (reportText) {
+                            const topic = data?.metadata?.topic || researchTopic || searchQuery || "";
+                            applyResearchResult(reportText, data.metadata, topic, researchId);
+                            return;
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error(`Failed to recover research from status (${reason}):`, err);
+            }
+        }
+        await syncSessionsFromServer(reason);
     };
 
     const buildSessionSnapshot = (sessionIdOverride?: string): SessionSnapshot | null => {
@@ -393,6 +599,8 @@ export default function NotebookDetailPage() {
         setSources([]);
         setResearchReport("");
         setResearchError(null);
+        setActiveResearchId(null);
+        setPendingResearchRecovery(false);
         resetResearchUiState(true);
     };
     const [researchTopic, setResearchTopic] = useState("");
@@ -405,11 +613,20 @@ export default function NotebookDetailPage() {
     const [chatError, setChatError] = useState<string | null>(null);
     const [researchError, setResearchError] = useState<string | null>(null);
 
+    // Sources KB indexing status
+    const [sourcesKbIndexing, setSourcesKbIndexing] = useState(false);
+    const sourcesKbCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
     // Deep Research progress states
     const [researchPhase, setResearchPhase] = useState<"idle" | "planning" | "researching" | "reporting">("idle");
     const [researchProgress, setResearchProgress] = useState({ current: 0, total: 0 });
     const [currentSubTopic, setCurrentSubTopic] = useState("");
-    const [subTopics, setSubTopics] = useState<string[]>([]);
+    const [activeResearchId, setActiveResearchId] = useState<string | null>(null);
+    const [pendingResearchRecovery, setPendingResearchRecovery] = useState(false);
+    const pendingRecoveryRef = useRef(false);
+    const sessionSyncInFlightRef = useRef(false);
+    const activeResearchIdRef = useRef<string | null>(null);
+    const currentSessionIdRef = useRef<string | null>(null);
 
     // WebSocket refs
     const wsRef = useRef<WebSocket | null>(null);
@@ -434,6 +651,18 @@ export default function NotebookDetailPage() {
         () => aggregatedSources.filter((source) => source.selected),
         [aggregatedSources]
     );
+
+    useEffect(() => {
+        pendingRecoveryRef.current = pendingResearchRecovery;
+    }, [pendingResearchRecovery]);
+
+    useEffect(() => {
+        activeResearchIdRef.current = activeResearchId;
+    }, [activeResearchId]);
+
+    useEffect(() => {
+        currentSessionIdRef.current = currentSessionId;
+    }, [currentSessionId]);
     const hasSelectedSources = selectedSourcesList.length > 0;
     const selectedSourcesCount = selectedSourcesList.length;
     const totalSourceCount = aggregatedSources.length;
@@ -610,6 +839,18 @@ export default function NotebookDetailPage() {
     }, [notebookId]);
 
     useEffect(() => {
+        const handleVisibility = () => {
+            if (document.visibilityState === "visible") {
+                void recoverResearchIfNeeded("visibility");
+            }
+        };
+        document.addEventListener("visibilitychange", handleVisibility);
+        return () => {
+            document.removeEventListener("visibilitychange", handleVisibility);
+        };
+    }, [notebookId]);
+
+    useEffect(() => {
         fetchPptStyleTemplates();
         fetchPptTemplates();
     }, []);
@@ -653,6 +894,7 @@ export default function NotebookDetailPage() {
         searchQuery,
         researchTopic,
         planMode,
+        activeResearchId,
         currentSessionId,
         hasSessionActivity,
     ]);
@@ -762,9 +1004,35 @@ export default function NotebookDetailPage() {
     };
 
 
+    // Check if sources KB is ready for querying
+    const checkSourcesKbStatus = async (): Promise<boolean> => {
+        try {
+            const res = await fetch(apiUrl(`/api/v1/notebooks/${notebookId}/sources_kb_status`));
+            if (!res.ok) return true; // Assume ready if check fails
+            const data = await res.json();
+            return data.ready === true;
+        } catch {
+            return true; // Assume ready if check fails
+        }
+    };
+
+    // Wait for sources KB to be ready with polling
+    const waitForSourcesKbReady = async (): Promise<boolean> => {
+        const maxAttempts = 30; // 30 seconds max
+        const pollInterval = 1000; // 1 second
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const isReady = await checkSourcesKbStatus();
+            if (isReady) {
+                return true;
+            }
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
+        }
+        return false; // Timeout
+    };
 
     // Chat function using WebSocket
-    const handleSendChat = () => {
+    const handleSendChat = async () => {
         if (!chatInput.trim() || isChatting) return;
         const activeSessionId = ensureActiveSession();
         setHasSessionActivity(true);
@@ -779,6 +1047,21 @@ export default function NotebookDetailPage() {
         setChatInput("");
         setIsChatting(true);
         setChatError(null);
+
+        // If there are selected sources, wait for KB to be ready
+        const hasSelectedSources = sources.some(s => s.selected);
+        if (hasSelectedSources) {
+            setSourcesKbIndexing(true);
+            const isReady = await waitForSourcesKbReady();
+            setSourcesKbIndexing(false);
+
+            if (!isReady) {
+                setChatError("准备中，请稍后再试");
+                setIsChatting(false);
+                return;
+            }
+        }
+
         setTimeout(() => {
             const needsSourceSync = selectedSourcesList.length > 0;
             scheduleSessionSave(needsSourceSync, activeSessionId);
@@ -1096,34 +1379,6 @@ export default function NotebookDetailPage() {
         setTimeout(() => scheduleSessionSave(true), 0);
     };
 
-    // Save content to notebook as a record
-    const handleSaveToNotebook = async (content: string, title: string, type: "chat" | "research") => {
-        if (!notebook) return;
-
-        try {
-            const res = await fetch(apiUrl(`/api/v1/notebook/${notebook.id}/records`), {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    type,
-                    title,
-                    user_query: title,
-                    output: content,
-                    metadata: {
-                        sources: selectedSourcesList.map((s) => ({ title: s.title, url: s.url })),
-                    },
-                    kb_name: activeKbName || undefined,
-                }),
-            });
-            const data = await res.json();
-            if (data.success) {
-                fetchNotebook();
-            }
-        } catch (err) {
-            console.error("Failed to save to notebook:", err);
-        }
-    };
-
     // Add note to notebook
     const handleAddNote = async () => {
         if (!noteTitle.trim() || !noteContent.trim() || !notebook) {
@@ -1299,6 +1554,8 @@ export default function NotebookDetailPage() {
         setResearchReport("");
         setResearchError(null);
         setIsChatting(true); // Show loading state in chat if triggered from there
+        setActiveResearchId(null);
+        setPendingResearchRecovery(true);
 
         // Generate a unique ID for this research session's streaming message
         const streamingMsgId = `research-${Date.now()}`;
@@ -1368,114 +1625,25 @@ export default function NotebookDetailPage() {
                 if (data.type === "result") {
                     clearTimeout(researchTimeout);
                     const report = data.report || "";
-                    setResearchReport(report);
-                    if (report) {
-                        const reportTitle = researchTopicToUse
-                            ? `深度研究报告 - ${researchTopicToUse}`
-                            : "深度研究报告";
-                        const reportSource: Source = {
-                            id: `report-${data.research_id || Date.now()}`,
-                            type: "report",
-                            title: reportTitle,
-                            selected: true,
-                            content: report,
-                        };
-                        setSources((prev) => {
-                            const withoutReports = prev.filter((source) => source.type !== "report");
-                            return [...withoutReports, reportSource];
-                        });
-                    }
-                    setResearchRunning(false);
-                    setIsChatting(false);
-                    setResearchPhase("idle");
-                    setResearchProgress({ current: 0, total: 0 });
-                    setCurrentSubTopic("");
-                    setResearchStartTime(null);
-                    setEstimatedTimeRemaining("");
-                    setSearchQuery("");
-                    setResearchTopic("");
-
-                    // Update chat with research result - ensure report is displayed
-                    if (report) {
-                        setChatMessages((prev) => {
-                            // Try to update existing streaming message
-                            const hasStreaming = prev.some(msg => msg.isStreaming);
-                            if (hasStreaming) {
-                                return prev.map((msg) =>
-                                    msg.isStreaming
-                                        ? { ...msg, content: `**📚 深度研究完成**\n\n${report}`, isStreaming: false }
-                                        : msg
+                    applyResearchResult(report, data.metadata, researchTopicToUse, data.research_id);
+                } else if (data.type === "report_path") {
+                    const path = typeof data.path === "string" ? data.path : "";
+                    const filename = path.split(/[\\\\/]/).pop();
+                    if (filename) {
+                        const reportUrl = `/api/outputs/research/reports/${filename}`;
+                        void (async () => {
+                            const reportText = await fetchReportText(reportUrl);
+                            if (reportText) {
+                                const topic = researchTopicToUse || researchTopic || searchQuery || "";
+                                applyResearchResult(
+                                    reportText,
+                                    null,
+                                    topic,
+                                    activeResearchIdRef.current || undefined
                                 );
                             }
-                            // If no streaming message, add a new one
-                            return [
-                                ...prev,
-                                { id: `result-${Date.now()}`, role: "assistant" as const, content: `**📚 深度研究完成**\n\n${report}` }
-                            ];
-                        });
+                        })();
                     }
-
-                    // Extract sources from metadata and add to Sources panel
-                    if (data.metadata) {
-                        const newSources: Source[] = [];
-
-                        // Handle web sources
-                        if (data.metadata.web_sources && Array.isArray(data.metadata.web_sources)) {
-                            data.metadata.web_sources.forEach((s: any, idx: number) => {
-                                newSources.push({
-                                    id: `research-web-${Date.now()}-${idx}`,
-                                    type: "web" as const,
-                                    title: s.title || s.url || `网络来源 ${idx + 1}`,
-                                    url: s.url,
-                                    content: s.content || s.snippet || "",
-                                    selected: true,
-                                });
-                            });
-                        }
-
-                        // Handle RAG sources
-                        if (data.metadata.rag_sources && Array.isArray(data.metadata.rag_sources)) {
-                            data.metadata.rag_sources.forEach((s: any, idx: number) => {
-                                const ragTitle =
-                                    s.title ||
-                                    s.source ||
-                                    s.source_file ||
-                                    s.kb_name ||
-                                    `知识库来源 ${idx + 1}`;
-                                const ragDetailParts: string[] = [];
-                                if (s.page) ragDetailParts.push(`页 ${s.page}`);
-                                if (s.chunk_id) ragDetailParts.push(`段落 ${s.chunk_id}`);
-                                const ragDetail = ragDetailParts.join(" · ");
-                                newSources.push({
-                                    id: `research-rag-${Date.now()}-${idx}`,
-                                    type: "kb" as const,
-                                    title: ragTitle,
-                                    url: ragDetail || "",
-                                    content: s.content || s.content_preview || "",
-                                    selected: true,
-                                });
-                            });
-                        }
-
-                        // Handle general sources array
-                        if (data.metadata.sources && Array.isArray(data.metadata.sources)) {
-                            data.metadata.sources.forEach((s: any, idx: number) => {
-                                newSources.push({
-                                    id: `research-src-${Date.now()}-${idx}`,
-                                    type: (s.type === "web" ? "web" : "kb") as "web" | "kb",
-                                    title: s.title || s.url || `来源 ${idx + 1}`,
-                                    url: s.url || "",
-                                    content: s.content || s.snippet || "",
-                                    selected: true,
-                                });
-                            });
-                        }
-
-                        if (newSources.length > 0) {
-                            setSources(prev => [...prev, ...newSources]);
-                        }
-                    }
-                    setTimeout(() => scheduleSessionSave(true), 0);
                 } else if (data.type === "error") {
                     clearTimeout(researchTimeout);
                     console.error("Deep Research Error:", data);
@@ -1483,6 +1651,7 @@ export default function NotebookDetailPage() {
                     setResearchRunning(false);
                     setIsChatting(false);
                     setResearchPhase("idle");
+                    setPendingResearchRecovery(false);
                     // Update chat with error
                     setChatMessages((prev) =>
                         prev.map((msg) =>
@@ -1510,9 +1679,9 @@ export default function NotebookDetailPage() {
                         setResearchProgress({ current: 0, total: totalBlocks });
                         updateStreamingMessage(`📋 已分解为 ${totalBlocks} 个子主题`);
                         // Store subtopics if available
-                        if (data.sub_topics && Array.isArray(data.sub_topics)) {
-                            setSubTopics(data.sub_topics.map((t: any) => t.title || t));
-                        }
+                        // if (data.sub_topics && Array.isArray(data.sub_topics)) {
+                        //     setSubTopics(data.sub_topics.map((t: any) => t.title || t));
+                        // }
                     } else if (status === "researching_started") {
                         setResearchPhase("researching");
                         const totalBlocks = data.total_blocks || researchProgress.total;
@@ -1551,6 +1720,9 @@ export default function NotebookDetailPage() {
                     }
                 } else if (data.type === "status") {
                     // Handle status updates
+                    if (data.research_id) {
+                        setActiveResearchId(data.research_id);
+                    }
                     if (data.content === "started") {
                         setResearchPhase("planning");
                         updateStreamingMessage("🚀 深度研究已启动...");
@@ -1609,6 +1781,11 @@ export default function NotebookDetailPage() {
                 return prev;
             });
             setTimeout(() => scheduleSessionSave(true, activeSessionId), 0);
+            if (pendingRecoveryRef.current) {
+                setTimeout(() => {
+                    void recoverResearchIfNeeded("ws-close");
+                }, 1500);
+            }
         };
     };
 
@@ -2545,16 +2722,17 @@ export default function NotebookDetailPage() {
                             onKeyDown={(e) =>
                                 e.key === "Enter" && !e.shiftKey && handleSendChat()
                             }
-                            placeholder="输入你的问题..."
-                            disabled={isChatting}
+                            placeholder={sourcesKbIndexing ? "等待中..." : "输入你的问题..."}
+                            disabled={isChatting || sourcesKbIndexing}
                             className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none disabled:opacity-50"
                         />
                         <button
                             onClick={handleSendChat}
-                            disabled={!chatInput.trim() || isChatting}
+                            disabled={!chatInput.trim() || isChatting || sourcesKbIndexing}
                             className="px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={sourcesKbIndexing ? "等待中..." : ""}
                         >
-                            {isChatting ? (
+                            {isChatting || sourcesKbIndexing ? (
                                 <Loader2 className="w-5 h-5 animate-spin" />
                             ) : (
                                 <Send className="w-5 h-5" />

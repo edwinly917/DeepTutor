@@ -3,15 +3,15 @@ Notebook API Router
 Provides notebook creation, querying, updating, deletion, and record management functions
 """
 
-from pathlib import Path
 import hashlib
 import json
+from pathlib import Path
 import re
 import sys
 import time
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 # Ensure module can be imported
@@ -19,12 +19,19 @@ project_root = Path(__file__).parent.parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.api.routers.knowledge import _kb_base_dir, run_upload_processing_task
 from src.api.utils.notebook_manager import notebook_manager
-from src.services.llm import get_llm_config
-from src.api.routers.knowledge import run_upload_processing_task, _kb_base_dir
 from src.knowledge.manager import KnowledgeBaseManager
+from src.logging import get_logger
+from src.services.config import load_config_with_main
+from src.services.llm import get_llm_config
 
 router = APIRouter()
+
+# Initialize logger
+config = load_config_with_main("solve_config.yaml", project_root)
+log_dir = config.get("paths", {}).get("user_log_dir") or config.get("logging", {}).get("log_dir")
+logger = get_logger("Notebook", level="INFO", log_dir=log_dir)
 
 
 # === Helper Functions ===
@@ -60,7 +67,7 @@ def _extract_markdown_title(content: str) -> str:
 
 
 MAX_SOURCE_CONTENT_CHARS = 8000
-REPORT_SOURCE_CONTENT_CHARS = 20000
+REPORT_SOURCE_CONTENT_CHARS = 50000  # 增加到 50000 字符（约 25000 中文字）
 SOURCES_KB_DESCRIPTION = "Notebook selected sources"
 
 
@@ -505,66 +512,6 @@ async def remove_record(notebook_id: str, record_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/generate_title")
-async def generate_title(request: GenerateTitleRequest):
-    """
-    Generate short title for note content using LLM
-    """
-    try:
-        if not request.content.strip():
-            return {"title": "New Note"}
-
-        cleaned_content = _strip_research_banner(request.content).strip()
-        if cleaned_content != request.content.strip():
-            title = _extract_markdown_title(cleaned_content)
-            if not title:
-                return {"title": "New Note"}
-            return {"title": title[:30] + "..." if len(title) > 30 else title}
-
-        llm_config = get_llm_config()
-        # Simple prompt
-        messages = [
-            {
-                "role": "system", 
-                "content": "You are a helpful assistant. Generate a ver short, concise title (max 10 words) for the user's note content. Return ONLY the title text, no quotes or other text."
-            },
-            {
-                "role": "user",
-                "content": f"Note content:\n{request.content}\n\nTitle:"
-            }
-        ]
-        
-        # Use LLM service we have available. We can use a simple direct call if possible, 
-        # but here let's reuse ReportAgent's call_llm or just use a simple utility if available.
-        # Since we are in the router, let's use a simple direct call via standard service or just return a truncation if LLM is overkill/hard to access directly here without agent.
-        # Actually, let's look at how other routers use LLM. Research uses agents. 
-        # Let's try to keep it simple: truncate for now to ensure reliability, 
-        # OR better: use the same LLM service as others.
-        # Let's check imports. `src.services.llm` is imported.
-        
-        # Simulating LLM call for title generation to avoid complex agent setup for this simple task
-        # or we could import the LLM client.
-        # For now, let's use a smart truncation as a reliable fallback/placeholder 
-        # until we import the proper LLM client wrapper. 
-        
-        # Actually, let's use the actual LLM if easy. 
-        # But to avoid breaking, let's stick to a robust summary 
-        # (first line or first 20 chars).
-        
-        content = cleaned_content
-        first_line = _extract_markdown_title(content)
-        title = first_line[:30] + "..." if len(first_line) > 30 else first_line
-        
-        # If we really want LLM, we need the litellm or openAI client. 
-        # Given project structure, let's use the simple heuristic which is fast and reliable.
-        # 'AI Generated Note' is what the front end showed before.
-        
-        return {"title": title or "New Note"}
-    except Exception as e:
-        print(f"Generate title failed: {e}")
-        return {"title": "New Note"}
-
-
 class SingleRecordRequest(BaseModel):
     """Add single record to a specific notebook"""
 
@@ -650,8 +597,9 @@ async def upsert_session(
 async def generate_title(request: GenerateTitleRequest):
     """Generate a short title for a note content"""
     try:
-        from src.services.llm import get_llm_config
         from lightrag.llm.openai import openai_complete_if_cache
+
+        from src.services.llm import get_llm_config
 
         llm_cfg = get_llm_config()
 
@@ -691,3 +639,96 @@ Content:
 async def health_check():
     """Health check"""
     return {"status": "healthy", "service": "notebook"}
+
+
+@router.get("/{notebook_id}/sources_kb_status")
+async def get_sources_kb_status(notebook_id: str):
+    """
+    Check the indexing status of the temporary sources knowledge base.
+
+    Args:
+        notebook_id: Notebook ID
+
+    Returns:
+        Status information:
+        - ready: bool - Whether KB is ready for querying
+        - status: str - "not_created" | "indexing" | "ready" | "error"
+        - progress: dict | None - Progress information if indexing
+    """
+    try:
+        kb_name = _get_notebook_sources_kb_name(notebook_id)
+        kb_manager = KnowledgeBaseManager(base_dir=str(_kb_base_dir))
+
+        # Check if KB exists
+        if kb_name not in kb_manager.list_knowledge_bases():
+            return {
+                "ready": False,
+                "status": "not_created",
+                "progress": None
+            }
+
+        # Check progress file
+        kb_dir = kb_manager.get_knowledge_base_path(kb_name)
+        progress_file = kb_dir / ".progress.json"
+
+        if not progress_file.exists():
+            # No progress file - either completed long ago or indexing hasn't started
+            # Check if rag_storage exists as a sign of completion
+            rag_storage = kb_dir / "rag_storage"
+            if rag_storage.exists():
+                return {
+                    "ready": True,
+                    "status": "ready",
+                    "progress": None
+                }
+            else:
+                # KB exists but no storage yet - probably just started
+                return {
+                    "ready": False,
+                    "status": "indexing",
+                    "progress": {
+                        "stage": "initializing",
+                        "message": "准备中...",
+                        "progress_percent": 0
+                    }
+                }
+
+        # Read progress file
+        try:
+            with open(progress_file, encoding="utf-8") as f:
+                import json
+                progress = json.load(f)
+
+            stage = progress.get("stage", "")
+
+            if stage == "completed":
+                return {
+                    "ready": True,
+                    "status": "ready",
+                    "progress": None
+                }
+            elif stage == "error":
+                return {
+                    "ready": False,
+                    "status": "error",
+                    "progress": progress
+                }
+            else:
+                return {
+                    "ready": False,
+                    "status": "indexing",
+                    "progress": progress
+                }
+        except Exception as e:
+            logger.error(f"Failed to read progress file: {e}")
+            # Assume ready if we can't read progress
+            return {
+                "ready": True,
+                "status": "ready",
+                "progress": None
+            }
+
+    except Exception as e:
+        logger.error(f"Failed to check sources KB status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+

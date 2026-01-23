@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/exhaustive-deps */
+
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Wand2,
@@ -23,7 +25,6 @@ import {
   Quote,
   Link,
   Image,
-  Table,
   Minus,
   Download,
   FileText,
@@ -40,7 +41,6 @@ import {
   Radio,
   ChevronDown,
   ChevronRight,
-  LayoutTemplate,
   Import,
 } from "lucide-react";
 import AddToNotebookModal from "./AddToNotebookModal";
@@ -63,8 +63,6 @@ interface CoWriterEditorProps {
 
 // AI Mark tag regex patterns
 const AI_MARK_REGEX = /<span\s+data-rough-notation="[^"]+">([^<]*)<\/span>/g;
-const AI_MARK_OPEN_TAG = /<span\s+data-rough-notation="[^"]+">/g;
-const AI_MARK_CLOSE_TAG = /<\/span>/g;
 
 export default function CoWriterEditor({
   initialValue = "",
@@ -114,7 +112,7 @@ export default function CoWriterEditor({
 
   // Podcast / Narration related states
   const [isPodcastExpanded, setIsPodcastExpanded] = useState(false);
-  const [narrationStyle, setNarrationStyle] = useState<
+  const [narrationStyle] = useState<
     "friendly" | "academic" | "concise"
   >("friendly");
   const [narrationScript, setNarrationScript] = useState<string>("");
@@ -122,10 +120,10 @@ export default function CoWriterEditor({
   const [narrationLoading, setNarrationLoading] = useState<boolean>(false);
   const [narrationError, setNarrationError] = useState<string | null>(null);
   const [ttsAvailable, setTtsAvailable] = useState<boolean | null>(null);
-  const [ttsVoices, setTtsVoices] = useState<
+  const [, setTtsVoices] = useState<
     Array<{ id: string; name: string; description?: string }>
   >([]);
-  const [selectedVoice, setSelectedVoice] = useState<string>("alloy");
+  const [, setSelectedVoice] = useState<string>("alloy");
   const [audioInfo, setAudioInfo] = useState<{
     audioUrl?: string;
     audioId?: string;
@@ -208,7 +206,7 @@ export default function CoWriterEditor({
         } else {
           setTtsAvailable(false);
         }
-      } catch (e) {
+      } catch {
         setTtsAvailable(false);
       }
     };
@@ -681,9 +679,8 @@ export default function CoWriterEditor({
     const text = textarea.value.substring(start, end);
 
     if (text.trim().length > 0) {
-      const rect = textarea.getBoundingClientRect();
-      let x = e.clientX;
-      let y = e.clientY + 10;
+      const x = e.clientX;
+      const y = e.clientY + 10;
 
       setSelection({ start, end, text });
       setPopover({ visible: true, x, y });
@@ -904,7 +901,6 @@ export default function CoWriterEditor({
       document.body.appendChild(tempContainer);
 
       // Copy all related stylesheets
-      const allStyles = Array.from(document.styleSheets);
       const styleElement = document.createElement("style");
       styleElement.id = "pdf-export-styles";
 
@@ -1484,7 +1480,7 @@ export default function CoWriterEditor({
             <div className="p-4 space-y-4">
               {/* Selected Text Preview */}
               <div className="text-xs text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100 line-clamp-2 italic">
-                "{selection?.text}"
+                &quot;{selection?.text}&quot;
               </div>
 
               {/* Instruction Input */}
@@ -1691,16 +1687,16 @@ export default function CoWriterEditor({
                 remarkPlugins={[remarkGfm, remarkMath]}
                 rehypePlugins={[rehypeKatex, rehypeRaw]}
                 components={{
-                  mark: ({ node, ...props }) => (
+                  mark: ({ ...props }) => (
                     <mark className="bg-yellow-200 px-0.5 rounded" {...props} />
                   ),
-                  u: ({ node, ...props }) => (
+                  u: ({ ...props }) => (
                     <u
                       className="underline decoration-2 decoration-slate-400"
                       {...props}
                     />
                   ),
-                  span: ({ node, ...props }) => {
+                  span: ({ ...props }) => {
                     const dataAttr = (props as any)["data-rough-notation"];
                     if (dataAttr) {
                       // Handwritten style annotation styles
@@ -1722,7 +1718,7 @@ export default function CoWriterEditor({
                     return <span {...props} />;
                   },
                   // Handle paragraphs containing rough-notation
-                  p: ({ node, children, ...props }) => {
+                  p: ({ children, ...props }) => {
                     // Check if contains bracket type span
                     const childArray = React.Children.toArray(children);
                     const hasBracket = childArray.some((child: any) => {
@@ -1744,7 +1740,7 @@ export default function CoWriterEditor({
                     }
                     return <p {...props}>{children}</p>;
                   },
-                  table: ({ node, ...props }) => (
+                  table: ({ ...props }) => (
                     <div className="overflow-x-auto my-4">
                       <table
                         className="min-w-full border-collapse border border-slate-300"
@@ -1752,19 +1748,19 @@ export default function CoWriterEditor({
                       />
                     </div>
                   ),
-                  th: ({ node, ...props }) => (
+                  th: ({ ...props }) => (
                     <th
                       className="border border-slate-300 px-3 py-2 bg-slate-100 font-semibold text-left"
                       {...props}
                     />
                   ),
-                  td: ({ node, ...props }) => (
+                  td: ({ ...props }) => (
                     <td
                       className="border border-slate-300 px-3 py-2"
                       {...props}
                     />
                   ),
-                  code: ({ node, className, children, ...props }) => {
+                  code: ({ className, children, ...props }) => {
                     const match = /language-(\w+)/.exec(className || "");
                     const isInline = !match && !className;
 
@@ -1787,7 +1783,7 @@ export default function CoWriterEditor({
                       </pre>
                     );
                   },
-                  blockquote: ({ node, ...props }) => (
+                  blockquote: ({ ...props }) => (
                     <blockquote
                       className="border-l-4 border-purple-500 pl-4 my-4 italic text-slate-600 bg-purple-50/50 py-2 rounded-r"
                       {...props}
@@ -1844,7 +1840,7 @@ export default function CoWriterEditor({
                             </span>
                           </div>
                           <div className="text-xs text-slate-600 truncate mb-1">
-                            "{op.input?.original_text?.substring(0, 35)}..."
+                            &quot;{op.input?.original_text?.substring(0, 35)}...&quot;
                           </div>
                           <div className="flex items-center gap-2 text-[10px] text-slate-400">
                             {op.source && (

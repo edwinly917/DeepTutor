@@ -5,8 +5,6 @@ import {
   TaskState,
   ThoughtEntry,
   LogEntry,
-  TopicBlock,
-  ReportOutline,
 } from "../types/research";
 
 export const initialResearchState: ResearchState = {
@@ -76,6 +74,9 @@ export const researchReducer = (
   state: ResearchState,
   event: ResearchEvent,
 ): ResearchState => {
+  if (event.type === "reset") {
+    return initialResearchState;
+  }
   // Common log handling
   const newLog = event.type === "log" ? createLog(event.content) : null;
   const logs = newLog ? [...state.logs, newLog] : state.logs;
@@ -419,7 +420,6 @@ export const researchReducer = (
     case "new_topic_added": {
       // A new topic was discovered during research
       const newTopic = event.new_topic;
-      const newBlockId = `block_${Math.random().toString(36).substr(2, 9)}`; // Backend should provide ID theoretically but usually it adds to queue end
       // If backend provides ID in event, use it. But typically new_topic_added event might lack ID until queue_seeded.
       // Assuming queue_seeded will follow or handle this.
       // But for UI feedback:
@@ -465,7 +465,6 @@ export const researchReducer = (
 
     case "outline_completed":
       // Determine the generated outline sections count
-      const outlineData = event as any; // Full outline payload might be in event
       // But usually event just says outline_completed.
       // If the outline data is passed in payload:
       return {

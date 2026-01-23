@@ -12,7 +12,6 @@ import {
   initializeTheme,
   setTheme,
   getStoredTheme,
-  type Theme,
 } from "@/lib/theme";
 
 // --- Types ---
@@ -321,7 +320,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
           setTheme(themeToUse);
         }
       }
-    } catch (e) {
+    } catch {
       // Fall back to localStorage theme on error
       const stored = getStoredTheme();
       if (stored) {
@@ -346,8 +345,6 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   const SIDEBAR_MIN_WIDTH = 64;
   const SIDEBAR_MAX_WIDTH = 320;
   const SIDEBAR_DEFAULT_WIDTH = 256;
-  const SIDEBAR_COLLAPSED_WIDTH = 64;
-
   const [sidebarWidth, setSidebarWidthState] = useState<number>(
     SIDEBAR_DEFAULT_WIDTH,
   );

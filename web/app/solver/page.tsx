@@ -252,7 +252,7 @@ export default function SolverPage() {
                           resolveArtifactUrl(url, msg.outputDir)
                         }
                         components={{
-                          img: ({ node, src, ...props }) => (
+                          img: ({ src, ...props }) => (
                             <img
                               {...props}
                               src={
@@ -265,7 +265,7 @@ export default function SolverPage() {
                               className="max-w-full h-auto"
                             />
                           ),
-                          a: ({ node, href, ...props }) => (
+                          a: ({ href, ...props }) => (
                             <a
                               {...props}
                               href={
@@ -279,13 +279,13 @@ export default function SolverPage() {
                               className="break-all"
                             />
                           ),
-                          pre: ({ node, ...props }) => (
+                          pre: ({ ...props }) => (
                             <pre
                               {...props}
                               className="overflow-x-auto max-w-full"
                             />
                           ),
-                          code: ({ node, className, children, ...props }) => {
+                          code: ({ className, children, ...props }) => {
                             const isInline = !className;
                             return (
                               <code
@@ -296,7 +296,7 @@ export default function SolverPage() {
                               </code>
                             );
                           },
-                          table: ({ node, ...props }) => (
+                          table: ({ ...props }) => (
                             <div className="overflow-x-auto">
                               <table {...props} className="min-w-full" />
                             </div>
@@ -322,7 +322,7 @@ export default function SolverPage() {
                           resolveArtifactUrl(url, msg.outputDir)
                         }
                         components={{
-                          img: ({ node, src, ...props }) => (
+                          img: ({ src, ...props }) => (
                             <img
                               {...props}
                               src={
@@ -335,7 +335,7 @@ export default function SolverPage() {
                               className="max-w-full h-auto"
                             />
                           ),
-                          a: ({ node, href, ...props }) => (
+                          a: ({ href, ...props }) => (
                             <a
                               {...props}
                               href={
@@ -349,13 +349,13 @@ export default function SolverPage() {
                               className="break-all"
                             />
                           ),
-                          pre: ({ node, ...props }) => (
+                          pre: ({ ...props }) => (
                             <pre
                               {...props}
                               className="overflow-x-auto max-w-full"
                             />
                           ),
-                          code: ({ node, className, children, ...props }) => {
+                          code: ({ className, children, ...props }) => {
                             const isInline = !className;
                             return (
                               <code
@@ -366,7 +366,7 @@ export default function SolverPage() {
                               </code>
                             );
                           },
-                          table: ({ node, ...props }) => (
+                          table: ({ ...props }) => (
                             <div className="overflow-x-auto">
                               <table {...props} className="min-w-full" />
                             </div>

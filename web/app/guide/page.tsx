@@ -14,11 +14,9 @@ import {
   Sparkles,
   ArrowRight,
   Play,
-  FileText,
   ChevronLeft,
   X,
   Check,
-  Circle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -1105,7 +1103,7 @@ ${html}
                         remarkPlugins={[remarkGfm, remarkMath]}
                         rehypePlugins={[rehypeKatex]}
                         components={{
-                          table: ({ node, ...props }) => (
+                          table: ({ ...props }) => (
                             <div className="overflow-x-auto my-4 rounded-lg border border-slate-200 shadow-sm">
                               <table
                                 className="min-w-full divide-y divide-slate-200 text-sm"
@@ -1113,28 +1111,28 @@ ${html}
                               />
                             </div>
                           ),
-                          thead: ({ node, ...props }) => (
+                          thead: ({ ...props }) => (
                             <thead className="bg-slate-50" {...props} />
                           ),
-                          th: ({ node, ...props }) => (
+                          th: ({ ...props }) => (
                             <th
                               className="px-3 py-2 text-left font-semibold text-slate-700 whitespace-nowrap border-b border-slate-200"
                               {...props}
                             />
                           ),
-                          tbody: ({ node, ...props }) => (
+                          tbody: ({ ...props }) => (
                             <tbody
                               className="divide-y divide-slate-100 bg-white"
                               {...props}
                             />
                           ),
-                          td: ({ node, ...props }) => (
+                          td: ({ ...props }) => (
                             <td
                               className="px-3 py-2 text-slate-600 border-b border-slate-100"
                               {...props}
                             />
                           ),
-                          tr: ({ node, ...props }) => (
+                          tr: ({ ...props }) => (
                             <tr
                               className="hover:bg-slate-50/50 transition-colors"
                               {...props}
@@ -1151,7 +1149,7 @@ ${html}
                         remarkPlugins={[remarkGfm, remarkMath]}
                         rehypePlugins={[rehypeKatex]}
                         components={{
-                          table: ({ node, ...props }) => (
+                          table: ({ ...props }) => (
                             <div className="overflow-x-auto my-4 rounded-lg border border-slate-200 shadow-sm">
                               <table
                                 className="min-w-full divide-y divide-slate-200 text-sm"
@@ -1159,28 +1157,28 @@ ${html}
                               />
                             </div>
                           ),
-                          thead: ({ node, ...props }) => (
+                          thead: ({ ...props }) => (
                             <thead className="bg-slate-50" {...props} />
                           ),
-                          th: ({ node, ...props }) => (
+                          th: ({ ...props }) => (
                             <th
                               className="px-3 py-2 text-left font-semibold text-slate-700 whitespace-nowrap border-b border-slate-200"
                               {...props}
                             />
                           ),
-                          tbody: ({ node, ...props }) => (
+                          tbody: ({ ...props }) => (
                             <tbody
                               className="divide-y divide-slate-100 bg-white"
                               {...props}
                             />
                           ),
-                          td: ({ node, ...props }) => (
+                          td: ({ ...props }) => (
                             <td
                               className="px-3 py-2 text-slate-600 border-b border-slate-100"
                               {...props}
                             />
                           ),
-                          tr: ({ node, ...props }) => (
+                          tr: ({ ...props }) => (
                             <tr
                               className="hover:bg-slate-50/50 transition-colors"
                               {...props}
@@ -1292,7 +1290,7 @@ ${html}
                   remarkPlugins={[remarkGfm, remarkMath]}
                   rehypePlugins={[rehypeKatex]}
                   components={{
-                    table: ({ node, ...props }) => (
+                    table: ({ ...props }) => (
                       <div className="overflow-x-auto my-6 rounded-lg border border-slate-200 shadow-sm">
                         <table
                           className="min-w-full divide-y divide-slate-200 text-sm"
@@ -1300,28 +1298,28 @@ ${html}
                         />
                       </div>
                     ),
-                    thead: ({ node, ...props }) => (
+                    thead: ({ ...props }) => (
                       <thead className="bg-slate-50" {...props} />
                     ),
-                    th: ({ node, ...props }) => (
+                    th: ({ ...props }) => (
                       <th
                         className="px-4 py-3 text-left font-semibold text-slate-700 whitespace-nowrap border-b border-slate-200"
                         {...props}
                       />
                     ),
-                    tbody: ({ node, ...props }) => (
+                    tbody: ({ ...props }) => (
                       <tbody
                         className="divide-y divide-slate-100 bg-white"
                         {...props}
                       />
                     ),
-                    td: ({ node, ...props }) => (
+                    td: ({ ...props }) => (
                       <td
                         className="px-4 py-3 text-slate-600 border-b border-slate-100"
                         {...props}
                       />
                     ),
-                    tr: ({ node, ...props }) => (
+                    tr: ({ ...props }) => (
                       <tr
                         className="hover:bg-slate-50/50 transition-colors"
                         {...props}

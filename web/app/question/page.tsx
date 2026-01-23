@@ -41,7 +41,7 @@ export default function QuestionPage() {
   } = useGlobal();
 
   // Dashboard state for parallel generation
-  const [dashboardState, dispatchDashboard] = useQuestionReducer();
+  const [dashboardState] = useQuestionReducer();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   // Tab state: "questions" shows the quiz, "process" shows the dashboard

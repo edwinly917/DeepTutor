@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/exhaustive-deps */
+
 import { useState, useEffect, useRef } from "react";
 import {
   Settings as SettingsIcon,
@@ -14,7 +16,6 @@ import {
   AlertCircle,
   Database,
   Search,
-  MessageSquare,
   Volume2,
   Cpu,
   Key,
@@ -261,7 +262,6 @@ export default function SettingsPage() {
   const [envSaveSuccess, setEnvSaveSuccess] = useState(false);
   const [envError, setEnvError] = useState("");
   const [testResults, setTestResults] = useState<TestResults | null>(null);
-  const [testing, setTesting] = useState(false);
   // Individual service testing states
   const [testingService, setTestingService] = useState<Record<string, boolean>>(
     {},
@@ -282,6 +282,8 @@ export default function SettingsPage() {
   // LLM Providers state
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(false);
+  const [ragProviders, setRagProviders] = useState<string[]>([]);
+  const [currentRagProvider, setCurrentRagProvider] = useState<string>("lightrag");
   const [editingProvider, setEditingProvider] = useState<LLMProvider | null>(
     null,
   ); // null means adding new
@@ -303,6 +305,7 @@ export default function SettingsPage() {
 
   // LLM Mode state
   const [llmModeInfo, setLlmModeInfo] = useState<LLMModeInfo | null>(null);
+  const [testing, setTesting] = useState(false);
   const [providerTypeFilter, setProviderTypeFilter] = useState<
     "all" | "api" | "local"
   >("all");
@@ -316,23 +319,12 @@ export default function SettingsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...uiSettings, theme: themeValue }),
         });
-      } catch (err) {
+      } catch {
         // Silently fail - theme is still saved to localStorage
       }
     }, 500),
   ).current;
 
-  // RAG providers state
-  const [ragProviders, setRagProviders] = useState<
-    Array<{
-      id: string;
-      name: string;
-      description: string;
-      supported_modes: string[];
-    }>
-  >([]);
-  const [currentRagProvider, setCurrentRagProvider] =
-    useState<string>("raganything");
   const [loadingRagProviders, setLoadingRagProviders] = useState(false);
 
   useEffect(() => {
@@ -581,7 +573,7 @@ export default function SettingsPage() {
       });
       const data = await res.json();
       setTestProviderResult(data);
-    } catch (err) {
+    } catch {
       setTestProviderResult({ success: false, message: t("Connection failed") });
     } finally {
       setTestingProvider(false);
@@ -611,7 +603,7 @@ export default function SettingsPage() {
       } else {
         setError("Failed to load settings");
       }
-    } catch (err) {
+    } catch {
       setError("Failed to connect to backend");
     } finally {
       setLoading(false);
@@ -2276,8 +2268,9 @@ export default function SettingsPage() {
                     <div>
                       <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1 flex justify-between">
                         <span>{t("Model")}</span>
-                        {PROVIDER_PRESETS.find((p) => p.id === selectedPresetId)
-                          ?.models.length! > 0 && (
+                        {(PROVIDER_PRESETS.find(
+                          (p) => p.id === selectedPresetId,
+                        )?.models?.length ?? 0) > 0 && (
                           <button
                             onClick={() =>
                               setCustomModelInput(!customModelInput)
@@ -2293,9 +2286,9 @@ export default function SettingsPage() {
                       <div className="flex gap-2">
                         {!customModelInput &&
                         (fetchedModels.length > 0 ||
-                          PROVIDER_PRESETS.find(
+                          (PROVIDER_PRESETS.find(
                             (p) => p.id === selectedPresetId,
-                          )?.models.length! > 0) ? (
+                          )?.models?.length ?? 0) > 0) ? (
                           <div className="relative flex-1">
                             <select
                               value={editingProvider.model}

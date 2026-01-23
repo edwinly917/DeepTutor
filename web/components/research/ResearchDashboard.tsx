@@ -1,3 +1,5 @@
+/* eslint-disable react-hooks/exhaustive-deps */
+
 import React, { useState, useEffect } from "react";
 import { ResearchState } from "../../types/research";
 import { TaskGrid } from "./TaskGrid";
@@ -128,6 +130,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
     const tmpl = PPT_STYLE_TEMPLATES.find((t) => t.id === selectedPptTemplateId);
     if (!tmpl) return;
     if (pptStylePrompt !== tmpl.prompt) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedPptTemplateId("custom");
     }
   }, [pptStylePrompt, selectedPptTemplateId]);
@@ -163,10 +166,13 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
   // Auto-switch to current stage tab when stage changes
   useEffect(() => {
     if (global.stage === "planning") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveProcessTab("planning");
     } else if (global.stage === "researching") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveProcessTab("researching");
     } else if (global.stage === "reporting") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveProcessTab("reporting");
     }
     // When completed, stay on current tab (user can browse freely)
@@ -189,12 +195,13 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
   // Reset to process view when a new research starts
   useEffect(() => {
     if (global.stage === "planning") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveView("process");
     }
   }, [global.stage]);
 
   // Clickable Step Tabs
-  const StepTabs = () => (
+  const renderStepTabs = () => (
     <div className="flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm p-1 rounded-xl border border-slate-200/50 dark:border-slate-700/50 shadow-sm">
       {steps.map((step, idx) => {
         const available = isTabAvailable(step.id);
@@ -244,7 +251,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
   );
 
   // Planning Content
-  const PlanningContent = () => {
+  const renderPlanningContent = () => {
     const isActive = global.stage === "planning";
 
     return (
@@ -336,7 +343,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
   };
 
   // Researching Content
-  const ResearchingContent = () => {
+  const renderResearchingContent = () => {
     const isActive = global.stage === "researching";
     const hasContent = Object.keys(tasks).length > 0;
 
@@ -404,7 +411,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
   };
 
   // Reporting Content
-  const ReportingContent = () => {
+  const renderReportingContent = () => {
     const isActive = global.stage === "reporting";
 
     return (
@@ -726,14 +733,14 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
             <>
               {/* Step Tabs */}
               <div className="px-6 pt-4 pb-2 flex justify-center shrink-0">
-                <StepTabs />
+                {renderStepTabs()}
               </div>
 
               {/* Tab Content */}
               <div className="flex-1 overflow-hidden p-6 flex flex-col">
-                {activeProcessTab === "planning" && <PlanningContent />}
-                {activeProcessTab === "researching" && <ResearchingContent />}
-                {activeProcessTab === "reporting" && <ReportingContent />}
+                {activeProcessTab === "planning" && renderPlanningContent()}
+                {activeProcessTab === "researching" && renderResearchingContent()}
+                {activeProcessTab === "reporting" && renderReportingContent()}
               </div>
             </>
           )}
@@ -839,34 +846,34 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
                     remarkPlugins={[remarkGfm, remarkMath]}
                     rehypePlugins={[rehypeKatex, rehypeRaw]}
                     components={{
-                      h1: ({ node, ...props }) => (
+                      h1: ({ ...props }) => (
                         <h1
                           className="text-3xl font-bold mb-6 pb-2 border-b border-slate-200 dark:border-slate-700"
                           {...props}
                         />
                       ),
-                      h2: ({ node, ...props }) => (
+                      h2: ({ ...props }) => (
                         <h2
                           className="text-2xl font-bold mt-8 mb-4 text-indigo-900 dark:text-indigo-300"
                           {...props}
                         />
                       ),
-                      h3: ({ node, ...props }) => (
+                      h3: ({ ...props }) => (
                         <h3
                           className="text-xl font-semibold mt-6 mb-3 text-slate-800 dark:text-slate-200"
                           {...props}
                         />
                       ),
-                      p: ({ node, ...props }) => (
+                      p: ({ ...props }) => (
                         <p
                           className="leading-relaxed mb-4 text-slate-600 dark:text-slate-300"
                           {...props}
                         />
                       ),
-                      li: ({ node, ...props }) => (
+                      li: ({ ...props }) => (
                         <li className="mb-2" {...props} />
                       ),
-                      table: ({ node, ...props }) => (
+                      table: ({ ...props }) => (
                         <div className="overflow-x-auto my-6">
                           <table
                             className="min-w-full border-collapse border border-slate-300 dark:border-slate-600 text-sm"
@@ -874,31 +881,31 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
                           />
                         </div>
                       ),
-                      thead: ({ node, ...props }) => (
+                      thead: ({ ...props }) => (
                         <thead
                           className="bg-slate-50 dark:bg-slate-700"
                           {...props}
                         />
                       ),
-                      th: ({ node, ...props }) => (
+                      th: ({ ...props }) => (
                         <th
                           className="border border-slate-300 dark:border-slate-600 px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200"
                           {...props}
                         />
                       ),
-                      td: ({ node, ...props }) => (
+                      td: ({ ...props }) => (
                         <td
                           className="border border-slate-200 dark:border-slate-600 px-4 py-2 text-slate-600 dark:text-slate-300"
                           {...props}
                         />
                       ),
-                      blockquote: ({ node, ...props }) => (
+                      blockquote: ({ ...props }) => (
                         <blockquote
                           className="border-l-4 border-indigo-300 dark:border-indigo-600 pl-4 py-2 my-4 bg-indigo-50/50 dark:bg-indigo-900/30 text-slate-600 dark:text-slate-300 italic"
                           {...props}
                         />
                       ),
-                      a: ({ node, href, ...props }) => {
+                      a: ({ href, ...props }) => {
                         // Handle internal anchor links for smooth scrolling within the container
                         const handleClick = (
                           e: React.MouseEvent<HTMLAnchorElement>,
@@ -938,7 +945,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
                           />
                         );
                       },
-                      code: ({ node, className, children, ...props }) => {
+                      code: ({ className, children, ...props }) => {
                         const match = /language-(\w+)/.exec(className || "");
                         const language = match ? match[1] : "";
                         const isInline = !match;
@@ -965,7 +972,7 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
                           </code>
                         );
                       },
-                      pre: ({ node, children, ...props }) => {
+                      pre: ({ children, ...props }) => {
                         // Check if this pre contains a mermaid code block
                         const child = React.Children.toArray(
                           children,

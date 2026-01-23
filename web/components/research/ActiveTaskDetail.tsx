@@ -5,9 +5,7 @@ import {
   BrainCircuit,
   Search,
   PenTool,
-  CheckCircle2,
   AlertTriangle,
-  ChevronRight,
   Database,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -171,8 +169,7 @@ const formatTimestamp = (ts: number) => {
                       p: ({ children }) => (
                         <p className="mb-1 last:mb-0 break-words">{children}</p>
                       ),
-                      code: ({ node, className, children, ...props }) => {
-                        const match = /language-(\w+)/.exec(className || "");
+                      code: ({ className, children, ...props }) => {
                         return !className?.includes("language-") ? (
                           <code
                             className="bg-slate-200/50 dark:bg-slate-600/50 px-1 py-0.5 rounded text-xs text-slate-800 dark:text-slate-200"

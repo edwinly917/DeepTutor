@@ -1,8 +1,7 @@
-import asyncio
-import re
+from datetime import datetime
 import json
 from pathlib import Path
-from datetime import datetime
+import re
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 try:
@@ -10,15 +9,12 @@ try:
     from pptx.dml.color import RGBColor
     from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
     from pptx.util import Pt
-    from pptx.slide import Slide
-    from pptx.shapes.autoshape import Shape
 except ImportError:
     Presentation = None
 
 from src.logging import get_logger
 from src.services.config import get_ppt_config
 from src.services.llm import complete as llm_complete
-
 
 logger = get_logger("PPTGenerator")
 

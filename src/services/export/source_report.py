@@ -9,7 +9,6 @@ from src.services.llm import complete as llm_complete
 from src.services.llm import get_llm_config, get_token_limit_kwargs
 from src.services.rag.service import RAGService
 
-
 logger = get_logger("SourceReport")
 
 

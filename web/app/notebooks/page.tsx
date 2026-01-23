@@ -11,8 +11,6 @@ import {
     Trash2,
     Edit3,
     X,
-    Check,
-    Palette,
     MoreVertical,
 } from "lucide-react";
 import { apiUrl } from "@/lib/api";

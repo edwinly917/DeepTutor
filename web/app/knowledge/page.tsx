@@ -8,9 +8,7 @@ import {
   FileText,
   Image as ImageIcon,
   Layers,
-  MoreVertical,
   Plus,
-  Search,
   Upload,
   Trash2,
   Loader2,
@@ -164,7 +162,7 @@ export default function KnowledgePage() {
           errorDetail = errorData.detail || errorData.message || "";
           errorMessage = errorDetail || errorMessage;
           console.error("❌ Error response:", errorData);
-        } catch (parseErr) {
+        } catch {
           const text = await res.text();
           console.error("❌ Error response (text):", text);
           errorMessage = `${errorMessage}. Response: ${text.substring(0, 200)}`;
@@ -422,25 +420,6 @@ export default function KnowledgePage() {
     } catch (e) {
       console.error("Failed to clear backend progress:", e);
     }
-  };
-
-  // Clear all stuck progress states
-  const clearAllStuckProgress = () => {
-    setProgressMap((prev) => {
-      const cleaned: Record<string, ProgressInfo> = {};
-      Object.entries(prev).forEach(([kbName, progress]) => {
-        // Only keep completed and error states
-        if (progress.stage === "completed" || progress.stage === "error") {
-          cleaned[kbName] = progress;
-        }
-      });
-      try {
-        localStorage.setItem("kb_progress_map", JSON.stringify(cleaned));
-      } catch (e) {
-        console.error("Failed to save progress to localStorage:", e);
-      }
-      return cleaned;
-    });
   };
 
   const handleUpload = async (e: React.FormEvent) => {

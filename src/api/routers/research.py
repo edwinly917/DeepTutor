@@ -1,15 +1,15 @@
 import asyncio
 from datetime import datetime
+import hashlib
 import json
 import logging
 from pathlib import Path
-import re
 import sys
 import time
 import traceback
 from typing import Any, Literal
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, WebSocket
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, WebSocket
 from pydantic import BaseModel
 
 from src.agents.research.agents import RephraseAgent
@@ -19,12 +19,12 @@ from src.api.utils.notebook_manager import notebook_manager
 from src.api.utils.task_id_manager import TaskIDManager
 from src.logging import get_logger
 from src.services.config import get_ppt_config, load_config_with_main
-from src.services.llm import get_llm_config
+from src.services.export.pdf_generator import PDFGenerator
 
 # Import the new PPTGenerator service
 from src.services.export.ppt_generator import PPTGenerator
-from src.services.export.pdf_generator import PDFGenerator
 from src.services.export.source_report import SourceReportGenerator
+from src.services.llm import get_llm_config
 
 # Force stdout to use utf-8 to prevent encoding errors with emojis on Windows
 if sys.platform == "win32":
@@ -37,6 +37,33 @@ router = APIRouter()
 def load_config():
     project_root = Path(__file__).parent.parent.parent.parent
     return load_config_with_main("research_config.yaml", project_root)
+
+
+def _read_json_file(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _file_sha256(path: Path) -> str | None:
+    try:
+        data = path.read_bytes()
+        return hashlib.sha256(data).hexdigest()
+    except Exception:
+        return None
+
+
+def _get_latest_event(progress: dict | None) -> dict | None:
+    if not progress:
+        return None
+    events = progress.get("events") or []
+    if not events:
+        return None
+    return events[-1]
 
 
 def _persist_research_session(
@@ -408,6 +435,129 @@ async def optimize_topic(request: OptimizeRequest):
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}
+
+
+@router.get("/status/{research_id}")
+async def research_status(research_id: str):
+    project_root = Path(__file__).parent.parent.parent.parent
+    base_dir = project_root / "data" / "user" / "research"
+    cache_dir = base_dir / "cache" / research_id
+    reports_dir = base_dir / "reports"
+
+    planning = _read_json_file(cache_dir / "planning_progress.json")
+    researching = _read_json_file(cache_dir / "researching_progress.json")
+    reporting = _read_json_file(cache_dir / "reporting_progress.json")
+    queue = _read_json_file(cache_dir / "queue.json")
+
+    report_file = reports_dir / f"{research_id}.md"
+    metadata_file = reports_dir / f"{research_id}_metadata.json"
+    has_report = report_file.exists()
+
+    if not any([planning, researching, reporting, queue]) and not has_report and not metadata_file.exists():
+        raise HTTPException(status_code=404, detail="Research not found")
+
+    report_url = None
+    report_size = None
+    report_updated_at = None
+    report_hash = None
+    if has_report:
+        report_url = f"/api/outputs/research/reports/{report_file.name}"
+        stat = report_file.stat()
+        report_size = stat.st_size
+        report_updated_at = datetime.fromtimestamp(stat.st_mtime).isoformat()
+        report_hash = _file_sha256(report_file)
+
+    metadata = _read_json_file(metadata_file)
+    metadata_url = (
+        f"/api/outputs/research/reports/{metadata_file.name}" if metadata_file.exists() else None
+    )
+
+    stage = "idle"
+    if has_report:
+        stage = "completed"
+    elif reporting and reporting.get("events"):
+        stage = "reporting"
+    elif researching and researching.get("events"):
+        stage = "researching"
+    elif planning and planning.get("events"):
+        stage = "planning"
+
+    return {
+        "research_id": research_id,
+        "stage": stage,
+        "has_report": has_report,
+        "report_url": report_url,
+        "report_size": report_size,
+        "report_updated_at": report_updated_at,
+        "report_hash": report_hash,
+        "metadata": metadata,
+        "metadata_url": metadata_url,
+        "progress": {
+            "planning": planning,
+            "researching": researching,
+            "reporting": reporting,
+        },
+        "latest_event": {
+            "planning": _get_latest_event(planning),
+            "researching": _get_latest_event(researching),
+            "reporting": _get_latest_event(reporting),
+        },
+        "queue": queue,
+    }
+
+
+@router.get("/latest")
+async def latest_research(topic: str | None = Query(default=None)):
+    project_root = Path(__file__).parent.parent.parent.parent
+    reports_dir = project_root / "data" / "user" / "research" / "reports"
+    if not reports_dir.exists():
+        raise HTTPException(status_code=404, detail="No research reports found")
+
+    candidates: list[tuple[float, dict, Path]] = []
+    for metadata_file in reports_dir.glob("*_metadata.json"):
+        metadata = _read_json_file(metadata_file)
+        if not metadata:
+            continue
+        if topic:
+            topic_lower = topic.lower()
+            haystack = " ".join(
+                [
+                    str(metadata.get("topic", "")),
+                    str(metadata.get("optimized_topic", "")),
+                ]
+            ).lower()
+            if topic_lower not in haystack:
+                continue
+        completed_at = metadata.get("completed_at")
+        if completed_at:
+            try:
+                ts = datetime.fromisoformat(completed_at).timestamp()
+            except ValueError:
+                ts = metadata_file.stat().st_mtime
+        else:
+            ts = metadata_file.stat().st_mtime
+        candidates.append((ts, metadata, metadata_file))
+
+    if not candidates:
+        raise HTTPException(status_code=404, detail="No matching research found")
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    _, metadata, metadata_file = candidates[0]
+    research_id = metadata.get("research_id") or metadata_file.name.replace("_metadata.json", "")
+    report_file = reports_dir / f"{research_id}.md" if research_id else None
+    report_url = (
+        f"/api/outputs/research/reports/{report_file.name}"
+        if report_file and report_file.exists()
+        else None
+    )
+    metadata_url = f"/api/outputs/research/reports/{metadata_file.name}"
+
+    return {
+        "research_id": research_id,
+        "metadata": metadata,
+        "report_url": report_url,
+        "metadata_url": metadata_url,
+    }
 
 
 @router.websocket("/run")
@@ -821,7 +971,9 @@ async def export_mindmap(request: ExportMindmapRequest):
         {"mindmap": "mermaid mindmap code"}
     """
     try:
-        from src.services.export.mindmap_generator import generate_mindmap_code, generate_mindmap_with_llm
+        from src.services.export.mindmap_generator import (
+            generate_mindmap_code,
+        )
         
         if request.use_llm:
             # Get LLM config for enhanced generation

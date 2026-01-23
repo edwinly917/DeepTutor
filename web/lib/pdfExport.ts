@@ -78,7 +78,7 @@ async function convertSvgsToImages(element: HTMLElement): Promise<void> {
       // Load as image
       const img = new Image();
 
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>((resolve) => {
         img.onload = () => {
           // Create high-res canvas
           const canvas = document.createElement("canvas");
@@ -140,8 +140,6 @@ function splitCanvasIntoPages(
 
   // Calculate dimensions in canvas pixels
   const imgWidth = contentWidth;
-  const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
   // Convert content height to image pixels
   const pageHeightInImgPixels = (contentHeight / imgWidth) * canvas.width;
 

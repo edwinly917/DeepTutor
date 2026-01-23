@@ -149,7 +149,8 @@ export type ResearchEventType =
   // System
   | "log"
   | "error"
-  | "status";
+  | "status"
+  | "reset";
 
 export interface ResearchEvent {
   type: ResearchEventType;

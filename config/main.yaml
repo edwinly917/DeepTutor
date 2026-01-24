@@ -166,3 +166,10 @@ export:
       - id: "business"
         name: "Business Pitch"
         prompt: "Use a modern business deck style with bold accent color, sharp contrast, and short impactful bullets."
+
+# =============================================================================
+# Agent Configuration Overrides
+# =============================================================================
+agents:
+  chat_agent:
+    max_history_tokens: 32000

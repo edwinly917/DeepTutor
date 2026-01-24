@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
     Plus,
@@ -69,18 +69,25 @@ export default function NotebooksPage() {
         x: number;
         y: number;
     } | null>(null);
+    const contextMenuRef = useRef<HTMLDivElement | null>(null);
 
     // Fetch notebooks
     useEffect(() => {
         fetchNotebooks();
     }, []);
 
-    // Close context menu on click outside
+    // Close context menu when clicking outside
     useEffect(() => {
-        const handleClick = () => setContextMenu(null);
-        document.addEventListener("click", handleClick);
-        return () => document.removeEventListener("click", handleClick);
-    }, []);
+        if (!contextMenu) return;
+        const handlePointerDown = (event: PointerEvent) => {
+            const target = event.target as Node | null;
+            if (!target) return;
+            if (contextMenuRef.current?.contains(target)) return;
+            setContextMenu(null);
+        };
+        document.addEventListener("pointerdown", handlePointerDown);
+        return () => document.removeEventListener("pointerdown", handlePointerDown);
+    }, [contextMenu]);
 
     const fetchNotebooks = async () => {
         try {
@@ -273,11 +280,13 @@ export default function NotebooksPage() {
                                 </div>
 
                                 {/* Hover Actions */}
-                                <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                                     <button
                                         onClick={(e) => {
+                                            e.preventDefault();
                                             e.stopPropagation();
-                                            handleContextMenu(e, nb.id);
+                                            const rect = e.currentTarget.getBoundingClientRect();
+                                            setContextMenu({ id: nb.id, x: rect.left, y: rect.bottom + 4 });
                                         }}
                                         className="p-1.5 rounded-lg bg-white/80 hover:bg-white border border-slate-200 shadow-sm"
                                     >
@@ -301,6 +310,7 @@ export default function NotebooksPage() {
             {/* Context Menu */}
             {contextMenu && (
                 <div
+                    ref={contextMenuRef}
                     className="fixed z-50 bg-white rounded-xl shadow-lg border border-slate-200 py-2 min-w-[140px]"
                     style={{ top: contextMenu.y, left: contextMenu.x }}
                     onClick={(e) => e.stopPropagation()}
@@ -396,8 +406,8 @@ export default function NotebooksPage() {
                                             key={color}
                                             onClick={() => setNewNotebook({ ...newNotebook, color })}
                                             className={`w-8 h-8 rounded-full transition-all ${newNotebook.color === color
-                                                    ? "ring-2 ring-offset-2 ring-slate-400 scale-110"
-                                                    : "hover:scale-110"
+                                                ? "ring-2 ring-offset-2 ring-slate-400 scale-110"
+                                                : "hover:scale-110"
                                                 }`}
                                             style={{ backgroundColor: color }}
                                         />
@@ -489,8 +499,8 @@ export default function NotebooksPage() {
                                                 setEditingNotebook({ ...editingNotebook, color })
                                             }
                                             className={`w-8 h-8 rounded-full transition-all ${editingNotebook.color === color
-                                                    ? "ring-2 ring-offset-2 ring-slate-400 scale-110"
-                                                    : "hover:scale-110"
+                                                ? "ring-2 ring-offset-2 ring-slate-400 scale-110"
+                                                : "hover:scale-110"
                                                 }`}
                                             style={{ backgroundColor: color }}
                                         />

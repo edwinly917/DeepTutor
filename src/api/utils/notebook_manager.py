@@ -391,8 +391,29 @@ class NotebookManager:
         if not filepath.exists():
             return False
 
-        # Delete file
+        # Delete notebook file
         filepath.unlink()
+
+        # Clean up associated session file
+        sessions_file = self._get_sessions_file(notebook_id)
+        if sessions_file.exists():
+            sessions_file.unlink()
+
+        # Clean up associated sources knowledge base
+        try:
+            from src.knowledge.manager import KnowledgeBaseManager
+
+            # Get KB base dir (same logic as in notebook router)
+            project_root = Path(__file__).resolve().parents[3]
+            kb_base_dir = project_root / "data" / "knowledge_bases"
+            kb_manager = KnowledgeBaseManager(base_dir=str(kb_base_dir))
+
+            sources_kb_name = f"notebook_{notebook_id}_sources"
+            if sources_kb_name in kb_manager.list_knowledge_bases():
+                kb_manager.delete_knowledge_base(sources_kb_name, confirm=True)
+        except Exception as e:
+            # Log error but don't fail the deletion
+            print(f"Warning: Failed to clean up sources KB for {notebook_id}: {e}")
 
         # Update index
         index = self._load_index()

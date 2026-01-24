@@ -119,7 +119,9 @@ class EmbeddingClient:
 
         # Create async wrapper that uses our adapter system
         async def embedding_wrapper(texts: List[str]) -> List[List[float]]:
-            return await self.embed(texts)
+            import numpy as np
+
+            return np.array(await self.embed(texts), dtype=float)
 
         return EmbeddingFunc(
             embedding_dim=self.config.dim,

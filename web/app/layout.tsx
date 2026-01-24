@@ -27,7 +27,7 @@ export default function RootLayout({
       <head>
         <ThemeScript />
       </head>
-      <body className={font.className}>
+      <body className={font.className} suppressHydrationWarning>
         <GlobalProvider>
           <div className="flex h-screen bg-slate-50 dark:bg-slate-900 overflow-hidden transition-colors duration-200">
             <Sidebar />

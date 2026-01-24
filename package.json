@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@google/genai": "^1.38.0",
+    "pptxgenjs": "^4.0.1"
+  }
+}

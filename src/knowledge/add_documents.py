@@ -79,6 +79,37 @@ class DocumentAdder:
         self.llm_cfg = get_llm_config()
         self.progress_tracker = progress_tracker
 
+    def _build_text_content_list(self, text: str) -> list[dict]:
+        return [{"type": "text", "text": text, "page_idx": 0}]
+
+    def _write_content_list(self, doc_file: Path, content_list: list[dict]) -> None:
+        try:
+            content_list_file = self.content_list_dir / f"{doc_file.stem}.json"
+            with open(content_list_file, "w", encoding="utf-8") as f:
+                json.dump(content_list, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to write content list for {doc_file.name}: {e}")
+
+    def _extract_pdf_text(self, doc_file: Path) -> str:
+        try:
+            from pypdf import PdfReader
+
+            reader = PdfReader(str(doc_file))
+            pages = [(page.extract_text() or "") for page in reader.pages]
+            return "\n".join(pages).strip()
+        except Exception as e:
+            logger.warning(f"PDF text extraction failed for {doc_file.name}: {e}")
+            return ""
+
+    async def _insert_text_content(self, rag: RAGAnything, doc_file: Path, text: str) -> bool:
+        text = text.strip()
+        if not text:
+            return False
+        content_list = self._build_text_content_list(text)
+        await rag.insert_content_list(content_list, file_path=str(doc_file))
+        self._write_content_list(doc_file, content_list)
+        return True
+
     def get_existing_files(self) -> set:
         """Get list of existing documents"""
         existing_files = set()
@@ -253,7 +284,9 @@ class DocumentAdder:
             """
             try:
                 embeddings = await embedding_client.embed(texts)
-                return embeddings
+                import numpy as np
+
+                return np.array(embeddings, dtype=float)
             except Exception as e:
                 logger.error(f"Embedding failed: {e}")
                 raise
@@ -293,9 +326,20 @@ class DocumentAdder:
                     current=idx,
                     total=total_files,
                     file_name=doc_file.name,
-                )
+            )
 
             try:
+                if doc_file.suffix.lower() in [".md", ".txt"]:
+                    logger.info("  → Using text-only ingestion for markdown/text file...")
+                    inserted = await self._insert_text_content(
+                        rag, doc_file, doc_file.read_text(encoding="utf-8", errors="ignore")
+                    )
+                    if inserted:
+                        logger.info(f"  ✓ Successfully processed: {doc_file.name}")
+                        processed_files.append(doc_file)
+                        continue
+                    raise RuntimeError("Empty text content")
+
                 # Use RAGAnything's process_document_complete method with timeout
                 logger.info("  → Starting document processing...")
                 await asyncio.wait_for(
@@ -316,33 +360,65 @@ class DocumentAdder:
                     logger.info(f"  ✓ Content list saved: {content_list_file.name}")
 
             except asyncio.TimeoutError:
-                logger.error(f"  ✗ Processing timeout for {doc_file.name} (>10 minutes)")
-                logger.error("  Possible causes: Large PDF, slow embedding API, network issues")
-                if self.progress_tracker:
-                    from src.knowledge.progress_tracker import ProgressStage
-
-                    self.progress_tracker.update(
-                        ProgressStage.ERROR,
-                        f"Timeout processing: {doc_file.name}",
-                        current=idx,
-                        total=total_files,
-                        error="Processing timeout (>10 minutes)",
+                fallback_used = False
+                if doc_file.suffix.lower() == ".pdf":
+                    logger.warning(
+                        f"  ⚠ Timeout processing {doc_file.name}, falling back to PDF text extraction"
                     )
+                    fallback_text = self._extract_pdf_text(doc_file)
+                    if fallback_text:
+                        fallback_used = await self._insert_text_content(
+                            rag, doc_file, fallback_text
+                        )
+                        if fallback_used:
+                            logger.info(
+                                f"  ✓ Fallback text ingestion complete: {doc_file.name}"
+                            )
+                            processed_files.append(doc_file)
+                if not fallback_used:
+                    logger.error(f"  ✗ Processing timeout for {doc_file.name} (>10 minutes)")
+                    logger.error("  Possible causes: Large PDF, slow embedding API, network issues")
+                    if self.progress_tracker:
+                        from src.knowledge.progress_tracker import ProgressStage
+
+                        self.progress_tracker.update(
+                            ProgressStage.ERROR,
+                            f"Timeout processing: {doc_file.name}",
+                            current=idx,
+                            total=total_files,
+                            error="Processing timeout (>10 minutes)",
+                        )
             except Exception as e:
-                logger.error(f"  ✗ Processing failed {doc_file.name}: {e!s}")
-                import traceback
-
-                logger.error(traceback.format_exc())
-                if self.progress_tracker:
-                    from src.knowledge.progress_tracker import ProgressStage
-
-                    self.progress_tracker.update(
-                        ProgressStage.ERROR,
-                        f"Error processing: {doc_file.name}",
-                        current=idx,
-                        total=total_files,
-                        error=str(e),
+                fallback_used = False
+                if doc_file.suffix.lower() == ".pdf":
+                    logger.warning(
+                        f"  ⚠ Processing failed for {doc_file.name}, falling back to PDF text extraction"
                     )
+                    fallback_text = self._extract_pdf_text(doc_file)
+                    if fallback_text:
+                        fallback_used = await self._insert_text_content(
+                            rag, doc_file, fallback_text
+                        )
+                        if fallback_used:
+                            logger.info(
+                                f"  ✓ Fallback text ingestion complete: {doc_file.name}"
+                            )
+                            processed_files.append(doc_file)
+                if not fallback_used:
+                    logger.error(f"  ✗ Processing failed {doc_file.name}: {e!s}")
+                    import traceback
+
+                    logger.error(traceback.format_exc())
+                    if self.progress_tracker:
+                        from src.knowledge.progress_tracker import ProgressStage
+
+                        self.progress_tracker.update(
+                            ProgressStage.ERROR,
+                            f"Error processing: {doc_file.name}",
+                            current=idx,
+                            total=total_files,
+                            error=str(e),
+                        )
 
         # Copy extracted images
         rag_images_dir = self.rag_storage_dir / "images"

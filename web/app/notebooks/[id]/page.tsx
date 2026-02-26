@@ -4267,12 +4267,12 @@ export default function NotebookDetailPage() {
                           <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-blue-500 rounded-full transition-all duration-300"
-                              style={{ width: `${researchProgress.current}%` }}
+                              style={{ width: `${Math.round((researchProgress.current / researchProgress.total) * 100)}%` }}
                             />
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-slate-400 tabular-nums">
-                              {researchProgress.current}%
+                              {Math.round((researchProgress.current / researchProgress.total) * 100)}%
                             </span>
                             {estimatedTimeRemaining && (
                               <span className="text-[10px] text-slate-400">

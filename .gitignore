@@ -270,3 +270,5 @@ celerybeat.pid
 *.ogg
 !demo/*.mp4
 web/tsconfig.tsbuildinfo
+figma_file.json
+figma_nodes.txt

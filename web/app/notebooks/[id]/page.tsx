@@ -3116,6 +3116,12 @@ export default function NotebookDetailPage() {
               ...prev,
               completed: prev.completed + 1,
             }));
+          } else if (status === "rag_degraded") {
+            const degradedTopic =
+              data.sub_topic || currentSubTopic || "当前子主题";
+            updateStreamingMessage(
+              `⚠️ ${degradedTopic} 在知识库中命中不足，已切换到联网检索`,
+            );
           } else if (status === "researching_completed") {
             // No extra action needed, total already set
           } else if (status === "reporting_started") {

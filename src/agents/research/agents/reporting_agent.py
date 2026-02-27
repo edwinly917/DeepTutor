@@ -214,11 +214,15 @@ class ReportingAgent(BaseAgent):
 
         for citation_id in sorted_citation_ids:
             citation = all_citations.get(citation_id) or {}
+            if citation_id.startswith("PLAN-"):
+                continue
             tool_type = (citation.get("tool_type") or "").lower()
             citation_ref = ref_map.get(citation_id, 0)
             used_preferred = False
 
             if tool_type == "web_search":
+                if citation_ref <= 0:
+                    continue
                 web_items = citation.get("web_sources", []) or citation.get("citations", [])
                 if not web_items and citation.get("url"):
                     web_items = [citation]
@@ -241,6 +245,8 @@ class ReportingAgent(BaseAgent):
                         used_preferred = True
 
             elif tool_type in ("rag_naive", "rag_hybrid", "query_item"):
+                if citation_ref <= 0:
+                    continue
                 rag_items = citation.get("sources", [])
                 for item in rag_items:
                     if not isinstance(item, dict):
@@ -272,6 +278,8 @@ class ReportingAgent(BaseAgent):
                     preferred = ref_map.get(paper_ref_key, 0) or (
                         citation_ref if citation_ref > 0 and not used_preferred else 0
                     )
+                    if preferred <= 0:
+                        continue
                     doi = (paper.get("doi") or "").strip()
                     url = (paper.get("url") or "").strip()
                     if doi and not url:
@@ -924,6 +932,8 @@ class ReportingAgent(BaseAgent):
             if block.tool_traces:
                 for trace in block.tool_traces:
                     citation_id = getattr(trace, "citation_id", None)
+                    if citation_id and citation_id.startswith("PLAN-"):
+                        continue
                     if citation_id and citation_id not in [c["citation_id"] for c in all_citations]:
                         all_citations.append({"citation_id": citation_id})
 

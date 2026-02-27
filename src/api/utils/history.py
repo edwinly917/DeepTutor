@@ -125,7 +125,14 @@ class HistoryManager:
         with open(self.history_file, "w", encoding="utf-8") as f:
             json.dump(data_to_save, f, indent=2, ensure_ascii=False)
 
-    def add_entry(self, activity_type: ActivityType, title: str, content: dict, summary: str = ""):
+    def add_entry(
+        self,
+        activity_type: ActivityType,
+        title: str,
+        content: dict,
+        summary: str = "",
+        notebook_id: str | None = None,
+    ):
         """
         Add a new history entry.
 
@@ -143,6 +150,8 @@ class HistoryManager:
             "summary": summary,
             "content": content,
         }
+        if notebook_id:
+            entry["notebook_id"] = notebook_id
 
         history = self._load_history()
         history.insert(0, entry)  # Prepend to show latest first
@@ -166,6 +175,14 @@ class HistoryManager:
             if entry["id"] == entry_id:
                 return entry
         return None
+
+    def delete_entries_by_notebook(self, notebook_id: str) -> int:
+        """Delete all history entries associated with a notebook_id. Returns the number of deleted entries."""
+        history = self._load_history()
+        original_len = len(history)
+        history = [e for e in history if e.get("notebook_id") != notebook_id]
+        self._save_history(history)
+        return original_len - len(history)
 
 
 # Global instance

@@ -403,6 +403,14 @@ class NotebookManager:
         if sessions_file.exists():
             sessions_file.unlink()
 
+        # Clean up associated history entries
+        try:
+            from src.api.utils.history import history_manager
+
+            history_manager.delete_entries_by_notebook(notebook_id)
+        except Exception as e:
+            print(f"Warning: Failed to clean up history for notebook {notebook_id}: {e}")
+
         # Clean up associated sources knowledge base
         try:
             from src.knowledge.manager import KnowledgeBaseManager

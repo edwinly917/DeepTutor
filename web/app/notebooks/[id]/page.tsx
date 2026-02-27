@@ -2522,6 +2522,20 @@ export default function NotebookDetailPage() {
           const sourceCatalog = normalizeSourceCatalog(
             data.source_catalog || [],
           );
+          const catalogSourceKeys = new Set(
+            sourceCatalog
+              .map((item) =>
+                typeof item.source_key === "string"
+                  ? item.source_key.trim()
+                  : "",
+              )
+              .filter((key) => key.length > 0),
+          );
+          const catalogSourceUrls = new Set(
+            sourceCatalog
+              .map((item) => normalizeSourceUrl(item.url))
+              .filter((url) => url.length > 0),
+          );
 
           // Handle web sources
           if (data.web && Array.isArray(data.web)) {
@@ -2543,6 +2557,22 @@ export default function NotebookDetailPage() {
           // Handle RAG sources
           if (data.rag && Array.isArray(data.rag)) {
             data.rag.forEach((s: any, idx: number) => {
+              const sourceKey =
+                typeof s.source_key === "string" ? s.source_key.trim() : "";
+              const normalizedUrl = normalizeSourceUrl(
+                typeof s.url === "string" ? s.url : "",
+              );
+              const refNumber = Number(s.ref_number);
+              const hasRefNumber = Number.isFinite(refNumber) && refNumber > 0;
+              const hasCatalogMatch =
+                (sourceKey && catalogSourceKeys.has(sourceKey)) ||
+                (normalizedUrl && catalogSourceUrls.has(normalizedUrl));
+
+              // Fast research may return summary-only RAG context; only keep citable entries.
+              if (!hasRefNumber && !sourceKey && !hasCatalogMatch) {
+                return;
+              }
+
               newSources.push({
                 id: `rag-${Date.now()}-${idx}`,
                 type: "kb" as const,
@@ -2550,9 +2580,8 @@ export default function NotebookDetailPage() {
                 url: s.url || "",
                 content: s.content || "",
                 selected: true,
-                source_key: s.source_key,
-                ref_number:
-                  typeof s.ref_number === "number" ? s.ref_number : undefined,
+                source_key: sourceKey || undefined,
+                ref_number: hasRefNumber ? Math.floor(refNumber) : undefined,
               });
             });
           }

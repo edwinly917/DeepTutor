@@ -1034,6 +1034,7 @@ async def websocket_research_run(websocket: WebSocket):
                     title=topic,
                     content={"topic": topic, "report": report_content, "kb_name": kb_name},
                     summary=f"Research ID: {result['research_id']}",
+                    notebook_id=notebook_id,
                 )
 
                 if await safe_send(

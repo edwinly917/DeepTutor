@@ -15,6 +15,8 @@ from typing import Any
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+from src.agents.research.utils.source_quality import extract_source_count, is_uninformative_result
+
 
 class CitationManager:
     """Citation manager with global ID management"""
@@ -173,6 +175,41 @@ class CitationManager:
         except Exception as e:
             print(f"⚠️ Failed to save citation file: {e}")
 
+    @staticmethod
+    def _is_source_backed_tool(tool_type: str) -> bool:
+        return (tool_type or "").lower() in (
+            "rag_naive",
+            "rag_hybrid",
+            "query_item",
+            "web_search",
+            "paper_search",
+        )
+
+    def _is_citation_citable(self, citation_id: str, citation: dict[str, Any]) -> bool:
+        if not citation_id or citation_id.startswith("PLAN-"):
+            return False
+
+        citable = citation.get("citable")
+        if isinstance(citable, bool):
+            return citable
+
+        tool_type = str(citation.get("tool_type", "")).lower()
+        if not self._is_source_backed_tool(tool_type):
+            return True
+
+        source_count = citation.get("source_count")
+        if isinstance(source_count, int):
+            return source_count > 0
+
+        if tool_type in ("rag_naive", "rag_hybrid", "query_item"):
+            return len(citation.get("sources") or []) > 0
+        if tool_type == "web_search":
+            web_items = citation.get("web_sources", []) or citation.get("citations", [])
+            return len(web_items) > 0
+        if tool_type == "paper_search":
+            return len(citation.get("papers") or []) > 0
+        return True
+
     def validate_citation_references(self, text: str) -> dict[str, Any]:
         """
         Validate citation references in text and identify invalid ones
@@ -273,7 +310,28 @@ class CitationManager:
                 citation_info = self._extract_generic_citation(citation_id, tool_type, tool_trace)
 
             if citation_info:
+                source_count = extract_source_count(tool_type_lower, raw_answer)
+                citation_info["source_count"] = source_count
+
+                if citation_id.startswith("PLAN-"):
+                    citation_info["citable"] = False
+                    citation_info["skip_reason"] = "planning_stage_excluded"
+                elif self._is_source_backed_tool(tool_type_lower):
+                    uninformative = is_uninformative_result(
+                        tool_type_lower, raw_answer, citation_info.get("summary", "")
+                    )
+                    citation_info["citable"] = source_count > 0 and not uninformative
+                    if not citation_info["citable"]:
+                        citation_info["skip_reason"] = "empty_or_uninformative_result"
+                    else:
+                        citation_info.pop("skip_reason", None)
+                else:
+                    citation_info["citable"] = True
+                    citation_info.pop("skip_reason", None)
+
                 self._citations[citation_id] = citation_info
+                # Invalidate cached ref map when citations change
+                self._ref_number_map = {}
                 self._save_citations()
                 return True
             return False
@@ -303,7 +361,14 @@ class CitationManager:
             sources = []
 
             # Try different field names for source documents
-            for field_name in ["chunks", "documents", "sources", "context", "retrieved_docs"]:
+            for field_name in [
+                "chunks",
+                "documents",
+                "sources",
+                "context",
+                "retrieved_docs",
+                "items",
+            ]:
                 if field_name in answer_data:
                     source_list = answer_data[field_name]
                     if isinstance(source_list, list):
@@ -692,6 +757,8 @@ class CitationManager:
         for citation_id in sorted_citation_ids:
             citation = self._citations.get(citation_id)
             if not citation:
+                continue
+            if not self._is_citation_citable(citation_id, citation):
                 continue
 
             tool_type = citation.get("tool_type", "").lower()

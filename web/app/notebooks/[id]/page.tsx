@@ -344,7 +344,7 @@ export default function NotebookDetailPage() {
   const [selectedKb, setSelectedKb] = useState<string>("");
 
   // Chat switches
-  const [enableRag, setEnableRag] = useState(true);
+  const [enableRag, setEnableRag] = useState(false);
   const [researchMode, setResearchMode] = useState<"fast" | "deep">("fast");
   const [sessions, setSessions] = useState<SessionSnapshot[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState("");
@@ -410,7 +410,7 @@ export default function NotebookDetailPage() {
   const [planMode, setPlanMode] = useState<
     "quick" | "medium" | "deep" | "auto"
   >("medium");
-  const [enabledTools, setEnabledTools] = useState<string[]>(["Web", "RAG"]);
+  const [enabledTools, setEnabledTools] = useState<string[]>(["Web"]);
   const [enableOptimization, setEnableOptimization] = useState(true);
   const [exportContentSource, setExportContentSource] =
     useState<ExportContentSource>("research");
@@ -1971,17 +1971,9 @@ export default function NotebookDetailPage() {
         return !(systemManagedNotebookSources || legacyNotebookSources);
       });
       setKbs(filtered);
-      if (filtered.length > 0) {
-        const defaultKb = filtered.find((kb: KnowledgeBase) => kb.is_default);
-        setSelectedKb((prev) => {
-          if (filtered.some((kb: KnowledgeBase) => kb.name === prev)) {
-            return prev;
-          }
-          return defaultKb?.name || filtered[0].name;
-        });
-      } else {
-        setSelectedKb("");
-      }
+      setSelectedKb((prev) =>
+        filtered.some((kb: KnowledgeBase) => kb.name === prev) ? prev : "",
+      );
     } catch (err) {
       console.error("Failed to fetch KBs:", err);
     }
@@ -4173,11 +4165,34 @@ export default function NotebookDetailPage() {
               <input
                 type="checkbox"
                 checked={enableRag}
-                onChange={(e) => setEnableRag(e.target.checked)}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setEnableRag(checked);
+                  if (!checked) {
+                    setSelectedKb("");
+                  }
+                }}
                 className="sr-only peer"
               />
               <div className="w-9 h-5 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
             </label>
+          </div>
+          <div>
+            <select
+              value={selectedKb}
+              onChange={(e) => setSelectedKb(e.target.value)}
+              disabled={!enableRag}
+              className={`w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none dark:text-slate-200 ${
+                !enableRag ? "opacity-60 cursor-not-allowed" : ""
+              }`}
+            >
+              <option value="">不使用知识库</option>
+              {kbs.map((kb) => (
+                <option key={kb.name} value={kb.name}>
+                  {kb.display_name || kb.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -4530,27 +4545,6 @@ export default function NotebookDetailPage() {
                   </div>
                 );
               })}
-            </div>
-          )}
-
-          {/* KB as Source */}
-          {kbs.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-slate-200">
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                知识库
-              </div>
-              <select
-                value={selectedKb}
-                onChange={(e) => setSelectedKb(e.target.value)}
-                className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none dark:text-slate-200"
-              >
-                <option value="">不使用知识库</option>
-                {kbs.map((kb) => (
-                  <option key={kb.name} value={kb.name}>
-                    {kb.display_name || kb.name}
-                  </option>
-                ))}
-              </select>
             </div>
           )}
         </div>
@@ -5305,47 +5299,6 @@ export default function NotebookDetailPage() {
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
               </div>
-
-              {/* KB Selection */}
-              {kbs.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    或选择知识库
-                  </label>
-                  <select
-                    value={selectedKb}
-                    onChange={(e) => {
-                      setSelectedKb(e.target.value);
-                      if (e.target.value) {
-                        const selectedKbInfo = kbs.find(
-                          (kb) => kb.name === e.target.value,
-                        );
-                        const newSource: Source = withSourceIdentity({
-                          id: `kb-${Date.now()}`,
-                          type: "kb",
-                          title:
-                            selectedKbInfo?.display_name ||
-                            selectedKbInfo?.name ||
-                            e.target.value,
-                          selected: true,
-                        });
-                        setHasSessionActivity(true);
-                        setSources((prev) =>
-                          mergeSourcesWithCatalog(prev, [newSource], []),
-                        );
-                      }
-                    }}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  >
-                    <option value="">选择知识库...</option>
-                    {kbs.map((kb) => (
-                      <option key={kb.name} value={kb.name}>
-                        {kb.display_name || kb.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
             </div>
 
             <div className="flex gap-3 mt-6">

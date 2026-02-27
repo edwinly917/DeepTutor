@@ -19,6 +19,7 @@ from src.agents.base_agent import BaseAgent
 from src.agents.research.data_structures import DynamicTopicQueue, TopicBlock
 
 from ..utils.json_utils import extract_json_from_text
+from ..utils.source_quality import extract_source_count, is_uninformative_result
 from ..utils.text_utils import coerce_text
 
 
@@ -73,7 +74,37 @@ class ResearchAgent(BaseAgent):
         converted = self._convert_to_template_format(template_str)
         return Template(converted).safe_substitute(**kwargs)
 
-    def _generate_available_tools_text(self) -> str:
+    def _resolve_tool_flags(self, allow_rag: bool | None = None) -> dict[str, bool]:
+        rag_enabled = self.enable_rag if allow_rag is None else self.enable_rag and allow_rag
+        return {
+            "rag": rag_enabled,
+            "paper": self.enable_paper_search,
+            "web": self.enable_web_search,
+            "code": self.enable_run_code,
+        }
+
+    def _is_tool_available(self, tool_type: str, allow_rag: bool | None = None) -> bool:
+        flags = self._resolve_tool_flags(allow_rag=allow_rag)
+        tool = (tool_type or "").lower()
+        if tool in ("rag_hybrid", "rag_naive", "query_item"):
+            return flags["rag"]
+        if tool == "paper_search":
+            return flags["paper"]
+        if tool == "web_search":
+            return flags["web"]
+        if tool == "run_code":
+            return flags["code"]
+        return False
+
+    def _select_fallback_tool(
+        self, candidates: list[str], allow_rag: bool | None = None
+    ) -> str | None:
+        for candidate in candidates:
+            if self._is_tool_available(candidate, allow_rag=allow_rag):
+                return candidate
+        return None
+
+    def _generate_available_tools_text(self, allow_rag: bool | None = None) -> str:
         """
         Generate available tools list based on enabled_tools configuration
 
@@ -81,7 +112,8 @@ class ResearchAgent(BaseAgent):
             Available tools text for prompt
         """
         tools = []
-        if self.enable_rag:
+        flags = self._resolve_tool_flags(allow_rag=allow_rag)
+        if flags["rag"]:
             tools.append(
                 "- rag_hybrid: Hybrid RAG retrieval (knowledge base) | Query format: Natural language"
             )
@@ -91,27 +123,27 @@ class ResearchAgent(BaseAgent):
             tools.append(
                 "- query_item: Entity/item query (e.g., Theorem 3.1, Fig 2.1) | Query format: Entry number"
             )
-        if self.enable_paper_search:
+        if flags["paper"]:
             tools.append(
                 "- paper_search: Academic paper search | Query format: 3-5 English keywords, space-separated"
             )
-        if self.enable_web_search:
+        if flags["web"]:
             tools.append(
                 "- web_search: Web search for latest information | Query format: Natural language"
             )
-        if self.enable_run_code:
+        if flags["code"]:
             tools.append(
                 "- run_code: Code execution for calculation/visualization | Query format: Python code"
             )
 
         if not tools:
             tools.append(
-                "- rag_hybrid: Hybrid RAG retrieval (default) | Query format: Natural language"
+                "- run_code: Code execution for calculation/visualization | Query format: Python code"
             )
 
         return "\n".join(tools)
 
-    def _generate_tool_phase_guidance(self) -> str:
+    def _generate_tool_phase_guidance(self, allow_rag: bool | None = None) -> str:
         """
         Generate phased tool selection guidance based on enabled tools.
         Only includes guidance for tools that are actually enabled.
@@ -120,10 +152,11 @@ class ResearchAgent(BaseAgent):
             Tool phase guidance text for prompt
         """
         # Determine which tool categories are enabled
-        has_rag = self.enable_rag
-        has_paper = self.enable_paper_search
-        has_web = self.enable_web_search
-        has_code = self.enable_run_code
+        flags = self._resolve_tool_flags(allow_rag=allow_rag)
+        has_rag = flags["rag"]
+        has_paper = flags["paper"]
+        has_web = flags["web"]
+        has_code = flags["code"]
 
         # Build phase guidance dynamically based on enabled tools
         guidance_parts = []
@@ -183,13 +216,18 @@ Fill gaps and expand horizons:
 {chr(10).join(phase3_tools)}""")
 
         # If no external tools enabled, add a note
-        if not has_paper and not has_web:
+        if has_rag and not has_paper and not has_web:
             guidance_parts.append("""**Note**: Only knowledge base tools (RAG) are available.
 Focus on thoroughly exploring the knowledge base from multiple angles.""")
+        elif not has_rag and not has_paper and not has_web:
+            guidance_parts.append("""**Note**: RAG and online search are unavailable for this topic.
+Focus on code-based verification where possible.""")
 
         return "\n\n".join(guidance_parts)
 
-    def _generate_research_depth_guidance(self, iteration: int, used_tools: list[str]) -> str:
+    def _generate_research_depth_guidance(
+        self, iteration: int, used_tools: list[str], allow_rag: bool | None = None
+    ) -> str:
         """
         Generate research depth guidance based on iteration, used tools, and iteration_mode
 
@@ -204,14 +242,25 @@ Focus on thoroughly exploring the knowledge base from multiple angles.""")
         early_threshold = max(2, self.max_iterations // 3)
         middle_threshold = max(4, self.max_iterations * 2 // 3)
 
+        flags = self._resolve_tool_flags(allow_rag=allow_rag)
+        has_rag = flags["rag"]
+
         if iteration <= early_threshold:
             phase = "early"
             phase_desc = f"Early Stage (Iteration 1-{early_threshold})"
-            guidance = "Focus on building foundational knowledge using RAG/knowledge base tools."
+            if has_rag:
+                guidance = (
+                    "Focus on building foundational knowledge using RAG/knowledge base tools."
+                )
+            else:
+                guidance = (
+                    "RAG is temporarily disabled for this topic due to repeated empty retrievals. "
+                    "Use available external tools to fill the gaps."
+                )
         elif iteration <= middle_threshold:
             phase = "middle"
             phase_desc = f"Middle Stage (Iteration {early_threshold + 1}-{middle_threshold})"
-            if self.enable_paper_search or self.enable_web_search:
+            if flags["paper"] or flags["web"]:
                 guidance = "Consider using Paper/Web search to add academic depth and real-time information."
             else:
                 guidance = "Deepen knowledge coverage, explore different angles of the topic."
@@ -223,13 +272,13 @@ Focus on thoroughly exploring the knowledge base from multiple angles.""")
         # Tool diversity analysis
         unique_tools = set(used_tools)
         available_tools = []
-        if self.enable_rag and not any(
+        if has_rag and not any(
             t in unique_tools for t in ["rag_hybrid", "rag_naive", "query_item"]
         ):
             available_tools.append("RAG tools (rag_hybrid/rag_naive/query_item)")
-        if self.enable_paper_search and "paper_search" not in unique_tools:
+        if flags["paper"] and "paper_search" not in unique_tools:
             available_tools.append("paper_search")
-        if self.enable_web_search and "web_search" not in unique_tools:
+        if flags["web"] and "web_search" not in unique_tools:
             available_tools.append("web_search")
 
         diversity_hint = ""
@@ -379,6 +428,7 @@ Tools already used: {", ".join(used_tools) if used_tools else "None"}
         iteration: int,
         existing_topics: list[str] | None = None,
         used_tools: list[str] | None = None,
+        allow_rag: bool | None = None,
     ) -> dict[str, Any]:
         system_prompt = self.get_prompt("system", "role")
         if not system_prompt:
@@ -395,14 +445,14 @@ Tools already used: {", ".join(used_tools) if used_tools else "None"}
             topics_text = "\n".join([f"- {t}" for t in existing_topics])
 
         # Generate available tools list based on configuration (only enabled tools)
-        available_tools_text = self._generate_available_tools_text()
+        available_tools_text = self._generate_available_tools_text(allow_rag=allow_rag)
 
         # Generate tool phase guidance based on enabled tools
-        tool_phase_guidance = self._generate_tool_phase_guidance()
+        tool_phase_guidance = self._generate_tool_phase_guidance(allow_rag=allow_rag)
 
         # Generate research depth guidance
         research_depth_guidance = self._generate_research_depth_guidance(
-            iteration, used_tools or []
+            iteration, used_tools or [], allow_rag=allow_rag
         )
 
         # Use safe_format to avoid conflicts with LaTeX braces like {\rho}
@@ -505,6 +555,9 @@ Tools already used: {", ".join(used_tools) if used_tools else "None"}
         current_knowledge = ""
         tools_used = []
         queries_used = []  # Track all queries for progress display
+        rag_tools = {"rag_hybrid", "rag_naive", "query_item"}
+        rag_empty_streak = 0
+        rag_disabled_for_block = False
 
         # Helper to send progress updates
         def send_progress(event_type: str, **data):
@@ -561,6 +614,7 @@ Tools already used: {", ".join(used_tools) if used_tools else "None"}
                 iteration=iteration,
                 existing_topics=queue.list_topics(),
                 used_tools=tools_used,
+                allow_rag=not rag_disabled_for_block,
             )
 
             # Dynamic splitting: if new topic is discovered, add to queue tail
@@ -605,6 +659,20 @@ Tools already used: {", ".join(used_tools) if used_tools else "None"}
             query = coerce_text(plan.get("query")).strip()
             tool_type = (coerce_text(plan.get("tool_type")) or "rag_hybrid").strip()
             rationale = coerce_text(plan.get("rationale"))
+
+            if rag_disabled_for_block and tool_type in rag_tools:
+                fallback_candidates = plan.get("fallback")
+                if not isinstance(fallback_candidates, list):
+                    fallback_candidates = []
+                fallback_tool = self._select_fallback_tool(
+                    [*fallback_candidates, "web_search", "paper_search", "run_code"],
+                    allow_rag=False,
+                )
+                if fallback_tool:
+                    print(
+                        f"{block_id_prefix}   ↪️ RAG disabled for current topic, switch tool {tool_type} -> {fallback_tool}"
+                    )
+                    tool_type = fallback_tool
 
             if not query:
                 print(f"{block_id_prefix}   ⚠️ Generated query is empty, skipping this iteration")
@@ -704,6 +772,31 @@ Tools already used: {", ".join(used_tools) if used_tools else "None"}
                     tool_trace=trace,
                     raw_answer=raw_answer,
                 )
+
+            if tool_type in rag_tools:
+                source_count = extract_source_count(tool_type, raw_answer)
+                empty_or_uninformative = source_count <= 0 or is_uninformative_result(
+                    tool_type, raw_answer, trace.summary
+                )
+                rag_empty_streak = rag_empty_streak + 1 if empty_or_uninformative else 0
+
+                if not rag_disabled_for_block and rag_empty_streak >= 2:
+                    rag_disabled_for_block = True
+                    reason = "consecutive_empty_rag_results"
+                    print(
+                        f"{block_id_prefix}   ⚠️ RAG degraded for current topic after {rag_empty_streak} empty hits"
+                    )
+                    send_progress(
+                        "rag_degraded",
+                        iteration=iteration,
+                        max_iterations=self.max_iterations,
+                        block_id=topic_block.block_id,
+                        sub_topic=topic_block.sub_topic,
+                        streak=rag_empty_streak,
+                        reason=reason,
+                    )
+            else:
+                rag_empty_streak = 0
 
             # Step 7: Update knowledge (accumulate summaries)
             current_knowledge = (current_knowledge + "\n" + trace.summary).strip()

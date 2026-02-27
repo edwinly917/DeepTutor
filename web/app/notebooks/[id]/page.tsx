@@ -2587,8 +2587,9 @@ export default function NotebookDetailPage() {
           }
 
           if (newSources.length > 0 || sourceCatalog.length > 0) {
-            // Quick research sources should not appear in the left sidebar sources list.
-            // Only update citation registry for inline citation rendering.
+            setSources((prev) =>
+              mergeSourcesWithCatalog(prev, newSources, sourceCatalog),
+            );
             setCitationRegistryVersion((prev) => prev + 1);
           }
         } else if (data.type === "result") {

@@ -502,6 +502,7 @@ export default function NotebookDetailPage() {
     setResearchRunning(false);
     setResearchPhase("idle");
     setResearchProgress({ current: 0, total: 0 });
+    setGlobalProgress({ completed: 0, total: 0 });
     setCurrentSubTopic("");
     setResearchStartTime(null);
     setEstimatedTimeRemaining("");
@@ -784,6 +785,7 @@ export default function NotebookDetailPage() {
     setIsChatting(false);
     setResearchPhase("idle");
     setResearchProgress({ current: 0, total: 0 });
+    setGlobalProgress({ completed: 0, total: 0 });
     setCurrentSubTopic("");
     setResearchStartTime(null);
     setEstimatedTimeRemaining("");
@@ -1226,6 +1228,10 @@ export default function NotebookDetailPage() {
   >("idle");
   const [researchProgress, setResearchProgress] = useState({
     current: 0,
+    total: 0,
+  });
+  const [globalProgress, setGlobalProgress] = useState({
+    completed: 0,
     total: 0,
   });
   const [currentSubTopic, setCurrentSubTopic] = useState("");
@@ -2552,9 +2558,8 @@ export default function NotebookDetailPage() {
           }
 
           if (newSources.length > 0 || sourceCatalog.length > 0) {
-            setSources((prev) =>
-              mergeSourcesWithCatalog(prev, newSources, sourceCatalog),
-            );
+            // Quick research sources should not appear in the left sidebar sources list.
+            // Only update citation registry for inline citation rendering.
             setCitationRegistryVersion((prev) => prev + 1);
           }
         } else if (data.type === "result") {
@@ -3048,16 +3053,32 @@ export default function NotebookDetailPage() {
 
           if (status === "planning_started") {
             setResearchPhase("planning");
+            // total = 3 (planning) + 0 (N unknown) + 3 (reporting estimate)
+            setGlobalProgress({ completed: 0, total: 3 + 0 + 3 });
             updateStreamingMessage("📋 正在分析研究主题...");
+          } else if (
+            status === "rephrase_completed" ||
+            status === "rephrase_skipped"
+          ) {
+            setGlobalProgress((prev) => ({
+              ...prev,
+              completed: prev.completed + 1,
+            }));
           } else if (status === "decompose_completed") {
             const totalBlocks =
               data.generated_subtopics || data.total_blocks || 0;
             setResearchProgress({ current: 0, total: totalBlocks });
+            // N is now known, update total = 3 (planning) + N (researching) + 3 (reporting estimate)
+            setGlobalProgress((prev) => ({
+              completed: prev.completed + 1,
+              total: 3 + totalBlocks + 3,
+            }));
             updateStreamingMessage(`📋 已分解为 ${totalBlocks} 个子主题`);
-            // Store subtopics if available
-            // if (data.sub_topics && Array.isArray(data.sub_topics)) {
-            //     setSubTopics(data.sub_topics.map((t: any) => t.title || t));
-            // }
+          } else if (status === "planning_completed") {
+            setGlobalProgress((prev) => ({
+              ...prev,
+              completed: prev.completed + 1,
+            }));
           } else if (status === "researching_started") {
             setResearchPhase("researching");
             const totalBlocks = data.total_blocks || researchProgress.total;
@@ -3091,13 +3112,48 @@ export default function NotebookDetailPage() {
             const currentBlock = data.current_block || researchProgress.current;
             const totalBlocks = data.total_blocks || researchProgress.total;
             setResearchProgress({ current: currentBlock, total: totalBlocks });
+            setGlobalProgress((prev) => ({
+              ...prev,
+              completed: prev.completed + 1,
+            }));
+          } else if (status === "researching_completed") {
+            // No extra action needed, total already set
           } else if (status === "reporting_started") {
             setResearchPhase("reporting");
             setCurrentSubTopic("");
             updateStreamingMessage("📝 正在生成研究报告...");
+          } else if (status === "deduplicate_completed") {
+            setGlobalProgress((prev) => ({
+              ...prev,
+              completed: prev.completed + 1,
+            }));
+          } else if (status === "outline_completed") {
+            const totalSections = data.sections || 0;
+            // M is now known, update total = 3 (planning) + N (researching) + 2 + M + 1 (reporting)
+            setGlobalProgress((prev) => {
+              const planningSteps = 3;
+              const researchingSteps = prev.total - planningSteps - 3; // subtract old reporting estimate
+              const newReportingSteps = 2 + totalSections + 1;
+              return {
+                completed: prev.completed + 1,
+                total: planningSteps + researchingSteps + newReportingSteps,
+              };
+            });
           } else if (status === "writing_section") {
             const section = data.section_title || data.section || "";
+            setGlobalProgress((prev) => ({
+              ...prev,
+              completed: prev.completed + 1,
+            }));
             updateStreamingMessage(`📝 正在撰写: ${section}`);
+          } else if (status === "writing_completed") {
+            setGlobalProgress((prev) => ({
+              ...prev,
+              completed: prev.completed + 1,
+            }));
+          } else if (status === "reporting_completed") {
+            // Ensure 100%
+            setGlobalProgress((prev) => ({ ...prev, completed: prev.total }));
           }
         } else if (data.type === "status") {
           // Handle status updates
@@ -4259,40 +4315,39 @@ export default function NotebookDetailPage() {
                   </span>
                 </div>
 
-                {/* Progress Bar (only show during researching phase) */}
-                {researchPhase === "researching" &&
-                  researchProgress.total > 0 && (
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] text-slate-500">
-                        <span>子主题进度</span>
+                {/* Progress Bar (show across all phases) */}
+                {globalProgress.total > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] text-slate-500">
+                      <span>整体进度</span>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                            style={{
+                              width: `${Math.round((globalProgress.completed / globalProgress.total) * 100)}%`,
+                            }}
+                          />
+                        </div>
                         <div className="flex items-center gap-2">
-                          <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-blue-500 rounded-full transition-all duration-300"
-                              style={{
-                                width: `${Math.round((researchProgress.current / researchProgress.total) * 100)}%`,
-                              }}
-                            />
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-400 tabular-nums">
-                              {Math.round(
-                                (researchProgress.current /
-                                  researchProgress.total) *
-                                  100,
-                              )}
-                              %
-                            </span>
-                            {estimatedTimeRemaining && (
-                              <span className="text-[10px] text-slate-400">
-                                预计剩余 {estimatedTimeRemaining}
-                              </span>
+                          <span className="text-xs text-slate-400 tabular-nums">
+                            {Math.round(
+                              (globalProgress.completed /
+                                globalProgress.total) *
+                                100,
                             )}
-                          </div>
+                            %
+                          </span>
+                          {estimatedTimeRemaining && (
+                            <span className="text-[10px] text-slate-400">
+                              预计剩余 {estimatedTimeRemaining}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
-                  )}
+                  </div>
+                )}
 
                 {/* Current Sub-topic */}
                 {currentSubTopic && (

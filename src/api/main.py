@@ -23,6 +23,7 @@ from src.api.routers import (
     settings,
     solve,
     system,
+    tools,
 )
 from src.logging import get_logger
 
@@ -37,15 +38,16 @@ async def lifespan(app: FastAPI):
     """
     # Execute on startup
     logger.info("Application startup")
-    
+
     # Ensure "User Notes" Knowledge Base exists
     try:
         from src.knowledge.manager import KnowledgeBaseManager
+
         kb_manager = KnowledgeBaseManager()
         kb_manager.create_knowledge_base(
-            "User Notes", 
-            description="Auto-generated knowledge base for user notes", 
-            set_default=False
+            "User Notes",
+            description="Auto-generated knowledge base for user notes",
+            set_default=False,
         )
         logger.info("Ensured 'User Notes' knowledge base exists")
     except Exception as e:
@@ -53,11 +55,12 @@ async def lifespan(app: FastAPI):
 
     try:
         from src.services.storage import init_storage
+
         init_storage()
         logger.info("Storage initialized")
     except Exception as e:
         logger.warning(f"Storage initialization skipped/failed: {e}")
-        
+
     yield
     # Execute on shutdown
     logger.info("Application shutdown")
@@ -82,6 +85,7 @@ async def log_requests(request: Request, call_next):
     process_time = time.time() - start_time
     logger.debug(f"Request: {request.method} {request.url.path} - Processed in {process_time:.4f}s")
     return response
+
 
 # Mount user directory as static root for generated artifacts
 # This allows frontend to access generated artifacts (images, PDFs, etc.)
@@ -119,6 +123,7 @@ app.include_router(system.router, prefix="/api/v1/system", tags=["system"])
 app.include_router(llm_provider.router, prefix="/api/v1/config/llm", tags=["config"])
 app.include_router(embedding_provider.router, prefix="/api/v1/config/embedding", tags=["config"])
 app.include_router(agent_config.router, prefix="/api/v1/config", tags=["config"])
+app.include_router(tools.router, prefix="/api/v1/tools", tags=["tools"])
 
 
 @app.get("/")

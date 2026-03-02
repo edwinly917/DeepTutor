@@ -121,13 +121,18 @@ interface ChatMessage {
 // Source types for the left panel
 interface Source {
   id: string;
-  type: "web" | "file" | "kb" | "report";
+  type: "web" | "file" | "kb" | "report" | "paper";
   title: string;
   url?: string;
   selected: boolean;
   content?: string;
   source_key?: string;
   ref_number?: number;
+  // Paper-specific fields
+  authors?: string[];
+  year?: number;
+  arxiv_id?: string;
+  abstract?: string;
 }
 
 interface CitationCatalogItem {
@@ -243,7 +248,10 @@ let clientIdSequence = 0;
 
 const makeClientId = (prefix: string) => {
   const safePrefix = prefix.trim() || "id";
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return `${safePrefix}-${crypto.randomUUID()}`;
   }
   clientIdSequence += 1;
@@ -401,7 +409,9 @@ export default function NotebookDetailPage() {
 
   // Chat switches
   const [enableRag, setEnableRag] = useState(false);
-  const [researchMode, setResearchMode] = useState<"fast" | "deep">("fast");
+  const [researchMode, setResearchMode] = useState<"fast" | "paper" | "deep">(
+    "fast",
+  );
   const [sessions, setSessions] = useState<SessionSnapshot[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState("");
   const [hasSessionActivity, setHasSessionActivity] = useState(false);
@@ -2719,6 +2729,110 @@ export default function NotebookDetailPage() {
     };
   };
 
+  // Paper Search - Search academic papers on ArXiv
+  const handlePaperSearch = async () => {
+    if (!searchQuery.trim() || isSearching) return;
+    ensureActiveSession();
+    setHasSessionActivity(true);
+
+    // Add user query as chat message
+    const userMessage: ChatMessage = {
+      id: makeClientId("paper-user"),
+      role: "user",
+      content: `📄 论文搜索：${searchQuery}`,
+    };
+    setChatMessages((prev) => [...prev, userMessage]);
+
+    setIsSearching(true);
+    setChatError(null);
+
+    try {
+      const response = await fetch(`${apiUrl}/api/v1/tools/paper_search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: searchQuery,
+          max_results: 5,
+          years_limit: 3,
+          sort_by: "relevance",
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Paper search failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const papers = data.papers || [];
+
+      if (papers.length === 0) {
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: makeClientId("paper-result"),
+            role: "assistant",
+            content: `**论文搜索结果：** ${searchQuery}\n\n未找到相关论文。请尝试使用不同的英文关键词。`,
+          },
+        ]);
+        setSearchQuery("");
+        setIsSearching(false);
+        scheduleSessionSave(true);
+        return;
+      }
+
+      // Convert papers to Source objects
+      const paperSources: Source[] = papers.map((paper: any) =>
+        withSourceIdentity({
+          id: makeClientId("paper"),
+          type: "paper" as const,
+          title: paper.title,
+          url: paper.url,
+          selected: true,
+          authors: paper.authors || [],
+          year: paper.year,
+          arxiv_id: paper.arxiv_id,
+          abstract: paper.abstract,
+        }),
+      );
+
+      // Add papers to sources list
+      setSources((prev) => [...prev, ...paperSources]);
+      setCitationRegistryVersion((prev) => prev + 1);
+
+      // Create summary message
+      const summaryLines = papers.map(
+        (paper: any, idx: number) =>
+          `${idx + 1}. **${paper.title}**\n   ${paper.authors && paper.authors.length > 0 ? paper.authors[0] : "Unknown"} et al., ${paper.year || "N/A"}\n   [ArXiv](${paper.url})`,
+      );
+
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: makeClientId("paper-result"),
+          role: "assistant",
+          content: `**论文搜索结果：** ${searchQuery}\n\n找到 ${papers.length} 篇相关论文：\n\n${summaryLines.join("\n\n")}`,
+        },
+      ]);
+
+      setSearchQuery("");
+      scheduleSessionSave(true);
+    } catch (error) {
+      console.error("Paper search error:", error);
+      setChatError("论文搜索失败，请重试");
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: makeClientId("paper-error"),
+          role: "assistant",
+          content: `**论文搜索失败**\n\n${error instanceof Error ? error.message : "未知错误"}`,
+        },
+      ]);
+      scheduleSessionSave(true);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   // Toggle source selection
   const toggleSourceSelection = (sessionId: string, sourceId: string) => {
     setHasSessionActivity(true);
@@ -4299,7 +4413,18 @@ export default function NotebookDetailPage() {
               }`}
             >
               <Zap className="w-3.5 h-3.5" />
-              Fast Research
+              Fast
+            </button>
+            <button
+              onClick={() => setResearchMode("paper")}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-medium transition-all ${
+                researchMode === "paper"
+                  ? "bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-400 shadow-sm border border-slate-200 dark:border-slate-700"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <GraduationCap className="w-3.5 h-3.5" />
+              Paper
             </button>
             <button
               onClick={() => setResearchMode("deep")}
@@ -4310,7 +4435,7 @@ export default function NotebookDetailPage() {
               }`}
             >
               <Microscope className="w-3.5 h-3.5" />
-              Deep Research
+              Deep
             </button>
           </div>
 
@@ -4319,6 +4444,8 @@ export default function NotebookDetailPage() {
             <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500">
               {researchMode === "fast" ? (
                 <Globe className="w-4 h-4 text-emerald-500 shrink-0" />
+              ) : researchMode === "paper" ? (
+                <GraduationCap className="w-4 h-4 text-indigo-500 shrink-0" />
               ) : (
                 <Microscope className="w-4 h-4 text-purple-500 shrink-0" />
               )}
@@ -4329,16 +4456,28 @@ export default function NotebookDetailPage() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     if (researchMode === "fast") handleFastResearch();
+                    else if (researchMode === "paper") handlePaperSearch();
                     else if (researchMode === "deep")
                       startResearchWithTopic(searchQuery);
                   }
                 }}
                 placeholder={
-                  researchMode === "fast" ? "搜索关键词..." : "输入研究主题..."
+                  researchMode === "fast"
+                    ? "搜索关键词..."
+                    : researchMode === "paper"
+                      ? "搜索学术论文 (英文关键词)..."
+                      : "输入研究主题..."
                 }
                 className="flex-1 bg-transparent text-sm outline-none w-full min-w-0"
               />
             </div>
+
+            {/* Paper Search Hint */}
+            {researchMode === "paper" && (
+              <p className="text-[10px] text-slate-400 px-1">
+                💡 提示：使用英文关键词，如 "transformer attention mechanism"
+              </p>
+            )}
 
             {/* Deep Research Config (Only visible in Deep mode) */}
             {researchMode === "deep" && (
@@ -4393,6 +4532,7 @@ export default function NotebookDetailPage() {
             <button
               onClick={() => {
                 if (researchMode === "fast") handleFastResearch();
+                else if (researchMode === "paper") handlePaperSearch();
                 else startResearchWithTopic(searchQuery);
               }}
               disabled={
@@ -4404,7 +4544,9 @@ export default function NotebookDetailPage() {
               className={`w-full py-2 px-4 rounded-lg text-sm font-medium text-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
                 researchMode === "fast"
                   ? "bg-emerald-600 hover:bg-emerald-700"
-                  : "bg-purple-600 hover:bg-purple-700"
+                  : researchMode === "paper"
+                    ? "bg-indigo-600 hover:bg-indigo-700"
+                    : "bg-purple-600 hover:bg-purple-700"
               }`}
             >
               {isSearching || researchRunning || pendingResearchRecovery ? (
@@ -4412,18 +4554,26 @@ export default function NotebookDetailPage() {
                   <Loader2 className="w-4 h-4 animate-spin" />
                   {researchMode === "fast"
                     ? "搜索中..."
-                    : pendingResearchRecovery
-                      ? "恢复中..."
-                      : "研究中..."}
+                    : researchMode === "paper"
+                      ? "搜索论文中..."
+                      : pendingResearchRecovery
+                        ? "恢复中..."
+                        : "研究中..."}
                 </>
               ) : (
                 <>
                   {researchMode === "fast" ? (
                     <Search className="w-4 h-4" />
+                  ) : researchMode === "paper" ? (
+                    <GraduationCap className="w-4 h-4" />
                   ) : (
                     <Sparkles className="w-4 h-4" />
                   )}
-                  {researchMode === "fast" ? "搜索来源" : "开始深度研究"}
+                  {researchMode === "fast"
+                    ? "搜索来源"
+                    : researchMode === "paper"
+                      ? "搜索论文"
+                      : "开始深度研究"}
                 </>
               )}
             </button>
@@ -4611,8 +4761,19 @@ export default function NotebookDetailPage() {
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm text-slate-700 truncate">
                                   {refNumber ? `[${refNumber}] ` : ""}
+                                  {source.type === "paper" && (
+                                    <GraduationCap className="w-3.5 h-3.5 inline mr-1 text-purple-600" />
+                                  )}
                                   {source.title}
                                 </p>
+                                {source.type === "paper" &&
+                                  source.authors &&
+                                  source.authors.length > 0 && (
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                      {source.authors[0]} et al.,{" "}
+                                      {source.year || "N/A"}
+                                    </p>
+                                  )}
                                 {source.url && (
                                   <p className="text-xs text-slate-400 truncate">
                                     {source.url}
@@ -5554,7 +5715,9 @@ export default function NotebookDetailPage() {
                               }
                               target={isInternalRef ? undefined : "_blank"}
                               rel={
-                                isInternalRef ? undefined : "noopener noreferrer"
+                                isInternalRef
+                                  ? undefined
+                                  : "noopener noreferrer"
                               }
                             >
                               {children}

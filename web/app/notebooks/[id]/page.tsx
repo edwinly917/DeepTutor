@@ -3,11 +3,13 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import {
+  Component,
   useState,
   useEffect,
   useRef,
   useMemo,
   useCallback,
+  type ReactNode,
   type ChangeEvent,
   type MouseEvent,
 } from "react";
@@ -236,6 +238,60 @@ const normalizeSources = (list: Source[] = []) =>
     ...withSourceIdentity(source),
     selected: source.selected !== false,
   }));
+
+let clientIdSequence = 0;
+
+const makeClientId = (prefix: string) => {
+  const safePrefix = prefix.trim() || "id";
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${safePrefix}-${crypto.randomUUID()}`;
+  }
+  clientIdSequence += 1;
+  return `${safePrefix}-${Date.now().toString(36)}-${clientIdSequence.toString(
+    36,
+  )}-${Math.random().toString(36).slice(2, 8)}`;
+};
+
+interface MarkdownErrorBoundaryProps {
+  fallback: ReactNode;
+  children: ReactNode;
+  resetKey?: string;
+}
+
+interface MarkdownErrorBoundaryState {
+  hasError: boolean;
+}
+
+class MarkdownErrorBoundary extends Component<
+  MarkdownErrorBoundaryProps,
+  MarkdownErrorBoundaryState
+> {
+  constructor(props: MarkdownErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): MarkdownErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error("Markdown render failed:", error);
+  }
+
+  componentDidUpdate(prevProps: MarkdownErrorBoundaryProps) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback;
+    }
+    return this.props.children;
+  }
+}
 
 const stripLegacyCitationAnchors = (content: string) =>
   content
@@ -638,7 +694,7 @@ export default function NotebookDetailPage() {
     });
     if (replaced) return next;
     const appended: ChatMessage = {
-      id: `result-${Date.now()}`,
+      id: makeClientId("result"),
       role: "assistant",
       content: `${banner}\n\n${report}`,
     };
@@ -768,7 +824,7 @@ export default function NotebookDetailPage() {
     if (reportContent) {
       const reportTitle = topic ? `深度研究报告 - ${topic}` : "深度研究报告";
       const reportSource: Source = withSourceIdentity({
-        id: `report-${researchId || Date.now()}`,
+        id: researchId ? `report-${researchId}` : makeClientId("report"),
         type: "report",
         title: reportTitle,
         selected: true,
@@ -838,7 +894,7 @@ export default function NotebookDetailPage() {
         return [
           ...prev,
           {
-            id: `result-${Date.now()}`,
+            id: makeClientId("result"),
             role: "assistant" as const,
             content: reportMsg,
             source_catalog: catalogValue,
@@ -853,7 +909,7 @@ export default function NotebookDetailPage() {
       if (metadata.web_sources && Array.isArray(metadata.web_sources)) {
         metadata.web_sources.forEach((s: any, idx: number) => {
           newSources.push({
-            id: `research-web-${Date.now()}-${idx}`,
+            id: makeClientId("research-web"),
             type: "web" as const,
             title: s.title || s.url || `网络来源 ${idx + 1}`,
             url: s.url,
@@ -879,7 +935,7 @@ export default function NotebookDetailPage() {
           if (s.chunk_id) ragDetailParts.push(`段落 ${s.chunk_id}`);
           const ragDetail = ragDetailParts.join(" · ");
           newSources.push({
-            id: `research-rag-${Date.now()}-${idx}`,
+            id: makeClientId("research-rag"),
             type: "kb" as const,
             title: ragTitle,
             url: ragDetail || "",
@@ -895,7 +951,7 @@ export default function NotebookDetailPage() {
       if (metadata.sources && Array.isArray(metadata.sources)) {
         metadata.sources.forEach((s: any, idx: number) => {
           newSources.push({
-            id: `research-src-${Date.now()}-${idx}`,
+            id: makeClientId("research-src"),
             type: (s.type === "web" ? "web" : "kb") as "web" | "kb",
             title: s.title || s.url || `来源 ${idx + 1}`,
             url: s.url || "",
@@ -1181,7 +1237,7 @@ export default function NotebookDetailPage() {
 
   const ensureActiveSession = () => {
     if (currentSessionId) return currentSessionId;
-    const newSessionId = `session-${Date.now()}`;
+    const newSessionId = makeClientId("session");
     setCurrentSessionId(newSessionId);
     return newSessionId;
   };
@@ -1191,7 +1247,7 @@ export default function NotebookDetailPage() {
     if (currentSnapshot) {
       await saveSessionSnapshot(currentSnapshot);
     }
-    const newSessionId = `session-${Date.now()}`;
+    const newSessionId = makeClientId("session");
     setCurrentSessionId(newSessionId);
     setChatMessages([]);
     setSources([]);
@@ -1598,6 +1654,18 @@ export default function NotebookDetailPage() {
     });
     return merged;
   }, [sortedSessions, currentSessionId, chatMessages]);
+
+  const displayMessagesWithRenderKey = useMemo(() => {
+    const seen = new Map<string, number>();
+    return displayMessages.map((msg, index) => {
+      const baseKey = msg.id || `message-${index}`;
+      const duplicateCount = seen.get(baseKey) || 0;
+      seen.set(baseKey, duplicateCount + 1);
+      const renderKey =
+        duplicateCount === 0 ? baseKey : `${baseKey}-dup-${duplicateCount}`;
+      return { msg, renderKey };
+    });
+  }, [displayMessages]);
 
   const groupedSources = useMemo(() => {
     return sortedSessions
@@ -2242,7 +2310,7 @@ export default function NotebookDetailPage() {
     setHasSessionActivity(true);
 
     const userMessage: ChatMessage = {
-      id: Date.now().toString(),
+      id: makeClientId("chat-user"),
       role: "user",
       content: chatInput,
     };
@@ -2278,7 +2346,7 @@ export default function NotebookDetailPage() {
 
     const ws = new WebSocket(wsUrl("/api/v1/notebook/chat"));
     chatWsRef.current = ws;
-    const assistantId = (Date.now() + 1).toString();
+    const assistantId = makeClientId("chat-assistant");
     let fullContent = "";
 
     // Connection timeout
@@ -2339,7 +2407,7 @@ export default function NotebookDetailPage() {
             data.web.forEach((item: any, idx: number) => {
               incomingSources.push(
                 withSourceIdentity({
-                  id: `chat-web-${Date.now()}-${idx}`,
+                  id: makeClientId("chat-web"),
                   type: "web",
                   title: item?.title || item?.url || `网络来源 ${idx + 1}`,
                   url: item?.url || "",
@@ -2354,7 +2422,7 @@ export default function NotebookDetailPage() {
             data.rag.forEach((item: any, idx: number) => {
               incomingSources.push(
                 withSourceIdentity({
-                  id: `chat-rag-${Date.now()}-${idx}`,
+                  id: makeClientId("chat-rag"),
                   type: "kb",
                   title:
                     item?.title ||
@@ -2462,7 +2530,7 @@ export default function NotebookDetailPage() {
 
     // 将用户查询作为聊天消息添加
     const userMessage: ChatMessage = {
-      id: `fast-user-${Date.now()}`,
+      id: makeClientId("fast-user"),
       role: "user",
       content: `🔍 快速搜索：${searchQuery}`,
     };
@@ -2533,7 +2601,7 @@ export default function NotebookDetailPage() {
           if (data.web && Array.isArray(data.web)) {
             data.web.forEach((s: any, idx: number) => {
               newSources.push({
-                id: `web-${Date.now()}-${idx}`,
+                id: makeClientId("web"),
                 type: "web" as const,
                 title: s.title || s.url || `网络来源 ${idx + 1}`,
                 url: s.url,
@@ -2566,7 +2634,7 @@ export default function NotebookDetailPage() {
               }
 
               newSources.push({
-                id: `rag-${Date.now()}-${idx}`,
+                id: makeClientId("rag"),
                 type: "kb" as const,
                 title: s.title || s.source || `知识库来源 ${idx + 1}`,
                 url: s.url || "",
@@ -2578,21 +2646,43 @@ export default function NotebookDetailPage() {
             });
           }
 
-          if (newSources.length > 0 || sourceCatalog.length > 0) {
-            // Quick research sources should not appear in the left sidebar sources list.
-            // Only update citation registry for inline citation rendering.
+          const citableSources = newSources.filter((source) => {
+            const sourceKey = buildSourceKey(source);
+            const normalizedUrl = normalizeSourceUrl(source.url);
+            const hasCatalogMatch =
+              (sourceKey && catalogSourceKeys.has(sourceKey)) ||
+              (normalizedUrl && catalogSourceUrls.has(normalizedUrl));
+            const hasRefNumber =
+              typeof source.ref_number === "number" && source.ref_number > 0;
+            const hasSourceKey =
+              typeof source.source_key === "string" &&
+              source.source_key.trim().length > 0;
+
+            if (sourceCatalog.length > 0) {
+              return hasCatalogMatch;
+            }
+            return hasRefNumber || hasSourceKey;
+          });
+
+          if (citableSources.length > 0 || sourceCatalog.length > 0) {
+            // Only citation-mappable raw references are persisted to selected sources.
+            setSources((prev) =>
+              mergeSourcesWithCatalog(prev, citableSources, sourceCatalog),
+            );
             setCitationRegistryVersion((prev) => prev + 1);
+            scheduleSessionSave(true);
           }
         } else if (data.type === "result") {
           // Use final result content if available
           const finalContent = data.content || fullResponse;
 
+          // Fast Research summary message does not become a source.
           // Also add the AI summary as a chat message
           if (finalContent.trim()) {
             setChatMessages((prev) => [
               ...prev,
               {
-                id: `fast-${Date.now()}`,
+                id: makeClientId("fast"),
                 role: "assistant",
                 content: `**快速搜索结果：** ${searchQuery}\n\n${finalContent}`,
               },
@@ -2889,7 +2979,7 @@ export default function NotebookDetailPage() {
     if (!sourceUrl.trim()) return;
 
     const newSource: Source = withSourceIdentity({
-      id: `url-${Date.now()}`,
+      id: makeClientId("url"),
       type: "web",
       title: sourceUrl,
       url: sourceUrl,
@@ -2920,7 +3010,7 @@ export default function NotebookDetailPage() {
 
     // 将用户查询作为聊天消息添加
     const userMessage: ChatMessage = {
-      id: `research-user-${Date.now()}`,
+      id: makeClientId("research-user"),
       role: "user",
       content: `🔬 深度研究：${researchTopicToUse}`,
     };
@@ -2941,7 +3031,7 @@ export default function NotebookDetailPage() {
     setPendingResearchRecovery(true);
 
     // Generate a unique ID for this research session's streaming message
-    const streamingMsgId = `research-${Date.now()}`;
+    const streamingMsgId = makeClientId("research-stream");
 
     // Always create a streaming message when starting research
     setChatMessages((prev) => {
@@ -4589,7 +4679,7 @@ export default function NotebookDetailPage() {
           ref={chatContainerRef}
           className="flex-1 overflow-y-auto p-4 space-y-4"
         >
-          {displayMessages.length === 0 ? (
+          {displayMessagesWithRenderKey.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center">
               <Bot className="w-12 h-12 text-slate-200 mb-3" />
               <p className="text-slate-500 text-sm">开始对话吧</p>
@@ -4598,17 +4688,25 @@ export default function NotebookDetailPage() {
               </p>
             </div>
           ) : (
-            displayMessages.map((msg) =>
-              msg.isSeparator ? (
+            displayMessagesWithRenderKey.map(({ msg, renderKey }) => {
+              const markdownContent = processLatexContent(
+                linkifyKnownCitationTokens(msg.content || ""),
+              );
+
+              if (msg.isSeparator) {
+                return (
+                  <div
+                    key={renderKey}
+                    className="flex justify-center text-[11px] text-slate-400 py-2"
+                  >
+                    {msg.content}
+                  </div>
+                );
+              }
+
+              return (
                 <div
-                  key={msg.id}
-                  className="flex justify-center text-[11px] text-slate-400 py-2"
-                >
-                  {msg.content}
-                </div>
-              ) : (
-                <div
-                  key={msg.id}
+                  key={renderKey}
                   className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   {msg.role === "assistant" && (
@@ -4625,40 +4723,50 @@ export default function NotebookDetailPage() {
                   >
                     {msg.role === "assistant" ? (
                       <>
-                        <div className="prose prose-sm prose-slate max-w-none">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkMath]}
-                            rehypePlugins={[rehypeKatex]}
-                            components={{
-                              a: ({ href, ...props }) => {
-                                const isInternalRef = /^#ref-\d+$/i.test(
-                                  href || "",
-                                );
-                                return (
-                                  <a
-                                    href={href}
-                                    onClick={(event) =>
-                                      handleCitationAnchorClick(href, event)
-                                    }
-                                    target={
-                                      isInternalRef ? undefined : "_blank"
-                                    }
-                                    rel={
-                                      isInternalRef
-                                        ? undefined
-                                        : "noopener noreferrer"
-                                    }
-                                    {...props}
-                                  />
-                                );
-                              },
-                            }}
-                          >
-                            {processLatexContent(
-                              linkifyKnownCitationTokens(msg.content || ""),
-                            )}
-                          </ReactMarkdown>
-                        </div>
+                        <MarkdownErrorBoundary
+                          resetKey={markdownContent}
+                          fallback={
+                            <p className="text-sm whitespace-pre-wrap break-words">
+                              {markdownContent}
+                            </p>
+                          }
+                        >
+                          <div className="prose prose-sm prose-slate max-w-none">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkMath]}
+                              rehypePlugins={[rehypeKatex]}
+                              components={{
+                                a: ({ href, title, className, children }) => {
+                                  const isInternalRef = /^#ref-\d+$/i.test(
+                                    href || "",
+                                  );
+                                  return (
+                                    <a
+                                      href={href}
+                                      title={title}
+                                      className={className}
+                                      onClick={(event) =>
+                                        handleCitationAnchorClick(href, event)
+                                      }
+                                      target={
+                                        isInternalRef ? undefined : "_blank"
+                                      }
+                                      rel={
+                                        isInternalRef
+                                          ? undefined
+                                          : "noopener noreferrer"
+                                      }
+                                    >
+                                      {children}
+                                    </a>
+                                  );
+                                },
+                              }}
+                            >
+                              {markdownContent}
+                            </ReactMarkdown>
+                          </div>
+                        </MarkdownErrorBoundary>
                         {!msg.isStreaming && (
                           <div className="mt-2 flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                             <button
@@ -4682,8 +4790,8 @@ export default function NotebookDetailPage() {
                     </div>
                   )}
                 </div>
-              ),
-            )
+              );
+            })
           )}
         </div>
 
@@ -5415,32 +5523,51 @@ export default function NotebookDetailPage() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-6 prose prose-slate max-w-none">
-              <ReactMarkdown
-                remarkPlugins={[remarkMath]}
-                rehypePlugins={[rehypeKatex]}
-                components={{
-                  a: ({ href, ...props }) => {
-                    const isInternalRef = /^#ref-\d+$/i.test(href || "");
-                    return (
-                      <a
-                        href={href}
-                        onClick={(event) =>
-                          handleCitationAnchorClick(href, event)
-                        }
-                        target={isInternalRef ? undefined : "_blank"}
-                        rel={isInternalRef ? undefined : "noopener noreferrer"}
-                        {...props}
-                      />
-                    );
-                  },
-                }}
-              >
-                {processLatexContent(
+              {(() => {
+                const recordMarkdownContent = processLatexContent(
                   linkifyKnownCitationTokens(
                     selectedRecord.output || selectedRecord.user_query,
                   ),
-                )}
-              </ReactMarkdown>
+                );
+                return (
+                  <MarkdownErrorBoundary
+                    resetKey={recordMarkdownContent}
+                    fallback={
+                      <p className="text-sm whitespace-pre-wrap break-words">
+                        {recordMarkdownContent}
+                      </p>
+                    }
+                  >
+                    <ReactMarkdown
+                      remarkPlugins={[remarkMath]}
+                      rehypePlugins={[rehypeKatex]}
+                      components={{
+                        a: ({ href, title, className, children }) => {
+                          const isInternalRef = /^#ref-\d+$/i.test(href || "");
+                          return (
+                            <a
+                              href={href}
+                              title={title}
+                              className={className}
+                              onClick={(event) =>
+                                handleCitationAnchorClick(href, event)
+                              }
+                              target={isInternalRef ? undefined : "_blank"}
+                              rel={
+                                isInternalRef ? undefined : "noopener noreferrer"
+                              }
+                            >
+                              {children}
+                            </a>
+                          );
+                        },
+                      }}
+                    >
+                      {recordMarkdownContent}
+                    </ReactMarkdown>
+                  </MarkdownErrorBoundary>
+                );
+              })()}
             </div>
             <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 rounded-b-2xl flex justify-end gap-2">
               <button

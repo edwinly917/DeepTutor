@@ -193,9 +193,7 @@ class PDFGenerator:
         text = re.sub(r"_(.*?)_", r"\1", text)
         return text.strip()
 
-    def _wrap_text(
-        self, text: str, font_name: str, font_size: int, max_width: float
-    ) -> List[str]:
+    def _wrap_text(self, text: str, font_name: str, font_size: int, max_width: float) -> List[str]:
         if not text:
             return [""]
 
@@ -214,9 +212,7 @@ class PDFGenerator:
                 if current:
                     lines.append(current)
                 if pdfmetrics.stringWidth(word, font_name, font_size) > max_width:
-                    lines.extend(
-                        self._wrap_text_no_spaces(word, font_name, font_size, max_width)
-                    )
+                    lines.extend(self._wrap_text_no_spaces(word, font_name, font_size, max_width))
                     current = ""
                 else:
                     current = word

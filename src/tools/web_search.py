@@ -212,7 +212,7 @@ def _search_with_volcengine(query: str, verbose: bool = False) -> dict:
                 "source": item.get("SiteName", ""),
             }
             result["search_results"].append(search_result)
-            
+
             citation_data = {
                 "id": i,
                 "reference": f"[{i}]",

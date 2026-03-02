@@ -1,8 +1,8 @@
+from dataclasses import dataclass
+from enum import IntEnum
 import io
 import logging
 import struct
-from dataclasses import dataclass
-from enum import IntEnum
 from typing import Callable, List
 
 import websockets
@@ -142,9 +142,7 @@ class Message:
     @classmethod
     def from_bytes(cls, data: bytes) -> "Message":
         if len(data) < 3:
-            raise ValueError(
-                f"Data too short: expected at least 3 bytes, got {len(data)}"
-            )
+            raise ValueError(f"Data too short: expected at least 3 bytes, got {len(data)}")
 
         type_and_flag = data[1]
         msg_type = MsgType(type_and_flag >> 4)
@@ -226,9 +224,7 @@ class Message:
         else:
             raise ValueError(f"Unsupported message type: {self.type}")
         if self.flag == MsgTypeFlagBits.WithEvent:
-            readers.extend(
-                [self._read_event, self._read_session_id, self._read_connect_id]
-            )
+            readers.extend([self._read_event, self._read_session_id, self._read_connect_id])
         readers.append(self._read_payload)
         return readers
 
@@ -403,9 +399,7 @@ async def start_session(
     await websocket.send(msg.marshal())
 
 
-async def finish_session(
-    websocket: websockets.WebSocketClientProtocol, session_id: str
-) -> None:
+async def finish_session(websocket: websockets.WebSocketClientProtocol, session_id: str) -> None:
     msg = Message(type=MsgType.FullClientRequest, flag=MsgTypeFlagBits.WithEvent)
     msg.event = EventType.FinishSession
     msg.session_id = session_id
@@ -414,9 +408,7 @@ async def finish_session(
     await websocket.send(msg.marshal())
 
 
-async def cancel_session(
-    websocket: websockets.WebSocketClientProtocol, session_id: str
-) -> None:
+async def cancel_session(websocket: websockets.WebSocketClientProtocol, session_id: str) -> None:
     msg = Message(type=MsgType.FullClientRequest, flag=MsgTypeFlagBits.WithEvent)
     msg.event = EventType.CancelSession
     msg.session_id = session_id

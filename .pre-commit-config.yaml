@@ -19,11 +19,11 @@ repos:
       # Remove trailing whitespace
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
-        exclude: ^(assets/roster/.*\.svg|.*\.min\.(js|css)|.*\.lock|.*\.log|.*\.pdf|.*\.zip|.*\.tar\.gz)
+        exclude: ^(\.local/|assets/roster/.*\.svg|.*\.min\.(js|css)|.*\.lock|.*\.log|.*\.pdf|.*\.zip|.*\.tar\.gz)
 
       # Ensure files end with a newline
       - id: end-of-file-fixer
-        exclude: ^(assets/roster/.*\.svg|.*\.min\.(js|css)|.*\.lock|.*\.log|.*\.pdf|.*\.zip|.*\.tar\.gz)
+        exclude: ^(\.local/|assets/roster/.*\.svg|.*\.min\.(js|css)|.*\.lock|.*\.log|.*\.pdf|.*\.zip|.*\.tar\.gz)
 
       # Check YAML files for syntax errors
       - id: check-yaml

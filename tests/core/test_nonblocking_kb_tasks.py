@@ -59,7 +59,9 @@ class _DummyDocumentAdder:
     async def process_new_documents(self, files: list[Path]):
         return [Path("/tmp/processed_source.md")]
 
-    def extract_numbered_items_for_new_docs(self, processed_files: list[Path], batch_size: int = 20):
+    def extract_numbered_items_for_new_docs(
+        self, processed_files: list[Path], batch_size: int = 20
+    ):
         self.extract_calls.append((processed_files, batch_size))
 
     def update_metadata(self, added_count: int):

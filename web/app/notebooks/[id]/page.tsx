@@ -2634,12 +2634,18 @@ export default function NotebookDetailPage() {
               );
               const refNumber = Number(s.ref_number);
               const hasRefNumber = Number.isFinite(refNumber) && refNumber > 0;
+              const hasValidUrl = normalizedUrl.length > 0;
               const hasCatalogMatch =
                 (sourceKey && catalogSourceKeys.has(sourceKey)) ||
                 (normalizedUrl && catalogSourceUrls.has(normalizedUrl));
 
               // Fast research may return summary-only RAG context; only keep citable entries.
-              if (!hasRefNumber && !sourceKey && !hasCatalogMatch) {
+              if (
+                !hasRefNumber &&
+                !sourceKey &&
+                !hasCatalogMatch &&
+                !hasValidUrl
+              ) {
                 return;
               }
 
@@ -2664,14 +2670,25 @@ export default function NotebookDetailPage() {
               (normalizedUrl && catalogSourceUrls.has(normalizedUrl));
             const hasRefNumber =
               typeof source.ref_number === "number" && source.ref_number > 0;
-            const hasSourceKey =
+            const hasExplicitSourceKey =
               typeof source.source_key === "string" &&
               source.source_key.trim().length > 0;
+            const hasValidUrl = normalizedUrl.length > 0;
+            const isSummaryOnlyRag =
+              source.type === "kb" &&
+              !hasRefNumber &&
+              !hasExplicitSourceKey &&
+              !hasCatalogMatch &&
+              !hasValidUrl;
+
+            if (isSummaryOnlyRag) {
+              return false;
+            }
 
             if (sourceCatalog.length > 0) {
               return hasCatalogMatch;
             }
-            return hasRefNumber || hasSourceKey;
+            return hasRefNumber || hasExplicitSourceKey || hasValidUrl;
           });
 
           if (citableSources.length > 0 || sourceCatalog.length > 0) {

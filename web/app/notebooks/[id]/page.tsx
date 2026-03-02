@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 /* eslint-disable react-hooks/exhaustive-deps */
 
@@ -12,8 +12,8 @@ import {
   type ReactNode,
   type ChangeEvent,
   type MouseEvent,
-} from 'react'
-import { useParams, useRouter } from 'next/navigation'
+} from "react";
+import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   BookOpen,
@@ -46,218 +46,228 @@ import {
   Square,
   Mic,
   Headphones,
-} from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkMath from 'remark-math'
-import rehypeKatex from 'rehype-katex'
-import 'katex/dist/katex.min.css'
-import { processLatexContent } from '@/lib/latex'
-import { apiUrl, wsUrl } from '@/lib/api'
-import { Mermaid } from '@/components/Mermaid'
-import PptPreviewModal from '@/components/ppt/PptPreviewModal'
-import { exportToPptx } from '@/lib/pptGenerator'
-import { PresentationOutline, SlideContent } from '@/types/ppt'
+} from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import { processLatexContent } from "@/lib/latex";
+import { apiUrl, wsUrl } from "@/lib/api";
+import { Mermaid } from "@/components/Mermaid";
+import PptPreviewModal from "@/components/ppt/PptPreviewModal";
+import { exportToPptx } from "@/lib/pptGenerator";
+import { PresentationOutline, SlideContent } from "@/types/ppt";
 
 interface NotebookRecord {
-  id: string
-  type: 'solve' | 'question' | 'research' | 'co_writer' | 'chat' | 'note'
-  title: string
-  user_query: string
-  output: string
-  metadata: Record<string, any>
-  created_at: number
-  kb_name?: string
+  id: string;
+  type: "solve" | "question" | "research" | "co_writer" | "chat" | "note";
+  title: string;
+  user_query: string;
+  output: string;
+  metadata: Record<string, any>;
+  created_at: number;
+  kb_name?: string;
 }
 
 interface Notebook {
-  id: string
-  name: string
-  description: string
-  created_at: number
-  updated_at: number
-  records: NotebookRecord[]
-  color: string
-  icon: string
+  id: string;
+  name: string;
+  description: string;
+  created_at: number;
+  updated_at: number;
+  records: NotebookRecord[];
+  color: string;
+  icon: string;
 }
 
 interface KnowledgeBase {
-  name: string
-  display_name?: string
-  is_default?: boolean
-  system_managed?: boolean
+  name: string;
+  display_name?: string;
+  is_default?: boolean;
+  system_managed?: boolean;
   owner?: {
-    type?: string
-    notebook_id?: string
-    notebook_name?: string
-  } | null
+    type?: string;
+    notebook_id?: string;
+    notebook_name?: string;
+  } | null;
 }
 
 interface PptStyleTemplate {
-  id: string
-  name: string
-  prompt: string
+  id: string;
+  name: string;
+  prompt: string;
 }
 
 interface PptTemplateInfo {
-  name: string
-  size: number
-  modified_at: string
-  download_url: string
+  name: string;
+  size: number;
+  modified_at: string;
+  download_url: string;
 }
 
 interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  isStreaming?: boolean
-  isSeparator?: boolean
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  isStreaming?: boolean;
+  isSeparator?: boolean;
   sources?: {
-    rag?: any[]
-    web?: any[]
-  }
-  source_catalog?: CitationCatalogItem[]
+    rag?: any[];
+    web?: any[];
+  };
+  source_catalog?: CitationCatalogItem[];
 }
 
 // Source types for the left panel
 interface Source {
-  id: string
-  type: 'web' | 'file' | 'kb' | 'report' | 'paper'
-  title: string
-  url?: string
-  selected: boolean
-  content?: string
-  source_key?: string
-  ref_number?: number
+  id: string;
+  type: "web" | "file" | "kb" | "report" | "paper";
+  title: string;
+  url?: string;
+  selected: boolean;
+  content?: string;
+  source_key?: string;
+  ref_number?: number;
   // Paper-specific fields
-  authors?: string[]
-  year?: number
-  arxiv_id?: string
-  abstract?: string
+  authors?: string[];
+  year?: number;
+  arxiv_id?: string;
+  abstract?: string;
 }
 
 interface CitationCatalogItem {
-  ref_number: number
-  source_key?: string
-  title: string
-  url?: string
-  type?: Source['type']
+  ref_number: number;
+  source_key?: string;
+  title: string;
+  url?: string;
+  type?: Source["type"];
 }
 
 interface ResearchState {
-  topic: string
-  running: boolean
-  phase: 'planning' | 'researching' | 'reporting' | 'idle'
-  progress: { current: number; total: number }
-  currentSubTopic?: string
-  startedAt?: number
-  estimatedTimeRemaining?: string
-  planMode?: 'quick' | 'medium' | 'deep' | 'auto'
-  researchId?: string
+  topic: string;
+  running: boolean;
+  phase: "planning" | "researching" | "reporting" | "idle";
+  progress: { current: number; total: number };
+  currentSubTopic?: string;
+  startedAt?: number;
+  estimatedTimeRemaining?: string;
+  planMode?: "quick" | "medium" | "deep" | "auto";
+  researchId?: string;
 }
 
-type StudioMode = 'idle' | 'research' | 'solver' | 'pdf' | 'ppt' | 'mindmap' | 'podcast'
+type StudioMode =
+  | "idle"
+  | "research"
+  | "solver"
+  | "pdf"
+  | "ppt"
+  | "mindmap"
+  | "podcast";
 
-type ExportContentSource = 'research' | 'sources'
+type ExportContentSource = "research" | "sources";
 
-type PptStyleMode = 'default' | 'preset' | 'template' | 'sources'
+type PptStyleMode = "default" | "preset" | "template" | "sources";
 
-type PptTemplatePromptSource = 'preset' | 'sources'
+type PptTemplatePromptSource = "preset" | "sources";
 
-type AudioResult = { audioUrl?: string; audioId?: string }
+type AudioResult = { audioUrl?: string; audioId?: string };
 
 interface PptStudioState {
-  styleMode?: PptStyleMode
-  selectedStyleId?: string
-  selectedTemplate?: string
-  templateUseLlm?: boolean
-  templatePromptSource?: PptTemplatePromptSource
-  stylePreviewSvg?: string
-  outline?: PresentationOutline | null
-  previewOpen?: boolean
+  styleMode?: PptStyleMode;
+  selectedStyleId?: string;
+  selectedTemplate?: string;
+  templateUseLlm?: boolean;
+  templatePromptSource?: PptTemplatePromptSource;
+  stylePreviewSvg?: string;
+  outline?: PresentationOutline | null;
+  previewOpen?: boolean;
 }
 
 interface PodcastStudioState {
-  audioResult?: AudioResult | null
+  audioResult?: AudioResult | null;
 }
 
 interface StudioState {
-  mode?: StudioMode
-  exportContentSource?: ExportContentSource
-  ppt?: PptStudioState
-  podcast?: PodcastStudioState
+  mode?: StudioMode;
+  exportContentSource?: ExportContentSource;
+  ppt?: PptStudioState;
+  podcast?: PodcastStudioState;
 }
 
 interface SessionSnapshot {
-  session_id: string
-  title: string
-  messages: ChatMessage[]
-  sources: Source[]
-  research_report?: string
-  research_state?: ResearchState | null
-  studio_state?: StudioState | null
-  created_at: number
-  updated_at: number
+  session_id: string;
+  title: string;
+  messages: ChatMessage[];
+  sources: Source[];
+  research_report?: string;
+  research_state?: ResearchState | null;
+  studio_state?: StudioState | null;
+  created_at: number;
+  updated_at: number;
 }
 
 const normalizeSourceUrl = (raw?: string) => {
-  const value = (raw || '').trim()
-  if (!value) return ''
+  const value = (raw || "").trim();
+  if (!value) return "";
   try {
-    const parsed = new URL(value)
-    parsed.hash = ''
-    let normalized = parsed.toString()
-    if (normalized.endsWith('/')) {
-      normalized = normalized.slice(0, -1)
+    const parsed = new URL(value);
+    parsed.hash = "";
+    let normalized = parsed.toString();
+    if (normalized.endsWith("/")) {
+      normalized = normalized.slice(0, -1);
     }
-    return normalized
+    return normalized;
   } catch {
-    return value.replace(/\/+$/, '')
+    return value.replace(/\/+$/, "");
   }
-}
+};
 
 const buildSourceKey = (source: Partial<Source> & { source_key?: string }) => {
-  if (source.source_key) return source.source_key
-  const normalizedUrl = normalizeSourceUrl(source.url)
-  const key = normalizedUrl || source.url || source.id || source.title || ''
-  const sourceType = source.type || 'web'
-  return key ? `${sourceType}-${key}` : ''
-}
+  if (source.source_key) return source.source_key;
+  const normalizedUrl = normalizeSourceUrl(source.url);
+  const key = normalizedUrl || source.url || source.id || source.title || "";
+  const sourceType = source.type || "web";
+  return key ? `${sourceType}-${key}` : "";
+};
 
 const withSourceIdentity = (source: Source): Source => {
-  const sourceKey = buildSourceKey(source)
+  const sourceKey = buildSourceKey(source);
   return {
     ...source,
     source_key: sourceKey || source.source_key,
-  }
-}
+  };
+};
 
 const normalizeSources = (list: Source[] = []) =>
-  list.map(source => ({
+  list.map((source) => ({
     ...withSourceIdentity(source),
     selected: source.selected !== false,
-  }))
+  }));
 
-let clientIdSequence = 0
+let clientIdSequence = 0;
 
 const makeClientId = (prefix: string) => {
-  const safePrefix = prefix.trim() || 'id'
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `${safePrefix}-${crypto.randomUUID()}`
+  const safePrefix = prefix.trim() || "id";
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return `${safePrefix}-${crypto.randomUUID()}`;
   }
-  clientIdSequence += 1
+  clientIdSequence += 1;
   return `${safePrefix}-${Date.now().toString(36)}-${clientIdSequence.toString(
-    36
-  )}-${Math.random().toString(36).slice(2, 8)}`
-}
+    36,
+  )}-${Math.random().toString(36).slice(2, 8)}`;
+};
 
 interface MarkdownErrorBoundaryProps {
-  fallback: ReactNode
-  children: ReactNode
-  resetKey?: string
+  fallback: ReactNode;
+  children: ReactNode;
+  resetKey?: string;
 }
 
 interface MarkdownErrorBoundaryState {
-  hasError: boolean
+  hasError: boolean;
 }
 
 class MarkdownErrorBoundary extends Component<
@@ -265,147 +275,161 @@ class MarkdownErrorBoundary extends Component<
   MarkdownErrorBoundaryState
 > {
   constructor(props: MarkdownErrorBoundaryProps) {
-    super(props)
-    this.state = { hasError: false }
+    super(props);
+    this.state = { hasError: false };
   }
 
   static getDerivedStateFromError(): MarkdownErrorBoundaryState {
-    return { hasError: true }
+    return { hasError: true };
   }
 
   componentDidCatch(error: Error) {
-    console.error('Markdown render failed:', error)
+    console.error("Markdown render failed:", error);
   }
 
   componentDidUpdate(prevProps: MarkdownErrorBoundaryProps) {
     if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
-      this.setState({ hasError: false })
+      this.setState({ hasError: false });
     }
   }
 
   render() {
     if (this.state.hasError) {
-      return this.props.fallback
+      return this.props.fallback;
     }
-    return this.props.children
+    return this.props.children;
   }
 }
 
 const stripLegacyCitationAnchors = (content: string) =>
   content
-    .replace(/<a\s+id=(['"])ref-\d+\1\s*><\/a>/gi, '')
-    .replace(/<a\s+id=ref-\d+\s*><\/a>/gi, '')
+    .replace(/<a\s+id=(['"])ref-\d+\1\s*><\/a>/gi, "")
+    .replace(/<a\s+id=ref-\d+\s*><\/a>/gi, "");
 
 const normalizeLegacyCitationMarkup = (content: string) =>
-  stripLegacyCitationAnchors(content).replace(/\[\[(\d+)\]\]\(#ref-(\d+)\)/g, '[$1](#ref-$2)')
+  stripLegacyCitationAnchors(content).replace(
+    /\[\[(\d+)\]\]\(#ref-(\d+)\)/g,
+    "[$1](#ref-$2)",
+  );
 
-const extractCatalogFromMessageContent = (content: string): CitationCatalogItem[] => {
-  const text = normalizeLegacyCitationMarkup(content || '')
-  const lines = text.split('\n')
-  const items: CitationCatalogItem[] = []
+const extractCatalogFromMessageContent = (
+  content: string,
+): CitationCatalogItem[] => {
+  const text = normalizeLegacyCitationMarkup(content || "");
+  const lines = text.split("\n");
+  const items: CitationCatalogItem[] = [];
 
-  lines.forEach(line => {
-    const refMatch = line.match(/^\s*\**\[(\d+)\]\**\s+(.+)$/)
-    if (!refMatch) return
-    const refNumber = parseInt(refMatch[1], 10)
-    if (!Number.isFinite(refNumber) || refNumber <= 0) return
-    const rest = refMatch[2].trim()
-    if (!rest) return
+  lines.forEach((line) => {
+    const refMatch = line.match(/^\s*\**\[(\d+)\]\**\s+(.+)$/);
+    if (!refMatch) return;
+    const refNumber = parseInt(refMatch[1], 10);
+    if (!Number.isFinite(refNumber) || refNumber <= 0) return;
+    const rest = refMatch[2].trim();
+    if (!rest) return;
 
-    const linkMatch = rest.match(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/i)
+    const linkMatch = rest.match(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/i);
     if (linkMatch) {
-      const title = linkMatch[1].trim() || `引用 ${refNumber}`
-      const url = linkMatch[2].trim()
+      const title = linkMatch[1].trim() || `引用 ${refNumber}`;
+      const url = linkMatch[2].trim();
       items.push({
         ref_number: refNumber,
         title,
         url,
-        type: 'web',
-        source_key: buildSourceKey({ type: 'web', title, url }),
-      })
-      return
+        type: "web",
+        source_key: buildSourceKey({ type: "web", title, url }),
+      });
+      return;
     }
 
-    const urlMatch = rest.match(/(https?:\/\/[^\s)]+)/i)
+    const urlMatch = rest.match(/(https?:\/\/[^\s)]+)/i);
     if (urlMatch) {
-      const url = urlMatch[1].trim()
-      const title = rest.replace(urlMatch[1], '').trim() || url
+      const url = urlMatch[1].trim();
+      const title = rest.replace(urlMatch[1], "").trim() || url;
       items.push({
         ref_number: refNumber,
         title,
         url,
-        type: 'web',
-        source_key: buildSourceKey({ type: 'web', title, url }),
-      })
-      return
+        type: "web",
+        source_key: buildSourceKey({ type: "web", title, url }),
+      });
+      return;
     }
 
     items.push({
       ref_number: refNumber,
       title: rest,
-      type: 'web',
-      source_key: buildSourceKey({ type: 'web', title: rest }),
-    })
-  })
+      type: "web",
+      source_key: buildSourceKey({ type: "web", title: rest }),
+    });
+  });
 
-  return items
-}
+  return items;
+};
 
 export default function NotebookDetailPage() {
-  const params = useParams()
-  const router = useRouter()
-  const notebookId = params.id as string
-  const sourcesKbName = `notebook_${notebookId}_sources`
+  const params = useParams();
+  const router = useRouter();
+  const notebookId = params.id as string;
+  const sourcesKbName = `notebook_${notebookId}_sources`;
 
   // Notebook state
-  const [notebook, setNotebook] = useState<Notebook | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [selectedRecord, setSelectedRecord] = useState<NotebookRecord | null>(null)
+  const [notebook, setNotebook] = useState<Notebook | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedRecord, setSelectedRecord] = useState<NotebookRecord | null>(
+    null,
+  );
 
   // Panel collapse states
-  const [leftCollapsed, setLeftCollapsed] = useState(false)
-  const [rightCollapsed, setRightCollapsed] = useState(false)
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
 
   // Chat state
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
-  const [chatInput, setChatInput] = useState('')
-  const [isChatting, setIsChatting] = useState(false)
-  const chatContainerRef = useRef<HTMLDivElement>(null)
-  const sourceRowRefs = useRef<Record<string, HTMLDivElement | null>>({})
-  const citationRegistryRef = useRef<Map<string, number>>(new Map())
-  const citationNumberOwnerRef = useRef<Map<number, string>>(new Map())
-  const citationPinnedRefRef = useRef<Map<string, number>>(new Map())
-  const [citationRegistryVersion, setCitationRegistryVersion] = useState(0)
-  const [highlightedSourceKey, setHighlightedSourceKey] = useState('')
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isChatting, setIsChatting] = useState(false);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const sourceRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const citationRegistryRef = useRef<Map<string, number>>(new Map());
+  const citationNumberOwnerRef = useRef<Map<number, string>>(new Map());
+  const citationPinnedRefRef = useRef<Map<string, number>>(new Map());
+  const [citationRegistryVersion, setCitationRegistryVersion] = useState(0);
+  const [highlightedSourceKey, setHighlightedSourceKey] = useState("");
 
   // Refs to always have the latest values for session saves (avoids React stale closure bugs)
-  const chatMessagesRef = useRef<ChatMessage[]>([])
-  const sourcesRef = useRef<Source[]>([])
-  const researchReportRef = useRef('')
-  const studioStateRef = useRef<StudioState | null>(null)
-  const studioHydrationRef = useRef(false)
-  const isMountedRef = useRef(true)
+  const chatMessagesRef = useRef<ChatMessage[]>([]);
+  const sourcesRef = useRef<Source[]>([]);
+  const researchReportRef = useRef("");
+  const studioStateRef = useRef<StudioState | null>(null);
+  const studioHydrationRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   // Knowledge bases
-  const [kbs, setKbs] = useState<KnowledgeBase[]>([])
-  const [selectedKb, setSelectedKb] = useState<string>('')
+  const [kbs, setKbs] = useState<KnowledgeBase[]>([]);
+  const [selectedKb, setSelectedKb] = useState<string>("");
 
   // Chat switches
-  const [enableRag, setEnableRag] = useState(false)
-  const [researchMode, setResearchMode] = useState<'fast' | 'paper' | 'deep'>('fast')
-  const [sessions, setSessions] = useState<SessionSnapshot[]>([])
-  const [currentSessionId, setCurrentSessionId] = useState('')
-  const [hasSessionActivity, setHasSessionActivity] = useState(false)
-  const sessionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const sessionCacheKey = `notebook-session-cache-${notebookId}`
+  const [enableRag, setEnableRag] = useState(false);
+  const [researchMode, setResearchMode] = useState<"fast" | "paper" | "deep">(
+    "fast",
+  );
+  const [sessions, setSessions] = useState<SessionSnapshot[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState("");
+  const [hasSessionActivity, setHasSessionActivity] = useState(false);
+  const sessionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const sessionCacheKey = `notebook-session-cache-${notebookId}`;
 
   // Helper to cache sessions safely without hitting 5MB LocalStorage limits
   const saveToLocalStorageSafe = (key: string, data: any) => {
     try {
       // 首先尝试完整保存，如果没超容量就正常用
-      localStorage.setItem(key, JSON.stringify(data))
+      localStorage.setItem(key, JSON.stringify(data));
     } catch (e) {
-      console.warn('localStorage quota exceeded, switching to metadata-only cache fallback:', e)
+      console.warn(
+        "localStorage quota exceeded, switching to metadata-only cache fallback:",
+        e,
+      );
       try {
         // 回退方案：如果爆了，只在本地缓存会话列表的轻量级元数据（用于秒开左侧目录），不缓存正文。
         // 这样进入页面时右侧会短暂空白一瞬间，然后通过网络请求加载完整数据。绝对不会出现截断文本覆盖后端的情况。
@@ -417,164 +441,190 @@ export default function NotebookDetailPage() {
             created_at: s.created_at,
             updated_at: s.updated_at,
           })),
-        }
-        localStorage.setItem(key, JSON.stringify(lightData))
+        };
+        localStorage.setItem(key, JSON.stringify(lightData));
       } catch (err) {
-        console.warn('Cache metadata fallback also failed', err)
+        console.warn("Cache metadata fallback also failed", err);
       }
     }
-  }
+  };
 
-  const [collapsedSessionIds, setCollapsedSessionIds] = useState<Record<string, boolean>>({})
+  const [collapsedSessionIds, setCollapsedSessionIds] = useState<
+    Record<string, boolean>
+  >({});
 
   // Sources panel (new)
-  const [sources, setSources] = useState<Source[]>([])
-  const [searchQuery, setSearchQuery] = useState('')
-  const [isSearching, setIsSearching] = useState(false)
+  const [sources, setSources] = useState<Source[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
 
   // Keep refs in sync with state (for buildSessionSnapshot in async callbacks)
   useEffect(() => {
-    chatMessagesRef.current = chatMessages
-  }, [chatMessages])
+    chatMessagesRef.current = chatMessages;
+  }, [chatMessages]);
   useEffect(() => {
-    sourcesRef.current = sources
-  }, [sources])
+    sourcesRef.current = sources;
+  }, [sources]);
   useEffect(
     () => () => {
-      isMountedRef.current = false
+      isMountedRef.current = false;
     },
-    []
-  )
+    [],
+  );
 
   // Deep Research config (from original research page)
-  const [planMode, setPlanMode] = useState<'quick' | 'medium' | 'deep' | 'auto'>('medium')
-  const [enabledTools, setEnabledTools] = useState<string[]>(['Web'])
-  const [enableOptimization, setEnableOptimization] = useState(true)
-  const [exportContentSource, setExportContentSource] = useState<ExportContentSource>('research')
-  const [pptStyleMode, setPptStyleMode] = useState<PptStyleMode>('default')
-  const [pptStyleTemplates, setPptStyleTemplates] = useState<PptStyleTemplate[]>([])
-  const [selectedPptStyleId, setSelectedPptStyleId] = useState('')
-  const [pptTemplates, setPptTemplates] = useState<PptTemplateInfo[]>([])
-  const [selectedPptTemplate, setSelectedPptTemplate] = useState('')
-  const [pptTemplateUploading, setPptTemplateUploading] = useState(false)
-  const [researchStartTime, setResearchStartTime] = useState<number | null>(null)
-  const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string>('')
-  const [pptTemplateUseLlm, setPptTemplateUseLlm] = useState(false)
+  const [planMode, setPlanMode] = useState<
+    "quick" | "medium" | "deep" | "auto"
+  >("medium");
+  const [enabledTools, setEnabledTools] = useState<string[]>(["Web"]);
+  const [enableOptimization, setEnableOptimization] = useState(true);
+  const [exportContentSource, setExportContentSource] =
+    useState<ExportContentSource>("research");
+  const [pptStyleMode, setPptStyleMode] = useState<PptStyleMode>("default");
+  const [pptStyleTemplates, setPptStyleTemplates] = useState<
+    PptStyleTemplate[]
+  >([]);
+  const [selectedPptStyleId, setSelectedPptStyleId] = useState("");
+  const [pptTemplates, setPptTemplates] = useState<PptTemplateInfo[]>([]);
+  const [selectedPptTemplate, setSelectedPptTemplate] = useState("");
+  const [pptTemplateUploading, setPptTemplateUploading] = useState(false);
+  const [researchStartTime, setResearchStartTime] = useState<number | null>(
+    null,
+  );
+  const [estimatedTimeRemaining, setEstimatedTimeRemaining] =
+    useState<string>("");
+  const [pptTemplateUseLlm, setPptTemplateUseLlm] = useState(false);
   const [pptTemplatePromptSource, setPptTemplatePromptSource] =
-    useState<PptTemplatePromptSource>('preset')
-  const [pptStylePreviewSvg, setPptStylePreviewSvg] = useState('')
-  const [pptStylePreviewLoading, setPptStylePreviewLoading] = useState(false)
-  const [pptStylePreviewError, setPptStylePreviewError] = useState('')
-  const [bananaPptEnabled, setBananaPptEnabled] = useState(true)
-  const [bananaPptMaxSlides, setBananaPptMaxSlides] = useState(15)
-  const [pptPreviewOpen, setPptPreviewOpen] = useState(false)
-  const [pptOutline, setPptOutline] = useState<PresentationOutline | null>(null)
-  const [pptGeneratingIndices, setPptGeneratingIndices] = useState<number[]>([])
+    useState<PptTemplatePromptSource>("preset");
+  const [pptStylePreviewSvg, setPptStylePreviewSvg] = useState("");
+  const [pptStylePreviewLoading, setPptStylePreviewLoading] = useState(false);
+  const [pptStylePreviewError, setPptStylePreviewError] = useState("");
+  const [bananaPptEnabled, setBananaPptEnabled] = useState(true);
+  const [bananaPptMaxSlides, setBananaPptMaxSlides] = useState(15);
+  const [pptPreviewOpen, setPptPreviewOpen] = useState(false);
+  const [pptOutline, setPptOutline] = useState<PresentationOutline | null>(
+    null,
+  );
+  const [pptGeneratingIndices, setPptGeneratingIndices] = useState<number[]>(
+    [],
+  );
   const [pptImageProgress, setPptImageProgress] = useState({
     current: 0,
     total: 0,
-  })
-  const [isPptGenerating, setIsPptGenerating] = useState(false)
-  const [isPptExporting, setIsPptExporting] = useState(false)
+  });
+  const [isPptGenerating, setIsPptGenerating] = useState(false);
+  const [isPptExporting, setIsPptExporting] = useState(false);
 
   // Add source modal
-  const [showAddSourceModal, setShowAddSourceModal] = useState(false)
-  const [sourceUrl, setSourceUrl] = useState('')
+  const [showAddSourceModal, setShowAddSourceModal] = useState(false);
+  const [sourceUrl, setSourceUrl] = useState("");
 
   // Add note modal
-  const [showAddNoteModal, setShowAddNoteModal] = useState(false)
-  const [noteTitle, setNoteTitle] = useState('')
-  const [noteContent, setNoteContent] = useState('')
+  const [showAddNoteModal, setShowAddNoteModal] = useState(false);
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteContent, setNoteContent] = useState("");
 
   // Studio state
-  const [studioMode, setStudioMode] = useState<StudioMode>('idle')
-  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false)
-  const [audioResult, setAudioResult] = useState<AudioResult | null>(null)
-  const [audioError, setAudioError] = useState<string | null>(null)
+  const [studioMode, setStudioMode] = useState<StudioMode>("idle");
+  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
+  const [audioResult, setAudioResult] = useState<AudioResult | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
 
   // Podcast config state
   const [podcastSpeakers, setPodcastSpeakers] = useState<
     Array<{ id: string; name: string; gender: string }>
   >([
     {
-      id: 'zh_female_mizaitongxue_v2_saturn_bigtts',
-      name: '米仔同学 (女)',
-      gender: 'female',
+      id: "zh_female_mizaitongxue_v2_saturn_bigtts",
+      name: "米仔同学 (女)",
+      gender: "female",
     },
     {
-      id: 'zh_male_dayixiansheng_v2_saturn_bigtts',
-      name: '大义先生 (男)',
-      gender: 'male',
+      id: "zh_male_dayixiansheng_v2_saturn_bigtts",
+      name: "大义先生 (男)",
+      gender: "male",
     },
-  ])
-  const [podcastSpeakerA, setPodcastSpeakerA] = useState('zh_female_mizaitongxue_v2_saturn_bigtts')
-  const [podcastSpeakerB, setPodcastSpeakerB] = useState('zh_male_dayixiansheng_v2_saturn_bigtts')
-  const [podcastSpeechRate, setPodcastSpeechRate] = useState(1.0)
-  const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null)
-  const recoveringAudioIdRef = useRef<string | null>(null)
+  ]);
+  const [podcastSpeakerA, setPodcastSpeakerA] = useState(
+    "zh_female_mizaitongxue_v2_saturn_bigtts",
+  );
+  const [podcastSpeakerB, setPodcastSpeakerB] = useState(
+    "zh_male_dayixiansheng_v2_saturn_bigtts",
+  );
+  const [podcastSpeechRate, setPodcastSpeechRate] = useState(1.0);
+  const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
+  const recoveringAudioIdRef = useRef<string | null>(null);
 
   const normalizeTimestamp = (value?: number) => {
-    if (!value) return Date.now()
-    return value < 1000000000000 ? value * 1000 : value
-  }
+    if (!value) return Date.now();
+    return value < 1000000000000 ? value * 1000 : value;
+  };
 
   const formatSessionTime = (value?: number) => {
-    return new Date(normalizeTimestamp(value)).toLocaleString()
-  }
+    return new Date(normalizeTimestamp(value)).toLocaleString();
+  };
 
   const resetResearchUiState = (clearQuery: boolean) => {
-    setResearchRunning(false)
-    setResearchPhase('idle')
-    setResearchProgress({ current: 0, total: 0 })
-    setGlobalProgress({ completed: 0, total: 0 })
-    setCurrentSubTopic('')
-    setResearchStartTime(null)
-    setEstimatedTimeRemaining('')
+    setResearchRunning(false);
+    setResearchPhase("idle");
+    setResearchProgress({ current: 0, total: 0 });
+    setGlobalProgress({ completed: 0, total: 0 });
+    setCurrentSubTopic("");
+    setResearchStartTime(null);
+    setEstimatedTimeRemaining("");
     if (clearQuery) {
-      setSearchQuery('')
-      setResearchTopic('')
+      setSearchQuery("");
+      setResearchTopic("");
     }
-  }
+  };
 
-  const formatSessionTitle = (createdAt: number | undefined, messages: ChatMessage[]) => {
-    const timeLabel = formatSessionTime(createdAt)
-    const firstUser = messages.find(msg => msg.role === 'user' && msg.content.trim())
-    if (!firstUser) return timeLabel
-    const cleaned = firstUser.content.trim().replace(/\s+/g, ' ')
-    const short = cleaned.length > 40 ? `${cleaned.slice(0, 40)}...` : cleaned
-    return `${timeLabel} · ${short}`
-  }
+  const formatSessionTitle = (
+    createdAt: number | undefined,
+    messages: ChatMessage[],
+  ) => {
+    const timeLabel = formatSessionTime(createdAt);
+    const firstUser = messages.find(
+      (msg) => msg.role === "user" && msg.content.trim(),
+    );
+    if (!firstUser) return timeLabel;
+    const cleaned = firstUser.content.trim().replace(/\s+/g, " ");
+    const short = cleaned.length > 40 ? `${cleaned.slice(0, 40)}...` : cleaned;
+    return `${timeLabel} · ${short}`;
+  };
 
   const buildResearchState = (): ResearchState | null => {
-    if (!researchRunning && !pendingResearchRecovery) return null
+    if (!researchRunning && !pendingResearchRecovery) return null;
     return {
-      topic: researchTopic || searchQuery || '',
+      topic: researchTopic || searchQuery || "",
       running: researchRunning || pendingResearchRecovery,
       phase: researchPhase,
       progress: researchProgress,
-      currentSubTopic: currentSubTopic || '',
+      currentSubTopic: currentSubTopic || "",
       startedAt: researchStartTime || undefined,
       estimatedTimeRemaining: estimatedTimeRemaining || undefined,
       planMode,
       researchId: activeResearchId || undefined,
-    }
-  }
+    };
+  };
 
-  const normalizeAudioResult = (result?: AudioResult | null): AudioResult | null => {
-    if (!result) return null
+  const normalizeAudioResult = (
+    result?: AudioResult | null,
+  ): AudioResult | null => {
+    if (!result) return null;
     if (
       result.audioUrl &&
-      !result.audioUrl.startsWith('http') &&
-      !result.audioUrl.startsWith('data:') &&
-      !result.audioUrl.startsWith('blob:')
+      !result.audioUrl.startsWith("http") &&
+      !result.audioUrl.startsWith("data:") &&
+      !result.audioUrl.startsWith("blob:")
     ) {
-      return { ...result, audioUrl: apiUrl(result.audioUrl) }
+      return { ...result, audioUrl: apiUrl(result.audioUrl) };
     }
-    return result
-  }
+    return result;
+  };
 
   const buildStudioState = (): StudioState => ({
-    mode: studioMode === 'ppt' || studioMode === 'podcast' ? studioMode : 'idle',
+    mode:
+      studioMode === "ppt" || studioMode === "podcast" ? studioMode : "idle",
     exportContentSource,
     ppt: {
       styleMode: pptStyleMode,
@@ -582,29 +632,31 @@ export default function NotebookDetailPage() {
       selectedTemplate: selectedPptTemplate,
       templateUseLlm: pptTemplateUseLlm,
       templatePromptSource: pptTemplatePromptSource,
-      stylePreviewSvg: pptStylePreviewSvg || '',
+      stylePreviewSvg: pptStylePreviewSvg || "",
       outline: pptOutline,
       previewOpen: pptPreviewOpen,
     },
     podcast: {
       audioResult: audioResult ? { ...audioResult } : null,
     },
-  })
+  });
 
   const hasStudioState = (state?: StudioState | null) => {
-    if (!state) return false
-    if (state.mode && state.mode !== 'idle') return true
-    if (state.exportContentSource && state.exportContentSource !== 'research') return true
-    const ppt = state.ppt
-    if (ppt?.outline) return true
-    if (ppt?.previewOpen) return true
-    if (ppt?.styleMode && ppt.styleMode !== 'default') return true
-    if (ppt?.templateUseLlm) return true
-    if (ppt?.templatePromptSource && ppt.templatePromptSource !== 'preset') return true
-    const audio = state.podcast?.audioResult
-    if (audio?.audioUrl || audio?.audioId) return true
-    return false
-  }
+    if (!state) return false;
+    if (state.mode && state.mode !== "idle") return true;
+    if (state.exportContentSource && state.exportContentSource !== "research")
+      return true;
+    const ppt = state.ppt;
+    if (ppt?.outline) return true;
+    if (ppt?.previewOpen) return true;
+    if (ppt?.styleMode && ppt.styleMode !== "default") return true;
+    if (ppt?.templateUseLlm) return true;
+    if (ppt?.templatePromptSource && ppt.templatePromptSource !== "preset")
+      return true;
+    const audio = state.podcast?.audioResult;
+    if (audio?.audioUrl || audio?.audioId) return true;
+    return false;
+  };
 
   const studioState = useMemo(
     () => buildStudioState(),
@@ -620,208 +672,225 @@ export default function NotebookDetailPage() {
       pptOutline,
       pptPreviewOpen,
       audioResult,
-    ]
-  )
+    ],
+  );
 
   useEffect(() => {
-    studioStateRef.current = studioState
-  }, [studioState])
+    studioStateRef.current = studioState;
+  }, [studioState]);
 
-  const ensureResearchReportMessage = (messages: ChatMessage[], report: string): ChatMessage[] => {
-    if (!report) return messages
-    const banner = '**📚 深度研究完成**'
+  const ensureResearchReportMessage = (
+    messages: ChatMessage[],
+    report: string,
+  ): ChatMessage[] => {
+    if (!report) return messages;
+    const banner = "**📚 深度研究完成**";
     const hasReport = messages.some(
-      msg => msg.role === 'assistant' && msg.content && msg.content.includes(banner)
-    )
-    if (hasReport) return messages
-    let replaced = false
-    const next = messages.map(msg => {
+      (msg) =>
+        msg.role === "assistant" && msg.content && msg.content.includes(banner),
+    );
+    if (hasReport) return messages;
+    let replaced = false;
+    const next = messages.map((msg) => {
       if (msg.isStreaming) {
-        replaced = true
+        replaced = true;
         return {
           ...msg,
           content: `${banner}\n\n${report}`,
           isStreaming: false,
-        }
+        };
       }
-      return msg
-    })
-    if (replaced) return next
+      return msg;
+    });
+    if (replaced) return next;
     const appended: ChatMessage = {
-      id: makeClientId('result'),
-      role: 'assistant',
+      id: makeClientId("result"),
+      role: "assistant",
       content: `${banner}\n\n${report}`,
-    }
-    return [...next, appended]
-  }
+    };
+    return [...next, appended];
+  };
 
   const hydrateSessionReport = (session: SessionSnapshot) => {
-    if (!session.research_report) return session
-    const messages = session.messages || []
-    const updated = ensureResearchReportMessage(messages, session.research_report)
-    if (updated === messages) return session
-    return { ...session, messages: updated }
-  }
+    if (!session.research_report) return session;
+    const messages = session.messages || [];
+    const updated = ensureResearchReportMessage(
+      messages,
+      session.research_report,
+    );
+    if (updated === messages) return session;
+    return { ...session, messages: updated };
+  };
 
   const applyResearchState = (state?: ResearchState | null) => {
     if (state && state.running) {
-      setResearchMode('deep')
+      setResearchMode("deep");
       if (state.topic) {
-        setSearchQuery(state.topic)
-        setResearchTopic(state.topic)
+        setSearchQuery(state.topic);
+        setResearchTopic(state.topic);
       }
-      setResearchRunning(true)
-      setResearchPhase(state.phase || 'planning')
-      setResearchProgress(state.progress || { current: 0, total: 0 })
-      setCurrentSubTopic(state.currentSubTopic || '')
-      setResearchStartTime(state.startedAt || null)
-      setEstimatedTimeRemaining(state.estimatedTimeRemaining || '')
-      setActiveResearchId(state.researchId || null)
-      setPendingResearchRecovery(true)
-      return
+      setResearchRunning(true);
+      setResearchPhase(state.phase || "planning");
+      setResearchProgress(state.progress || { current: 0, total: 0 });
+      setCurrentSubTopic(state.currentSubTopic || "");
+      setResearchStartTime(state.startedAt || null);
+      setEstimatedTimeRemaining(state.estimatedTimeRemaining || "");
+      setActiveResearchId(state.researchId || null);
+      setPendingResearchRecovery(true);
+      return;
     }
-    setActiveResearchId(null)
-    setPendingResearchRecovery(false)
-    resetResearchUiState(true)
-  }
+    setActiveResearchId(null);
+    setPendingResearchRecovery(false);
+    resetResearchUiState(true);
+  };
 
   const resetStudioState = () => {
-    setStudioMode('idle')
-    setExportContentSource('research')
-    setPptStyleMode('default')
-    setSelectedPptStyleId('')
-    setSelectedPptTemplate('')
-    setPptTemplateUseLlm(false)
-    setPptTemplatePromptSource('preset')
-    setPptStylePreviewSvg('')
-    setPptStylePreviewLoading(false)
-    setPptStylePreviewError('')
-    setPptPreviewOpen(false)
-    setPptOutline(null)
-    setPptGeneratingIndices([])
-    setPptImageProgress({ current: 0, total: 0 })
-    setIsPptGenerating(false)
-    setIsPptExporting(false)
-    recoveringAudioIdRef.current = null
-    setAudioResult(null)
-    setAudioError(null)
-    setIsGeneratingAudio(false)
-  }
+    setStudioMode("idle");
+    setExportContentSource("research");
+    setPptStyleMode("default");
+    setSelectedPptStyleId("");
+    setSelectedPptTemplate("");
+    setPptTemplateUseLlm(false);
+    setPptTemplatePromptSource("preset");
+    setPptStylePreviewSvg("");
+    setPptStylePreviewLoading(false);
+    setPptStylePreviewError("");
+    setPptPreviewOpen(false);
+    setPptOutline(null);
+    setPptGeneratingIndices([]);
+    setPptImageProgress({ current: 0, total: 0 });
+    setIsPptGenerating(false);
+    setIsPptExporting(false);
+    recoveringAudioIdRef.current = null;
+    setAudioResult(null);
+    setAudioError(null);
+    setIsGeneratingAudio(false);
+  };
 
   const applyStudioState = (state?: StudioState | null) => {
-    studioHydrationRef.current = true
-    const next = state || {}
-    const ppt = next.ppt || {}
+    studioHydrationRef.current = true;
+    const next = state || {};
+    const ppt = next.ppt || {};
     const hasPodcastAudio = Boolean(
-      next.podcast?.audioResult?.audioUrl || next.podcast?.audioResult?.audioId
-    )
-    const hasPptOutline = Boolean(ppt.outline)
+      next.podcast?.audioResult?.audioUrl || next.podcast?.audioResult?.audioId,
+    );
+    const hasPptOutline = Boolean(ppt.outline);
     const resolvedMode =
-      next.mode && next.mode !== 'idle'
+      next.mode && next.mode !== "idle"
         ? next.mode
         : hasPodcastAudio
-          ? 'podcast'
+          ? "podcast"
           : hasPptOutline
-            ? 'ppt'
-            : 'idle'
-    setStudioMode(resolvedMode)
-    setExportContentSource(next.exportContentSource || 'research')
-    setPptStyleMode(ppt.styleMode || 'default')
-    setSelectedPptStyleId(ppt.selectedStyleId || '')
-    setSelectedPptTemplate(ppt.selectedTemplate || '')
-    setPptTemplateUseLlm(typeof ppt.templateUseLlm === 'boolean' ? ppt.templateUseLlm : false)
-    setPptTemplatePromptSource(ppt.templatePromptSource || 'preset')
-    setPptStylePreviewSvg(ppt.stylePreviewSvg || '')
-    setPptStylePreviewLoading(false)
-    setPptStylePreviewError('')
-    setPptOutline(ppt.outline || null)
-    setPptPreviewOpen(Boolean(ppt.outline) && (ppt.previewOpen ?? true))
-    setPptGeneratingIndices([])
-    setPptImageProgress({ current: 0, total: 0 })
-    setIsPptGenerating(false)
-    setIsPptExporting(false)
-    setAudioResult(normalizeAudioResult(next.podcast?.audioResult || null))
-    setAudioError(null)
-    setIsGeneratingAudio(false)
+            ? "ppt"
+            : "idle";
+    setStudioMode(resolvedMode);
+    setExportContentSource(next.exportContentSource || "research");
+    setPptStyleMode(ppt.styleMode || "default");
+    setSelectedPptStyleId(ppt.selectedStyleId || "");
+    setSelectedPptTemplate(ppt.selectedTemplate || "");
+    setPptTemplateUseLlm(
+      typeof ppt.templateUseLlm === "boolean" ? ppt.templateUseLlm : false,
+    );
+    setPptTemplatePromptSource(ppt.templatePromptSource || "preset");
+    setPptStylePreviewSvg(ppt.stylePreviewSvg || "");
+    setPptStylePreviewLoading(false);
+    setPptStylePreviewError("");
+    setPptOutline(ppt.outline || null);
+    setPptPreviewOpen(Boolean(ppt.outline) && (ppt.previewOpen ?? true));
+    setPptGeneratingIndices([]);
+    setPptImageProgress({ current: 0, total: 0 });
+    setIsPptGenerating(false);
+    setIsPptExporting(false);
+    setAudioResult(normalizeAudioResult(next.podcast?.audioResult || null));
+    setAudioError(null);
+    setIsGeneratingAudio(false);
     setTimeout(() => {
-      studioHydrationRef.current = false
-    }, 0)
-  }
+      studioHydrationRef.current = false;
+    }, 0);
+  };
 
   const fetchReportText = async (reportUrl: string) => {
-    if (!reportUrl) return ''
-    const url = reportUrl.startsWith('http') ? reportUrl : apiUrl(reportUrl)
-    const res = await fetch(url)
-    if (!res.ok) return ''
-    return res.text()
-  }
+    if (!reportUrl) return "";
+    const url = reportUrl.startsWith("http") ? reportUrl : apiUrl(reportUrl);
+    const res = await fetch(url);
+    if (!res.ok) return "";
+    return res.text();
+  };
 
   const applyResearchResult = (
     report: string,
     metadata: any,
     topic: string,
-    researchId?: string
+    researchId?: string,
   ) => {
-    const reportContent = report || ''
+    const reportContent = report || "";
     const sourceCatalog = normalizeSourceCatalog(
-      metadata?.source_catalog || metadata?.citation_catalog || []
-    )
+      metadata?.source_catalog || metadata?.citation_catalog || [],
+    );
     if (researchId) {
-      setActiveResearchId(researchId)
+      setActiveResearchId(researchId);
     }
-    setResearchReport(reportContent)
+    setResearchReport(reportContent);
     if (reportContent) {
-      const reportTitle = topic ? `深度研究报告 - ${topic}` : '深度研究报告'
+      const reportTitle = topic ? `深度研究报告 - ${topic}` : "深度研究报告";
       const reportSource: Source = withSourceIdentity({
-        id: researchId ? `report-${researchId}` : makeClientId('report'),
-        type: 'report',
+        id: researchId ? `report-${researchId}` : makeClientId("report"),
+        type: "report",
         title: reportTitle,
         selected: true,
         content: reportContent,
-      })
-      setSources(prev => {
-        const withoutReports = prev.filter(source => source.type !== 'report')
-        return [...withoutReports, reportSource]
-      })
+      });
+      setSources((prev) => {
+        const withoutReports = prev.filter(
+          (source) => source.type !== "report",
+        );
+        return [...withoutReports, reportSource];
+      });
     }
-    setResearchRunning(false)
-    setIsChatting(false)
-    setResearchPhase('idle')
-    setResearchProgress({ current: 0, total: 0 })
-    setGlobalProgress({ completed: 0, total: 0 })
-    setCurrentSubTopic('')
-    setResearchStartTime(null)
-    setEstimatedTimeRemaining('')
-    setSearchQuery('')
-    setResearchTopic('')
-    setPendingResearchRecovery(false)
+    setResearchRunning(false);
+    setIsChatting(false);
+    setResearchPhase("idle");
+    setResearchProgress({ current: 0, total: 0 });
+    setGlobalProgress({ completed: 0, total: 0 });
+    setCurrentSubTopic("");
+    setResearchStartTime(null);
+    setEstimatedTimeRemaining("");
+    setSearchQuery("");
+    setResearchTopic("");
+    setPendingResearchRecovery(false);
 
     if (reportContent) {
-      setChatMessages(prev => {
-        const banner = '**📚 深度研究完成**'
-        const reportMsg = `${banner}\n\n${reportContent}`
-        const catalogValue = sourceCatalog.length > 0 ? sourceCatalog : undefined
+      setChatMessages((prev) => {
+        const banner = "**📚 深度研究完成**";
+        const reportMsg = `${banner}\n\n${reportContent}`;
+        const catalogValue =
+          sourceCatalog.length > 0 ? sourceCatalog : undefined;
 
         // Guard: if a report message already exists, update it in-place
         const hasExistingReport = prev.some(
-          msg => msg.role === 'assistant' && msg.content && msg.content.includes(banner)
-        )
+          (msg) =>
+            msg.role === "assistant" &&
+            msg.content &&
+            msg.content.includes(banner),
+        );
         if (hasExistingReport) {
-          return prev.map(msg =>
-            msg.role === 'assistant' && msg.content && msg.content.includes(banner)
+          return prev.map((msg) =>
+            msg.role === "assistant" &&
+            msg.content &&
+            msg.content.includes(banner)
               ? {
                   ...msg,
                   content: reportMsg,
                   isStreaming: false,
                   source_catalog: catalogValue ?? msg.source_catalog,
                 }
-              : msg
-          )
+              : msg,
+          );
         }
 
-        const hasStreaming = prev.some(msg => msg.isStreaming)
+        const hasStreaming = prev.some((msg) => msg.isStreaming);
         if (hasStreaming) {
-          return prev.map(msg =>
+          return prev.map((msg) =>
             msg.isStreaming
               ? {
                   ...msg,
@@ -829,122 +898,143 @@ export default function NotebookDetailPage() {
                   isStreaming: false,
                   source_catalog: catalogValue ?? msg.source_catalog,
                 }
-              : msg
-          )
+              : msg,
+          );
         }
         return [
           ...prev,
           {
-            id: makeClientId('result'),
-            role: 'assistant' as const,
+            id: makeClientId("result"),
+            role: "assistant" as const,
             content: reportMsg,
             source_catalog: catalogValue,
           },
-        ]
-      })
+        ];
+      });
     }
 
     if (metadata) {
-      const newSources: Source[] = []
+      const newSources: Source[] = [];
 
       if (metadata.web_sources && Array.isArray(metadata.web_sources)) {
         metadata.web_sources.forEach((s: any, idx: number) => {
           newSources.push({
-            id: makeClientId('research-web'),
-            type: 'web' as const,
+            id: makeClientId("research-web"),
+            type: "web" as const,
             title: s.title || s.url || `网络来源 ${idx + 1}`,
             url: s.url,
-            content: s.content || s.snippet || '',
+            content: s.content || s.snippet || "",
             selected: true,
             source_key: s.source_key,
-            ref_number: typeof s.ref_number === 'number' ? s.ref_number : undefined,
-          })
-        })
+            ref_number:
+              typeof s.ref_number === "number" ? s.ref_number : undefined,
+          });
+        });
       }
 
       if (metadata.rag_sources && Array.isArray(metadata.rag_sources)) {
         metadata.rag_sources.forEach((s: any, idx: number) => {
           const ragTitle =
-            s.title || s.source || s.source_file || s.kb_name || `知识库来源 ${idx + 1}`
-          const ragDetailParts: string[] = []
-          if (s.page) ragDetailParts.push(`页 ${s.page}`)
-          if (s.chunk_id) ragDetailParts.push(`段落 ${s.chunk_id}`)
-          const ragDetail = ragDetailParts.join(' · ')
+            s.title ||
+            s.source ||
+            s.source_file ||
+            s.kb_name ||
+            `知识库来源 ${idx + 1}`;
+          const ragDetailParts: string[] = [];
+          if (s.page) ragDetailParts.push(`页 ${s.page}`);
+          if (s.chunk_id) ragDetailParts.push(`段落 ${s.chunk_id}`);
+          const ragDetail = ragDetailParts.join(" · ");
           newSources.push({
-            id: makeClientId('research-rag'),
-            type: 'kb' as const,
+            id: makeClientId("research-rag"),
+            type: "kb" as const,
             title: ragTitle,
-            url: ragDetail || '',
-            content: s.content || s.content_preview || '',
+            url: ragDetail || "",
+            content: s.content || s.content_preview || "",
             selected: true,
             source_key: s.source_key,
-            ref_number: typeof s.ref_number === 'number' ? s.ref_number : undefined,
-          })
-        })
+            ref_number:
+              typeof s.ref_number === "number" ? s.ref_number : undefined,
+          });
+        });
       }
 
       if (metadata.sources && Array.isArray(metadata.sources)) {
         metadata.sources.forEach((s: any, idx: number) => {
           newSources.push({
-            id: makeClientId('research-src'),
-            type: (s.type === 'web' ? 'web' : 'kb') as 'web' | 'kb',
+            id: makeClientId("research-src"),
+            type: (s.type === "web" ? "web" : "kb") as "web" | "kb",
             title: s.title || s.url || `来源 ${idx + 1}`,
-            url: s.url || '',
-            content: s.content || s.snippet || '',
+            url: s.url || "",
+            content: s.content || s.snippet || "",
             selected: true,
             source_key: s.source_key,
-            ref_number: typeof s.ref_number === 'number' ? s.ref_number : undefined,
-          })
-        })
+            ref_number:
+              typeof s.ref_number === "number" ? s.ref_number : undefined,
+          });
+        });
       }
 
       if (newSources.length > 0 || sourceCatalog.length > 0) {
-        setSources(prev => mergeSourcesWithCatalog(prev, newSources, sourceCatalog))
-        setCitationRegistryVersion(prev => prev + 1)
+        setSources((prev) =>
+          mergeSourcesWithCatalog(prev, newSources, sourceCatalog),
+        );
+        setCitationRegistryVersion((prev) => prev + 1);
       }
     }
 
-    scheduleSessionSave(true)
-  }
+    scheduleSessionSave(true);
+  };
 
   const syncSessionsFromServer = async (reason: string) => {
-    const sessionId = currentSessionIdRef.current
-    if (!notebookId || sessionSyncInFlightRef.current || !sessionId) return
-    sessionSyncInFlightRef.current = true
+    const sessionId = currentSessionIdRef.current;
+    if (!notebookId || sessionSyncInFlightRef.current || !sessionId) return;
+    sessionSyncInFlightRef.current = true;
     try {
-      const res = await fetch(apiUrl(`/api/v1/notebook/${notebookId}/sessions`))
-      if (!res.ok) return
-      const data = await res.json()
-      const loaded = Array.isArray(data.sessions) ? data.sessions : []
+      const res = await fetch(
+        apiUrl(`/api/v1/notebook/${notebookId}/sessions`),
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      const loaded = Array.isArray(data.sessions) ? data.sessions : [];
       const normalized = loaded.map((session: SessionSnapshot) =>
         hydrateSessionReport({
           ...session,
           sources: normalizeSources(session.sources || []),
-        })
-      )
-      if (normalized.length === 0) return
-      setSessions(normalized)
+        }),
+      );
+      if (normalized.length === 0) return;
+      setSessions(normalized);
       let target =
-        normalized.find((session: SessionSnapshot) => session.session_id === sessionId) || null
+        normalized.find(
+          (session: SessionSnapshot) => session.session_id === sessionId,
+        ) || null;
       if (!target) {
-        target = normalized.reduce((acc: SessionSnapshot | null, session: SessionSnapshot) => {
-          if (!acc) return session
-          return (session.updated_at || 0) > (acc.updated_at || 0) ? session : acc
-        }, null)
+        target = normalized.reduce(
+          (acc: SessionSnapshot | null, session: SessionSnapshot) => {
+            if (!acc) return session;
+            return (session.updated_at || 0) > (acc.updated_at || 0)
+              ? session
+              : acc;
+          },
+          null,
+        );
         if (target) {
-          setCurrentSessionId(target.session_id)
+          setCurrentSessionId(target.session_id);
         }
       }
       if (target) {
         setChatMessages(
-          ensureResearchReportMessage(target.messages || [], target.research_report || '')
-        )
-        setSources(normalizeSources(target.sources || []))
-        setResearchReport(target.research_report || '')
-        applyResearchState(target.research_state)
-        applyStudioState(target.studio_state)
+          ensureResearchReportMessage(
+            target.messages || [],
+            target.research_report || "",
+          ),
+        );
+        setSources(normalizeSources(target.sources || []));
+        setResearchReport(target.research_report || "");
+        applyResearchState(target.research_state);
+        applyStudioState(target.studio_state);
         if (target.research_report) {
-          setPendingResearchRecovery(false)
+          setPendingResearchRecovery(false);
         }
       }
       localStorage.setItem(
@@ -952,118 +1042,137 @@ export default function NotebookDetailPage() {
         JSON.stringify({
           sessions: normalized,
           currentSessionId: target?.session_id || sessionId,
-        })
-      )
+        }),
+      );
     } catch (err) {
-      console.error(`Failed to sync sessions (${reason}):`, err)
+      console.error(`Failed to sync sessions (${reason}):`, err);
     } finally {
-      sessionSyncInFlightRef.current = false
+      sessionSyncInFlightRef.current = false;
     }
-  }
+  };
 
   const markResearchAsUnrecoverable = (reason: string) => {
-    setPendingResearchRecovery(false)
-    setResearchRunning(false)
-    setResearchPhase('idle')
-    setIsChatting(false)
-    setChatMessages(prev =>
-      prev.map(msg =>
+    setPendingResearchRecovery(false);
+    setResearchRunning(false);
+    setResearchPhase("idle");
+    setIsChatting(false);
+    setChatMessages((prev) =>
+      prev.map((msg) =>
         msg.isStreaming
           ? {
               ...msg,
-              content: '❌ 研究连接已中断，未检测到可恢复任务，请重新发起深度研究。',
+              content:
+                "❌ 研究连接已中断，未检测到可恢复任务，请重新发起深度研究。",
               isStreaming: false,
             }
-          : msg
-      )
-    )
-    scheduleSessionSave(true, currentSessionIdRef.current || undefined)
-    console.warn(`Stopped stale research recovery (${reason})`)
-  }
+          : msg,
+      ),
+    );
+    scheduleSessionSave(true, currentSessionIdRef.current || undefined);
+    console.warn(`Stopped stale research recovery (${reason})`);
+  };
 
   const recoverResearchIfNeeded = async (reason: string) => {
-    if (!pendingRecoveryRef.current) return
+    if (!pendingRecoveryRef.current) return;
     if (researchReportRef.current) {
-      setPendingResearchRecovery(false)
-      return
+      setPendingResearchRecovery(false);
+      return;
     }
-    const researchId = activeResearchIdRef.current
+    const researchId = activeResearchIdRef.current;
     if (researchId) {
       try {
-        const res = await fetch(apiUrl(`/api/v1/research/status/${researchId}`))
+        const res = await fetch(
+          apiUrl(`/api/v1/research/status/${researchId}`),
+        );
         if (res.ok) {
-          const data = await res.json()
+          const data = await res.json();
           if (data?.report_url) {
-            const reportText = await fetchReportText(data.report_url)
+            const reportText = await fetchReportText(data.report_url);
             if (reportText) {
-              const topic = data?.metadata?.topic || researchTopic || searchQuery || ''
-              applyResearchResult(reportText, data.metadata, topic, researchId)
-              return
+              const topic =
+                data?.metadata?.topic || researchTopic || searchQuery || "";
+              applyResearchResult(reportText, data.metadata, topic, researchId);
+              return;
             }
           }
         }
       } catch (err) {
-        console.error(`Failed to recover research from status (${reason}):`, err)
+        console.error(
+          `Failed to recover research from status (${reason}):`,
+          err,
+        );
       }
     }
-    await syncSessionsFromServer(reason)
+    await syncSessionsFromServer(reason);
     if (researchReportRef.current) {
-      setPendingResearchRecovery(false)
-      return
+      setPendingResearchRecovery(false);
+      return;
     }
-    const hasResearchHandle = Boolean(activeResearchIdRef.current)
-    const startedAt = researchStartTime || 0
-    const staleWithoutHandle = !hasResearchHandle && (!startedAt || Date.now() - startedAt > 120000)
+    const hasResearchHandle = Boolean(activeResearchIdRef.current);
+    const startedAt = researchStartTime || 0;
+    const staleWithoutHandle =
+      !hasResearchHandle && (!startedAt || Date.now() - startedAt > 120000);
     if (staleWithoutHandle) {
-      markResearchAsUnrecoverable(reason)
+      markResearchAsUnrecoverable(reason);
     }
-  }
+  };
 
-  const buildSessionSnapshot = (sessionIdOverride?: string): SessionSnapshot | null => {
-    const sessionId = sessionIdOverride || currentSessionId
-    if (!sessionId) return null
-    const existing = sessions.find(session => session.session_id === sessionId)
-    const now = Date.now()
-    const createdAt = existing ? existing.created_at : now
+  const buildSessionSnapshot = (
+    sessionIdOverride?: string,
+  ): SessionSnapshot | null => {
+    const sessionId = sessionIdOverride || currentSessionId;
+    if (!sessionId) return null;
+    const existing = sessions.find(
+      (session) => session.session_id === sessionId,
+    );
+    const now = Date.now();
+    const createdAt = existing ? existing.created_at : now;
     // Read from refs to guarantee latest values (not stale closure state)
-    const latestMessages = chatMessagesRef.current
-    const latestSources = sourcesRef.current
-    const latestResearchReport = researchReportRef.current
-    const latestStudioState = studioStateRef.current || buildStudioState()
-    const derivedTitle = formatSessionTitle(createdAt, latestMessages)
+    const latestMessages = chatMessagesRef.current;
+    const latestSources = sourcesRef.current;
+    const latestResearchReport = researchReportRef.current;
+    const latestStudioState = studioStateRef.current || buildStudioState();
+    const derivedTitle = formatSessionTitle(createdAt, latestMessages);
     return {
       session_id: sessionId,
       title: derivedTitle,
       messages: latestMessages,
       sources: latestSources,
-      research_report: latestResearchReport || '',
+      research_report: latestResearchReport || "",
       research_state: buildResearchState() || undefined,
       studio_state: latestStudioState,
       created_at: createdAt,
       updated_at: now,
-    }
-  }
+    };
+  };
 
-  const getSessionDisplayTitle = (session: SessionSnapshot, messages: ChatMessage[]) => {
-    return formatSessionTitle(session.created_at, messages)
-  }
+  const getSessionDisplayTitle = (
+    session: SessionSnapshot,
+    messages: ChatMessage[],
+  ) => {
+    return formatSessionTitle(session.created_at, messages);
+  };
 
   const upsertSessionState = (snapshot: SessionSnapshot) => {
-    setSessions(prev => {
-      const index = prev.findIndex(session => session.session_id === snapshot.session_id)
+    setSessions((prev) => {
+      const index = prev.findIndex(
+        (session) => session.session_id === snapshot.session_id,
+      );
       if (index === -1) {
-        return [...prev, snapshot]
+        return [...prev, snapshot];
       }
-      const next = [...prev]
-      next[index] = { ...next[index], ...snapshot }
-      return next
-    })
-  }
+      const next = [...prev];
+      next[index] = { ...next[index], ...snapshot };
+      return next;
+    });
+  };
 
   const saveSessionSnapshot = async (snapshot: SessionSnapshot) => {
-    if (!notebookId) return
-    const isKnownSession = sessions.some(session => session.session_id === snapshot.session_id)
-    const hasStudio = hasStudioState(snapshot.studio_state)
+    if (!notebookId) return;
+    const isKnownSession = sessions.some(
+      (session) => session.session_id === snapshot.session_id,
+    );
+    const hasStudio = hasStudioState(snapshot.studio_state);
     if (
       !snapshot.messages.length &&
       !snapshot.sources.length &&
@@ -1071,299 +1180,324 @@ export default function NotebookDetailPage() {
       !hasStudio &&
       !isKnownSession
     ) {
-      return
+      return;
     }
     try {
-      const res = await fetch(apiUrl(`/api/v1/notebook/${notebookId}/sessions`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(snapshot),
-      })
-      const data = await res.json()
+      const res = await fetch(
+        apiUrl(`/api/v1/notebook/${notebookId}/sessions`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(snapshot),
+        },
+      );
+      const data = await res.json();
       if (data.session?.session_id) {
         upsertSessionState({
           ...data.session,
           sources: normalizeSources(data.session.sources || []),
-        })
+        });
       }
     } catch (err) {
-      console.error('Failed to save session:', err)
+      console.error("Failed to save session:", err);
     }
-  }
+  };
 
   // Trigger state to ensure we always read the LATEST state during save
   const [sessionSaveTrigger, setSessionSaveTrigger] = useState<{
-    time: number
-    immediate: boolean
-    sessionId?: string
-  } | null>(null)
+    time: number;
+    immediate: boolean;
+    sessionId?: string;
+  } | null>(null);
 
-  const scheduleSessionSave = useCallback((immediate = false, sessionIdOverride?: string) => {
-    setSessionSaveTrigger({
-      time: Date.now(),
-      immediate,
-      sessionId: sessionIdOverride,
-    })
-  }, [])
+  const scheduleSessionSave = useCallback(
+    (immediate = false, sessionIdOverride?: string) => {
+      setSessionSaveTrigger({
+        time: Date.now(),
+        immediate,
+        sessionId: sessionIdOverride,
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
-    if (!sessionSaveTrigger) return
-    const { immediate, sessionId } = sessionSaveTrigger
+    if (!sessionSaveTrigger) return;
+    const { immediate, sessionId } = sessionSaveTrigger;
 
-    const snapshot = buildSessionSnapshot(sessionId)
-    if (!snapshot) return
+    const snapshot = buildSessionSnapshot(sessionId);
+    if (!snapshot) return;
 
-    upsertSessionState(snapshot)
+    upsertSessionState(snapshot);
 
     if (sessionSaveTimerRef.current) {
-      clearTimeout(sessionSaveTimerRef.current)
+      clearTimeout(sessionSaveTimerRef.current);
     }
 
     if (immediate) {
-      void saveSessionSnapshot(snapshot)
-      return
+      void saveSessionSnapshot(snapshot);
+      return;
     }
 
     sessionSaveTimerRef.current = setTimeout(() => {
-      void saveSessionSnapshot(snapshot)
-    }, 1200)
+      void saveSessionSnapshot(snapshot);
+    }, 1200);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionSaveTrigger])
+  }, [sessionSaveTrigger]);
 
   const ensureActiveSession = () => {
-    if (currentSessionId) return currentSessionId
-    const newSessionId = makeClientId('session')
-    setCurrentSessionId(newSessionId)
-    return newSessionId
-  }
+    if (currentSessionId) return currentSessionId;
+    const newSessionId = makeClientId("session");
+    setCurrentSessionId(newSessionId);
+    return newSessionId;
+  };
 
   const handleNewSession = async () => {
-    const currentSnapshot = buildSessionSnapshot()
+    const currentSnapshot = buildSessionSnapshot();
     if (currentSnapshot) {
-      await saveSessionSnapshot(currentSnapshot)
+      await saveSessionSnapshot(currentSnapshot);
     }
-    const newSessionId = makeClientId('session')
-    setCurrentSessionId(newSessionId)
-    setChatMessages([])
-    setSources([])
-    setResearchReport('')
-    setResearchError(null)
-    setActiveResearchId(null)
-    setPendingResearchRecovery(false)
-    resetResearchUiState(true)
-    resetStudioState()
-    setHasSessionActivity(false)
-  }
-  const [researchTopic, setResearchTopic] = useState('')
-  const [researchRunning, setResearchRunning] = useState(false)
-  const [researchReport, setResearchReport] = useState('')
+    const newSessionId = makeClientId("session");
+    setCurrentSessionId(newSessionId);
+    setChatMessages([]);
+    setSources([]);
+    setResearchReport("");
+    setResearchError(null);
+    setActiveResearchId(null);
+    setPendingResearchRecovery(false);
+    resetResearchUiState(true);
+    resetStudioState();
+    setHasSessionActivity(false);
+  };
+  const [researchTopic, setResearchTopic] = useState("");
+  const [researchRunning, setResearchRunning] = useState(false);
+  const [researchReport, setResearchReport] = useState("");
   useEffect(() => {
-    researchReportRef.current = researchReport
-  }, [researchReport])
-  const [mindmapCode, setMindmapCode] = useState('')
-  const [isExporting, setIsExporting] = useState(false)
+    researchReportRef.current = researchReport;
+  }, [researchReport]);
+  const [mindmapCode, setMindmapCode] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
 
   // Error states
-  const [chatError, setChatError] = useState<string | null>(null)
-  const [researchError, setResearchError] = useState<string | null>(null)
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [researchError, setResearchError] = useState<string | null>(null);
 
   // Sources KB indexing status
-  const [sourcesKbIndexing, setSourcesKbIndexing] = useState(false)
-  const sourcesKbCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [sourcesKbIndexing, setSourcesKbIndexing] = useState(false);
+  const sourcesKbCheckIntervalRef = useRef<ReturnType<
+    typeof setInterval
+  > | null>(null);
 
   // Deep Research progress states
   const [researchPhase, setResearchPhase] = useState<
-    'idle' | 'planning' | 'researching' | 'reporting'
-  >('idle')
+    "idle" | "planning" | "researching" | "reporting"
+  >("idle");
   const [researchProgress, setResearchProgress] = useState({
     current: 0,
     total: 0,
-  })
+  });
   const [globalProgress, setGlobalProgress] = useState({
     completed: 0,
     total: 0,
-  })
-  const [currentSubTopic, setCurrentSubTopic] = useState('')
-  const [activeResearchId, setActiveResearchId] = useState<string | null>(null)
-  const [pendingResearchRecovery, setPendingResearchRecovery] = useState(false)
-  const pendingRecoveryRef = useRef(false)
-  const sessionSyncInFlightRef = useRef(false)
-  const activeResearchIdRef = useRef<string | null>(null)
-  const currentSessionIdRef = useRef<string | null>(null)
+  });
+  const [currentSubTopic, setCurrentSubTopic] = useState("");
+  const [activeResearchId, setActiveResearchId] = useState<string | null>(null);
+  const [pendingResearchRecovery, setPendingResearchRecovery] = useState(false);
+  const pendingRecoveryRef = useRef(false);
+  const sessionSyncInFlightRef = useRef(false);
+  const activeResearchIdRef = useRef<string | null>(null);
+  const currentSessionIdRef = useRef<string | null>(null);
 
   // WebSocket refs
-  const wsRef = useRef<WebSocket | null>(null)
-  const chatWsRef = useRef<WebSocket | null>(null)
-  const pptTemplateInputRef = useRef<HTMLInputElement>(null)
+  const wsRef = useRef<WebSocket | null>(null);
+  const chatWsRef = useRef<WebSocket | null>(null);
+  const pptTemplateInputRef = useRef<HTMLInputElement>(null);
 
   const aggregatedSources = useMemo(() => {
-    const result: Source[] = []
-    const seenSessions = new Set<string>()
-    sessions.forEach(session => {
-      const sessionSources = session.session_id === currentSessionId ? sources : session.sources
-      result.push(...normalizeSources(sessionSources || []))
-      seenSessions.add(session.session_id)
-    })
+    const result: Source[] = [];
+    const seenSessions = new Set<string>();
+    sessions.forEach((session) => {
+      const sessionSources =
+        session.session_id === currentSessionId ? sources : session.sources;
+      result.push(...normalizeSources(sessionSources || []));
+      seenSessions.add(session.session_id);
+    });
     if (currentSessionId && !seenSessions.has(currentSessionId)) {
-      result.push(...normalizeSources(sources))
+      result.push(...normalizeSources(sources));
     }
-    return result
-  }, [sessions, currentSessionId, sources])
+    return result;
+  }, [sessions, currentSessionId, sources]);
 
   const selectedSourcesList = useMemo(
-    () => aggregatedSources.filter(source => source.selected),
-    [aggregatedSources]
-  )
+    () => aggregatedSources.filter((source) => source.selected),
+    [aggregatedSources],
+  );
 
-  const registerCitationKey = useCallback((sourceKey: string, preferredRef?: number) => {
-    if (!sourceKey) return 0
-    const registry = citationRegistryRef.current
-    const owners = citationNumberOwnerRef.current
-    const pinned = citationPinnedRefRef.current
+  const registerCitationKey = useCallback(
+    (sourceKey: string, preferredRef?: number) => {
+      if (!sourceKey) return 0;
+      const registry = citationRegistryRef.current;
+      const owners = citationNumberOwnerRef.current;
+      const pinned = citationPinnedRefRef.current;
 
-    const normalizeRef = (value?: number) =>
-      typeof value === 'number' && value > 0 ? Math.floor(value) : 0
-    const requested = normalizeRef(preferredRef)
-    const existing = registry.get(sourceKey) || 0
+      const normalizeRef = (value?: number) =>
+        typeof value === "number" && value > 0 ? Math.floor(value) : 0;
+      const requested = normalizeRef(preferredRef);
+      const existing = registry.get(sourceKey) || 0;
 
-    const findNextAvailable = (skipSourceKey = '') => {
-      let next = 1
-      while (true) {
-        const owner = owners.get(next)
-        if (!owner || owner === skipSourceKey) {
-          return next
+      const findNextAvailable = (skipSourceKey = "") => {
+        let next = 1;
+        while (true) {
+          const owner = owners.get(next);
+          if (!owner || owner === skipSourceKey) {
+            return next;
+          }
+          next += 1;
         }
-        next += 1
-      }
-    }
+      };
 
-    const assign = (key: string, refNumber: number, lockToRef = false) => {
-      const before = registry.get(key)
-      if (before && before !== refNumber && owners.get(before) === key) {
-        owners.delete(before)
-      }
-      registry.set(key, refNumber)
-      owners.set(refNumber, key)
-      if (lockToRef) {
-        pinned.set(key, refNumber)
-      } else {
-        pinned.delete(key)
-      }
-      return refNumber
-    }
+      const assign = (key: string, refNumber: number, lockToRef = false) => {
+        const before = registry.get(key);
+        if (before && before !== refNumber && owners.get(before) === key) {
+          owners.delete(before);
+        }
+        registry.set(key, refNumber);
+        owners.set(refNumber, key);
+        if (lockToRef) {
+          pinned.set(key, refNumber);
+        } else {
+          pinned.delete(key);
+        }
+        return refNumber;
+      };
 
-    if (requested > 0) {
-      const currentOwner = owners.get(requested)
+      if (requested > 0) {
+        const currentOwner = owners.get(requested);
 
-      if (!currentOwner || currentOwner === sourceKey) {
-        return assign(sourceKey, requested, true)
-      }
+        if (!currentOwner || currentOwner === sourceKey) {
+          return assign(sourceKey, requested, true);
+        }
 
-      const ownerIsPinned = pinned.get(currentOwner) === requested
-      if (!ownerIsPinned) {
-        const replacement = findNextAvailable(currentOwner)
-        assign(currentOwner, replacement, false)
-        return assign(sourceKey, requested, true)
+        const ownerIsPinned = pinned.get(currentOwner) === requested;
+        if (!ownerIsPinned) {
+          const replacement = findNextAvailable(currentOwner);
+          assign(currentOwner, replacement, false);
+          return assign(sourceKey, requested, true);
+        }
+
+        if (existing > 0) {
+          return existing;
+        }
+
+        const fallback = findNextAvailable();
+        return assign(sourceKey, fallback, false);
       }
 
       if (existing > 0) {
-        return existing
+        return existing;
       }
 
-      const fallback = findNextAvailable()
-      return assign(sourceKey, fallback, false)
-    }
-
-    if (existing > 0) {
-      return existing
-    }
-
-    const next = findNextAvailable()
-    return assign(sourceKey, next, false)
-  }, [])
+      const next = findNextAvailable();
+      return assign(sourceKey, next, false);
+    },
+    [],
+  );
 
   const allMessagesForCitation = useMemo(() => {
-    const merged: ChatMessage[] = []
-    const seen = new Set<string>()
-    sessions.forEach(session => {
-      seen.add(session.session_id)
+    const merged: ChatMessage[] = [];
+    const seen = new Set<string>();
+    sessions.forEach((session) => {
+      seen.add(session.session_id);
       if (session.session_id === currentSessionId) {
-        merged.push(...chatMessages)
+        merged.push(...chatMessages);
       } else {
-        merged.push(...(session.messages || []))
+        merged.push(...(session.messages || []));
       }
-    })
+    });
     if (currentSessionId && !seen.has(currentSessionId)) {
-      merged.push(...chatMessages)
+      merged.push(...chatMessages);
     }
-    return merged
-  }, [sessions, currentSessionId, chatMessages])
+    return merged;
+  }, [sessions, currentSessionId, chatMessages]);
 
   const sourceByKey = useMemo(() => {
-    const map = new Map<string, Source>()
-    aggregatedSources.forEach(source => {
-      const key = buildSourceKey(source)
-      if (!key) return
-      const existing = map.get(key)
+    const map = new Map<string, Source>();
+    aggregatedSources.forEach((source) => {
+      const key = buildSourceKey(source);
+      if (!key) return;
+      const existing = map.get(key);
       if (!existing || source.selected) {
-        map.set(key, source)
+        map.set(key, source);
       }
-    })
-    return map
-  }, [aggregatedSources])
+    });
+    return map;
+  }, [aggregatedSources]);
 
   useEffect(() => {
-    let changed = false
+    let changed = false;
 
-    aggregatedSources.forEach(source => {
-      const sourceKey = buildSourceKey(source)
-      if (!sourceKey) return
-      const before = citationRegistryRef.current.get(sourceKey)
-      const assigned = registerCitationKey(sourceKey, source.ref_number)
-      if (before !== assigned) changed = true
-    })
+    aggregatedSources.forEach((source) => {
+      const sourceKey = buildSourceKey(source);
+      if (!sourceKey) return;
+      const before = citationRegistryRef.current.get(sourceKey);
+      const assigned = registerCitationKey(sourceKey, source.ref_number);
+      if (before !== assigned) changed = true;
+    });
 
-    allMessagesForCitation.forEach(msg => {
-      if (msg.role !== 'assistant') return
+    allMessagesForCitation.forEach((msg) => {
+      if (msg.role !== "assistant") return;
       const inlineCatalog = [
         ...(msg.source_catalog || []),
-        ...extractCatalogFromMessageContent(msg.content || ''),
-      ]
-      inlineCatalog.forEach(item => {
-        if (!item || typeof item.ref_number !== 'number' || item.ref_number <= 0) {
-          return
+        ...extractCatalogFromMessageContent(msg.content || ""),
+      ];
+      inlineCatalog.forEach((item) => {
+        if (
+          !item ||
+          typeof item.ref_number !== "number" ||
+          item.ref_number <= 0
+        ) {
+          return;
         }
         const sourceKey =
           item.source_key ||
           buildSourceKey({
-            type: item.type || 'web',
+            type: item.type || "web",
             title: item.title,
             url: item.url,
-          })
-        if (!sourceKey) return
-        const before = citationRegistryRef.current.get(sourceKey)
-        const assigned = registerCitationKey(sourceKey, item.ref_number)
-        if (before !== assigned) changed = true
-      })
-    })
+          });
+        if (!sourceKey) return;
+        const before = citationRegistryRef.current.get(sourceKey);
+        const assigned = registerCitationKey(sourceKey, item.ref_number);
+        if (before !== assigned) changed = true;
+      });
+    });
 
     if (changed) {
-      setCitationRegistryVersion(prev => prev + 1)
+      setCitationRegistryVersion((prev) => prev + 1);
     }
-  }, [aggregatedSources, allMessagesForCitation, registerCitationKey, currentSessionId])
+  }, [
+    aggregatedSources,
+    allMessagesForCitation,
+    registerCitationKey,
+    currentSessionId,
+  ]);
 
   const citationCatalogByNumber = useMemo(() => {
-    const byNumber = new Map<number, CitationCatalogItem>()
+    const byNumber = new Map<number, CitationCatalogItem>();
 
-    allMessagesForCitation.forEach(msg => {
-      if (msg.role !== 'assistant') return
+    allMessagesForCitation.forEach((msg) => {
+      if (msg.role !== "assistant") return;
       const inlineCatalog = [
         ...(msg.source_catalog || []),
-        ...extractCatalogFromMessageContent(msg.content || ''),
-      ]
-      inlineCatalog.forEach(item => {
-        if (!item || typeof item.ref_number !== 'number' || item.ref_number <= 0) {
-          return
+        ...extractCatalogFromMessageContent(msg.content || ""),
+      ];
+      inlineCatalog.forEach((item) => {
+        if (
+          !item ||
+          typeof item.ref_number !== "number" ||
+          item.ref_number <= 0
+        ) {
+          return;
         }
         byNumber.set(item.ref_number, {
           ref_number: item.ref_number,
@@ -1371,163 +1505,189 @@ export default function NotebookDetailPage() {
           title: item.title,
           url: item.url,
           type: item.type,
-        })
-      })
-    })
+        });
+      });
+    });
 
     citationRegistryRef.current.forEach((refNumber, sourceKey) => {
-      if (byNumber.has(refNumber)) return
-      const source = sourceByKey.get(sourceKey)
-      if (!source) return
+      if (byNumber.has(refNumber)) return;
+      const source = sourceByKey.get(sourceKey);
+      if (!source) return;
       byNumber.set(refNumber, {
         ref_number: refNumber,
         source_key: sourceKey,
         title: source.title,
         url: source.url,
         type: source.type,
-      })
-    })
+      });
+    });
 
-    return byNumber
-  }, [allMessagesForCitation, sourceByKey, citationRegistryVersion])
+    return byNumber;
+  }, [allMessagesForCitation, sourceByKey, citationRegistryVersion]);
 
   const getSourceRefNumber = useCallback((source: Source) => {
-    const sourceKey = buildSourceKey(source)
-    if (!sourceKey) return undefined
-    return citationRegistryRef.current.get(sourceKey)
-  }, [])
+    const sourceKey = buildSourceKey(source);
+    if (!sourceKey) return undefined;
+    return citationRegistryRef.current.get(sourceKey);
+  }, []);
 
   const linkifyKnownCitationTokens = useCallback(
     (content: string) => {
-      let normalized = normalizeLegacyCitationMarkup(content || '')
-      if (citationCatalogByNumber.size === 0) return normalized
-      const refs = Array.from(citationCatalogByNumber.keys()).sort((a, b) => b - a)
-      refs.forEach(ref => {
-        const pattern = new RegExp(`\\[${ref}\\](?!\\()`, 'g')
+      let normalized = normalizeLegacyCitationMarkup(content || "");
+      if (citationCatalogByNumber.size === 0) return normalized;
+      const refs = Array.from(citationCatalogByNumber.keys()).sort(
+        (a, b) => b - a,
+      );
+      refs.forEach((ref) => {
+        const pattern = new RegExp(`\\[${ref}\\](?!\\()`, "g");
         normalized = normalized.replace(pattern, (match, offset, input) => {
-          const previousChar = offset > 0 ? input[offset - 1] : ''
-          if (previousChar === '[') {
-            return match
+          const previousChar = offset > 0 ? input[offset - 1] : "";
+          if (previousChar === "[") {
+            return match;
           }
-          return `[${ref}](#ref-${ref})`
-        })
-      })
-      return normalized
+          return `[${ref}](#ref-${ref})`;
+        });
+      });
+      return normalized;
     },
-    [citationCatalogByNumber]
-  )
+    [citationCatalogByNumber],
+  );
 
   useEffect(() => {
-    pendingRecoveryRef.current = pendingResearchRecovery
-  }, [pendingResearchRecovery])
+    pendingRecoveryRef.current = pendingResearchRecovery;
+  }, [pendingResearchRecovery]);
 
   useEffect(() => {
-    activeResearchIdRef.current = activeResearchId
-  }, [activeResearchId])
+    activeResearchIdRef.current = activeResearchId;
+  }, [activeResearchId]);
 
   useEffect(() => {
-    currentSessionIdRef.current = currentSessionId
-  }, [currentSessionId])
-  const hasSelectedSources = selectedSourcesList.length > 0
-  const selectedSourcesCount = selectedSourcesList.length
-  const totalSourceCount = aggregatedSources.length
-  const allSourcesSelected = totalSourceCount > 0 && selectedSourcesCount === totalSourceCount
+    currentSessionIdRef.current = currentSessionId;
+  }, [currentSessionId]);
+  const hasSelectedSources = selectedSourcesList.length > 0;
+  const selectedSourcesCount = selectedSourcesList.length;
+  const totalSourceCount = aggregatedSources.length;
+  const allSourcesSelected =
+    totalSourceCount > 0 && selectedSourcesCount === totalSourceCount;
 
-  const activeKbName = enableRag ? selectedKb : ''
-  const ragEnabled = enableRag && !!selectedKb
+  const activeKbName = enableRag ? selectedKb : "";
+  const ragEnabled = enableRag && !!selectedKb;
 
-  const canExport = exportContentSource === 'research' ? !!researchReport : hasSelectedSources
-  const canExportPptContent = !!researchReport
-  const hasPptPresets = pptStyleTemplates.length > 0 && !!selectedPptStyleId
+  const canExport =
+    exportContentSource === "research" ? !!researchReport : hasSelectedSources;
+  const canExportPptContent = !!researchReport;
+  const hasPptPresets = pptStyleTemplates.length > 0 && !!selectedPptStyleId;
   const needsSourceForStyle =
-    pptStyleMode === 'sources' ||
-    (pptStyleMode === 'template' && pptTemplateUseLlm && pptTemplatePromptSource === 'sources')
-  const canUseSourceStyle = !needsSourceForStyle || hasSelectedSources
+    pptStyleMode === "sources" ||
+    (pptStyleMode === "template" &&
+      pptTemplateUseLlm &&
+      pptTemplatePromptSource === "sources");
+  const canUseSourceStyle = !needsSourceForStyle || hasSelectedSources;
   const needsPresetForStyle =
-    pptStyleMode === 'preset' ||
-    (pptStyleMode === 'template' && pptTemplateUseLlm && pptTemplatePromptSource === 'preset')
-  const canUsePresetStyle = !needsPresetForStyle || hasPptPresets
-  const canUseTemplateStyle = pptStyleMode !== 'template' || !!selectedPptTemplate
-  const isPptBusy = isPptGenerating || isPptExporting
-  const templateBlocked = pptStyleMode === 'template'
+    pptStyleMode === "preset" ||
+    (pptStyleMode === "template" &&
+      pptTemplateUseLlm &&
+      pptTemplatePromptSource === "preset");
+  const canUsePresetStyle = !needsPresetForStyle || hasPptPresets;
+  const canUseTemplateStyle =
+    pptStyleMode !== "template" || !!selectedPptTemplate;
+  const isPptBusy = isPptGenerating || isPptExporting;
+  const templateBlocked = pptStyleMode === "template";
   const canExportPpt =
     bananaPptEnabled &&
     canExportPptContent &&
     canUseSourceStyle &&
     canUsePresetStyle &&
     canUseTemplateStyle &&
-    !templateBlocked
+    !templateBlocked;
 
   useEffect(() => {
-    setEnabledTools(prev => {
-      const next = new Set(prev)
-      next.add('Web')
+    setEnabledTools((prev) => {
+      const next = new Set(prev);
+      next.add("Web");
       if (ragEnabled) {
-        next.add('RAG')
+        next.add("RAG");
       } else {
-        next.delete('RAG')
+        next.delete("RAG");
       }
-      return Array.from(next)
-    })
-  }, [ragEnabled])
+      return Array.from(next);
+    });
+  }, [ragEnabled]);
 
   const sortedSessions = useMemo(() => {
-    const list = [...sessions]
-    if (currentSessionId && !list.some(session => session.session_id === currentSessionId)) {
-      const fallback = buildSessionSnapshot(currentSessionId)
+    const list = [...sessions];
+    if (
+      currentSessionId &&
+      !list.some((session) => session.session_id === currentSessionId)
+    ) {
+      const fallback = buildSessionSnapshot(currentSessionId);
       if (fallback) {
-        list.push(fallback)
+        list.push(fallback);
       }
     }
-    return list.sort((a, b) => (a.created_at || 0) - (b.created_at || 0))
-  }, [sessions, currentSessionId, chatMessages, sources, researchReport, studioState])
+    return list.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+  }, [
+    sessions,
+    currentSessionId,
+    chatMessages,
+    sources,
+    researchReport,
+    studioState,
+  ]);
 
   const currentSessionTitle = useMemo(() => {
-    const current = sessions.find(session => session.session_id === currentSessionId)
+    const current = sessions.find(
+      (session) => session.session_id === currentSessionId,
+    );
     if (!current) {
-      return formatSessionTitle(Date.now(), chatMessages)
+      return formatSessionTitle(Date.now(), chatMessages);
     }
-    return getSessionDisplayTitle(current, chatMessages)
-  }, [sessions, currentSessionId, chatMessages])
+    return getSessionDisplayTitle(current, chatMessages);
+  }, [sessions, currentSessionId, chatMessages]);
 
   const displayMessages = useMemo(() => {
-    const merged: ChatMessage[] = []
-    sortedSessions.forEach(session => {
-      const isCurrent = session.session_id === currentSessionId
-      const sessionMessages = isCurrent ? chatMessages : session.messages
+    const merged: ChatMessage[] = [];
+    sortedSessions.forEach((session) => {
+      const isCurrent = session.session_id === currentSessionId;
+      const sessionMessages = isCurrent ? chatMessages : session.messages;
       if (!sessionMessages || sessionMessages.length === 0) {
-        return
+        return;
       }
-      const sessionTitle = getSessionDisplayTitle(session, sessionMessages)
+      const sessionTitle = getSessionDisplayTitle(session, sessionMessages);
       merged.push({
         id: `session-${session.session_id}`,
-        role: 'assistant',
+        role: "assistant",
         content: `—— ${sessionTitle} ——`,
         isSeparator: true,
-      })
-      merged.push(...sessionMessages)
-    })
-    return merged
-  }, [sortedSessions, currentSessionId, chatMessages])
+      });
+      merged.push(...sessionMessages);
+    });
+    return merged;
+  }, [sortedSessions, currentSessionId, chatMessages]);
 
   const displayMessagesWithRenderKey = useMemo(() => {
-    const seen = new Map<string, number>()
+    const seen = new Map<string, number>();
     return displayMessages.map((msg, index) => {
-      const baseKey = msg.id || `message-${index}`
-      const duplicateCount = seen.get(baseKey) || 0
-      seen.set(baseKey, duplicateCount + 1)
-      const renderKey = duplicateCount === 0 ? baseKey : `${baseKey}-dup-${duplicateCount}`
-      return { msg, renderKey }
-    })
-  }, [displayMessages])
+      const baseKey = msg.id || `message-${index}`;
+      const duplicateCount = seen.get(baseKey) || 0;
+      seen.set(baseKey, duplicateCount + 1);
+      const renderKey =
+        duplicateCount === 0 ? baseKey : `${baseKey}-dup-${duplicateCount}`;
+      return { msg, renderKey };
+    });
+  }, [displayMessages]);
 
   const groupedSources = useMemo(() => {
     return sortedSessions
-      .map(session => {
-        const isCurrent = session.session_id === currentSessionId
-        const sessionMessages = isCurrent ? chatMessages : session.messages
-        const sessionSources = normalizeSources(isCurrent ? sources : session.sources)
-        const selectedCount = sessionSources.filter(source => source.selected).length
+      .map((session) => {
+        const isCurrent = session.session_id === currentSessionId;
+        const sessionMessages = isCurrent ? chatMessages : session.messages;
+        const sessionSources = normalizeSources(
+          isCurrent ? sources : session.sources,
+        );
+        const selectedCount = sessionSources.filter(
+          (source) => source.selected,
+        ).length;
         return {
           session_id: session.session_id,
           title: getSessionDisplayTitle(session, sessionMessages || []),
@@ -1535,61 +1695,66 @@ export default function NotebookDetailPage() {
           isCurrent,
           sources: sessionSources || [],
           selectedCount,
-          allSelected: sessionSources.length > 0 && selectedCount === sessionSources.length,
-        }
+          allSelected:
+            sessionSources.length > 0 &&
+            selectedCount === sessionSources.length,
+        };
       })
-      .filter(group => group.sources.length > 0)
-  }, [sortedSessions, currentSessionId, sources])
+      .filter((group) => group.sources.length > 0);
+  }, [sortedSessions, currentSessionId, sources]);
 
   const sourceSessionByKey = useMemo(() => {
-    const map = new Map<string, string>()
-    groupedSources.forEach(group => {
-      group.sources.forEach(source => {
-        const sourceKey = buildSourceKey(source)
-        if (!sourceKey) return
-        map.set(sourceKey, group.session_id)
-      })
-    })
-    return map
-  }, [groupedSources])
+    const map = new Map<string, string>();
+    groupedSources.forEach((group) => {
+      group.sources.forEach((source) => {
+        const sourceKey = buildSourceKey(source);
+        if (!sourceKey) return;
+        map.set(sourceKey, group.session_id);
+      });
+    });
+    return map;
+  }, [groupedSources]);
 
   const focusSourceByKey = useCallback(
     (sourceKey: string) => {
-      if (!sourceKey) return
-      const sessionId = sourceSessionByKey.get(sourceKey)
+      if (!sourceKey) return;
+      const sessionId = sourceSessionByKey.get(sourceKey);
       if (sessionId) {
-        setCollapsedSessionIds(prev => ({
+        setCollapsedSessionIds((prev) => ({
           ...prev,
           [sessionId]: false,
-        }))
+        }));
       }
       if (leftCollapsed) {
-        setLeftCollapsed(false)
+        setLeftCollapsed(false);
       }
-      setHighlightedSourceKey(sourceKey)
-      const row = sourceRowRefs.current[sourceKey]
+      setHighlightedSourceKey(sourceKey);
+      const row = sourceRowRefs.current[sourceKey];
       if (row) {
-        row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     },
-    [sourceSessionByKey, leftCollapsed]
-  )
+    [sourceSessionByKey, leftCollapsed],
+  );
 
   const resolveReferenceTarget = useCallback(
     (refNumber: number) => {
-      const catalog = citationCatalogByNumber.get(refNumber)
+      const catalog = citationCatalogByNumber.get(refNumber);
       if (catalog) {
-        return catalog
+        return catalog;
       }
-      for (const [sourceKey, assignedRef] of citationRegistryRef.current.entries()) {
-        if (assignedRef !== refNumber) continue
-        const source = sourceByKey.get(sourceKey)
+      for (const [
+        sourceKey,
+        assignedRef,
+      ] of citationRegistryRef.current.entries()) {
+        if (assignedRef !== refNumber) continue;
+        const source = sourceByKey.get(sourceKey);
         if (!source) {
           return {
             ref_number: refNumber,
             source_key: sourceKey,
             title: `引用 ${refNumber}`,
-          }
+          };
         }
         return {
           ref_number: refNumber,
@@ -1597,208 +1762,235 @@ export default function NotebookDetailPage() {
           title: source.title,
           url: source.url,
           type: source.type,
-        }
+        };
       }
-      return null
+      return null;
     },
-    [citationCatalogByNumber, sourceByKey]
-  )
+    [citationCatalogByNumber, sourceByKey],
+  );
 
   const handleCitationAnchorClick = useCallback(
     (href: string | undefined, event: MouseEvent<HTMLAnchorElement>) => {
-      if (!href) return
-      const match = href.match(/^#ref-(\d+)$/i)
-      if (!match) return
-      event.preventDefault()
-      const refNumber = parseInt(match[1], 10)
-      const target = resolveReferenceTarget(refNumber)
-      if (!target) return
+      if (!href) return;
+      const match = href.match(/^#ref-(\d+)$/i);
+      if (!match) return;
+      event.preventDefault();
+      const refNumber = parseInt(match[1], 10);
+      const target = resolveReferenceTarget(refNumber);
+      if (!target) return;
 
-      const url = (target.url || '').trim()
+      const url = (target.url || "").trim();
       if (url) {
-        const hasScheme = /^https?:\/\//i.test(url)
-        const link = hasScheme ? url : /^www\./i.test(url) ? `https://${url}` : ''
+        const hasScheme = /^https?:\/\//i.test(url);
+        const link = hasScheme
+          ? url
+          : /^www\./i.test(url)
+            ? `https://${url}`
+            : "";
         if (link) {
-          window.open(link, '_blank', 'noopener,noreferrer')
-          return
+          window.open(link, "_blank", "noopener,noreferrer");
+          return;
         }
       }
       if (target.source_key) {
-        focusSourceByKey(target.source_key)
+        focusSourceByKey(target.source_key);
       }
     },
-    [focusSourceByKey, resolveReferenceTarget]
-  )
+    [focusSourceByKey, resolveReferenceTarget],
+  );
 
   useEffect(() => {
-    if (!highlightedSourceKey) return
-    const timer = setTimeout(() => setHighlightedSourceKey(''), 2200)
-    return () => clearTimeout(timer)
-  }, [highlightedSourceKey])
+    if (!highlightedSourceKey) return;
+    const timer = setTimeout(() => setHighlightedSourceKey(""), 2200);
+    return () => clearTimeout(timer);
+  }, [highlightedSourceKey]);
 
   // Fetch notebook
   useEffect(() => {
-    fetchNotebook()
-    fetchKnowledgeBases()
-  }, [notebookId])
+    fetchNotebook();
+    fetchKnowledgeBases();
+  }, [notebookId]);
 
   useEffect(() => {
-    if (!notebookId) return
-    let cachedSessions: SessionSnapshot[] = []
+    if (!notebookId) return;
+    let cachedSessions: SessionSnapshot[] = [];
     try {
-      const raw = localStorage.getItem(sessionCacheKey)
+      const raw = localStorage.getItem(sessionCacheKey);
       if (raw) {
-        const parsed = JSON.parse(raw)
+        const parsed = JSON.parse(raw);
         if (Array.isArray(parsed.sessions)) {
           cachedSessions = parsed.sessions.map((session: SessionSnapshot) =>
             hydrateSessionReport({
               ...session,
               sources: normalizeSources(session.sources || []),
-            })
-          )
-          setSessions(cachedSessions)
+            }),
+          );
+          setSessions(cachedSessions);
           const cachedId =
-            parsed.currentSessionId || cachedSessions[cachedSessions.length - 1]?.session_id || ''
-          setCurrentSessionId(cachedId)
-          const active = cachedSessions.find((s: SessionSnapshot) => s.session_id === cachedId)
+            parsed.currentSessionId ||
+            cachedSessions[cachedSessions.length - 1]?.session_id ||
+            "";
+          setCurrentSessionId(cachedId);
+          const active = cachedSessions.find(
+            (s: SessionSnapshot) => s.session_id === cachedId,
+          );
           if (active) {
             setChatMessages(
-              ensureResearchReportMessage(active.messages || [], active.research_report || '')
-            )
-            setSources(normalizeSources(active.sources || []))
-            setResearchReport(active.research_report || '')
-            applyResearchState(active.research_state)
-            applyStudioState(active.studio_state)
+              ensureResearchReportMessage(
+                active.messages || [],
+                active.research_report || "",
+              ),
+            );
+            setSources(normalizeSources(active.sources || []));
+            setResearchReport(active.research_report || "");
+            applyResearchState(active.research_state);
+            applyStudioState(active.studio_state);
           }
         }
       }
     } catch (err) {
-      console.error('Failed to load session cache:', err)
+      console.error("Failed to load session cache:", err);
     }
 
     const loadSessions = async () => {
       try {
-        const res = await fetch(apiUrl(`/api/v1/notebook/${notebookId}/sessions`))
-        if (!res.ok) return
-        const data = await res.json()
-        const loaded = Array.isArray(data.sessions) ? data.sessions : []
+        const res = await fetch(
+          apiUrl(`/api/v1/notebook/${notebookId}/sessions`),
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        const loaded = Array.isArray(data.sessions) ? data.sessions : [];
         const normalized = loaded.map((session: SessionSnapshot) =>
           hydrateSessionReport({
             ...session,
             sources: normalizeSources(session.sources || []),
-          })
-        )
+          }),
+        );
         if (loaded.length === 0 && cachedSessions.length === 0) {
-          return
+          return;
         }
-        setSessions(normalized)
+        setSessions(normalized);
         const latest = normalized.reduce(
           (acc: SessionSnapshot | null, session: SessionSnapshot) => {
-            if (!acc) return session
-            return (session.updated_at || 0) > (acc.updated_at || 0) ? session : acc
+            if (!acc) return session;
+            return (session.updated_at || 0) > (acc.updated_at || 0)
+              ? session
+              : acc;
           },
-          null
-        )
+          null,
+        );
         if (latest) {
-          setCurrentSessionId(latest.session_id)
+          setCurrentSessionId(latest.session_id);
           setChatMessages(
-            ensureResearchReportMessage(latest.messages || [], latest.research_report || '')
-          )
-          setSources(normalizeSources(latest.sources || []))
-          setResearchReport(latest.research_report || '')
-          applyResearchState(latest.research_state)
-          applyStudioState(latest.studio_state)
+            ensureResearchReportMessage(
+              latest.messages || [],
+              latest.research_report || "",
+            ),
+          );
+          setSources(normalizeSources(latest.sources || []));
+          setResearchReport(latest.research_report || "");
+          applyResearchState(latest.research_state);
+          applyStudioState(latest.studio_state);
         }
         saveToLocalStorageSafe(sessionCacheKey, {
           sessions: normalized,
-          currentSessionId: latest?.session_id || '',
-        })
+          currentSessionId: latest?.session_id || "",
+        });
       } catch (err) {
-        console.error('Failed to load sessions:', err)
+        console.error("Failed to load sessions:", err);
       }
-    }
+    };
 
-    void loadSessions()
-  }, [notebookId])
+    void loadSessions();
+  }, [notebookId]);
 
   useEffect(() => {
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        void recoverResearchIfNeeded('visibility')
+      if (document.visibilityState === "visible") {
+        void recoverResearchIfNeeded("visibility");
       }
-    }
-    document.addEventListener('visibilitychange', handleVisibility)
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibility)
-    }
-  }, [notebookId])
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [notebookId]);
 
   useEffect(() => {
-    if (!pendingResearchRecovery) return
-    void recoverResearchIfNeeded('pending-state')
+    if (!pendingResearchRecovery) return;
+    void recoverResearchIfNeeded("pending-state");
     const timer = setInterval(() => {
-      void recoverResearchIfNeeded('pending-poll')
-    }, 15000)
+      void recoverResearchIfNeeded("pending-poll");
+    }, 15000);
     return () => {
-      clearInterval(timer)
-    }
-  }, [pendingResearchRecovery, notebookId])
+      clearInterval(timer);
+    };
+  }, [pendingResearchRecovery, notebookId]);
 
   useEffect(() => {
-    fetchPptStyleTemplates()
-    fetchPptTemplates()
-    fetchBananaPptConfig()
+    fetchPptStyleTemplates();
+    fetchPptTemplates();
+    fetchBananaPptConfig();
     // Fetch available podcast speakers
-    ;(async () => {
+    (async () => {
       try {
-        const res = await fetch(apiUrl('/api/v1/co_writer/tts/doubao_speakers'))
+        const res = await fetch(
+          apiUrl("/api/v1/co_writer/tts/doubao_speakers"),
+        );
         if (res.ok) {
-          const data = await res.json()
+          const data = await res.json();
           if (data.speakers && data.speakers.length > 0) {
-            setPodcastSpeakers(data.speakers)
+            setPodcastSpeakers(data.speakers);
           }
         }
       } catch (err) {
-        console.error('Failed to fetch podcast speakers:', err)
+        console.error("Failed to fetch podcast speakers:", err);
       }
-    })()
-  }, [])
+    })();
+  }, []);
 
   useEffect(() => {
-    if (studioHydrationRef.current) return
-    setPptStylePreviewSvg('')
-    setPptStylePreviewError('')
-  }, [pptStyleMode, selectedPptStyleId, pptTemplatePromptSource])
+    if (studioHydrationRef.current) return;
+    setPptStylePreviewSvg("");
+    setPptStylePreviewError("");
+  }, [pptStyleMode, selectedPptStyleId, pptTemplatePromptSource]);
 
   // Auto-scroll chat
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTo({
         top: chatContainerRef.current.scrollHeight,
-        behavior: 'smooth',
-      })
+        behavior: "smooth",
+      });
     }
-  }, [displayMessages])
+  }, [displayMessages]);
 
   useEffect(() => {
-    if (!currentSessionId || !hasSessionActivity) return
-    const snapshot = buildSessionSnapshot()
-    if (!snapshot) return
+    if (!currentSessionId || !hasSessionActivity) return;
+    const snapshot = buildSessionSnapshot();
+    if (!snapshot) return;
     if (
       !snapshot.messages.length &&
       !snapshot.sources.length &&
       !snapshot.research_report &&
       !hasStudioState(snapshot.studio_state)
     ) {
-      return
+      return;
     }
-    upsertSessionState(snapshot)
-  }, [chatMessages, sources, researchReport, studioState, currentSessionId, hasSessionActivity])
+    upsertSessionState(snapshot);
+  }, [
+    chatMessages,
+    sources,
+    researchReport,
+    studioState,
+    currentSessionId,
+    hasSessionActivity,
+  ]);
 
   useEffect(() => {
-    if (!currentSessionId || !hasSessionActivity) return
-    if (!researchRunning) return
-    scheduleSessionSave(false, currentSessionId)
+    if (!currentSessionId || !hasSessionActivity) return;
+    if (!researchRunning) return;
+    scheduleSessionSave(false, currentSessionId);
   }, [
     researchRunning,
     researchPhase,
@@ -1812,358 +2004,378 @@ export default function NotebookDetailPage() {
     activeResearchId,
     currentSessionId,
     hasSessionActivity,
-  ])
+  ]);
 
   useEffect(() => {
-    if (studioHydrationRef.current) return
-    const hasStudio = hasStudioState(studioState)
-    if (!currentSessionId && !hasStudio) return
-    if (!hasStudio && !hasSessionActivity) return
-    const sessionId = currentSessionId || ensureActiveSession()
+    if (studioHydrationRef.current) return;
+    const hasStudio = hasStudioState(studioState);
+    if (!currentSessionId && !hasStudio) return;
+    if (!hasStudio && !hasSessionActivity) return;
+    const sessionId = currentSessionId || ensureActiveSession();
     if (hasStudio && !hasSessionActivity) {
-      setHasSessionActivity(true)
+      setHasSessionActivity(true);
     }
-    scheduleSessionSave(false, sessionId)
-  }, [studioState, currentSessionId, hasSessionActivity, scheduleSessionSave])
+    scheduleSessionSave(false, sessionId);
+  }, [studioState, currentSessionId, hasSessionActivity, scheduleSessionSave]);
 
   useEffect(() => {
-    if (!notebookId) return
-    saveToLocalStorageSafe(sessionCacheKey, { sessions, currentSessionId })
-  }, [sessions, currentSessionId, notebookId])
+    if (!notebookId) return;
+    saveToLocalStorageSafe(sessionCacheKey, { sessions, currentSessionId });
+  }, [sessions, currentSessionId, notebookId]);
 
   const fetchNotebook = async () => {
     try {
-      const res = await fetch(apiUrl(`/api/v1/notebook/${notebookId}`))
-      if (!res.ok) throw new Error('未找到笔记本')
-      const data = await res.json()
-      setNotebook(data)
+      const res = await fetch(apiUrl(`/api/v1/notebook/${notebookId}`));
+      if (!res.ok) throw new Error("未找到笔记本");
+      const data = await res.json();
+      setNotebook(data);
     } catch (err) {
-      console.error('Failed to fetch notebook:', err)
-      router.push('/notebooks')
+      console.error("Failed to fetch notebook:", err);
+      router.push("/notebooks");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const fetchKnowledgeBases = async () => {
     try {
-      const res = await fetch(apiUrl('/api/v1/knowledge/list'))
-      const data = await res.json()
+      const res = await fetch(apiUrl("/api/v1/knowledge/list"));
+      const data = await res.json();
       const filtered = (data || []).filter((kb: KnowledgeBase) => {
         const systemManagedNotebookSources =
-          kb.system_managed && kb.owner?.type === 'notebook_sources'
+          kb.system_managed && kb.owner?.type === "notebook_sources";
         const legacyNotebookSources =
-          kb.name.startsWith('notebook_') && kb.name.endsWith('_sources')
-        return !(systemManagedNotebookSources || legacyNotebookSources)
-      })
-      setKbs(filtered)
-      setSelectedKb(prev => (filtered.some((kb: KnowledgeBase) => kb.name === prev) ? prev : ''))
+          kb.name.startsWith("notebook_") && kb.name.endsWith("_sources");
+        return !(systemManagedNotebookSources || legacyNotebookSources);
+      });
+      setKbs(filtered);
+      setSelectedKb((prev) =>
+        filtered.some((kb: KnowledgeBase) => kb.name === prev) ? prev : "",
+      );
     } catch (err) {
-      console.error('Failed to fetch KBs:', err)
+      console.error("Failed to fetch KBs:", err);
     }
-  }
+  };
 
   const fetchPptStyleTemplates = async () => {
     try {
-      const res = await fetch(apiUrl('/api/v1/research/ppt_style_templates'))
-      if (!res.ok) return
-      const data = await res.json()
-      const templates = data.templates || []
-      setPptStyleTemplates(templates)
+      const res = await fetch(apiUrl("/api/v1/research/ppt_style_templates"));
+      if (!res.ok) return;
+      const data = await res.json();
+      const templates = data.templates || [];
+      setPptStyleTemplates(templates);
       if (templates.length > 0) {
-        const ids = templates.map((template: PptStyleTemplate) => template.id)
+        const ids = templates.map((template: PptStyleTemplate) => template.id);
         if (!selectedPptStyleId || !ids.includes(selectedPptStyleId)) {
-          setSelectedPptStyleId(templates[0].id)
+          setSelectedPptStyleId(templates[0].id);
         }
       }
     } catch (err) {
-      console.error('Failed to fetch PPT style templates:', err)
+      console.error("Failed to fetch PPT style templates:", err);
     }
-  }
+  };
 
   const fetchPptTemplates = async () => {
     try {
-      const res = await fetch(apiUrl('/api/v1/research/ppt_templates'))
-      if (!res.ok) return
-      const data = await res.json()
-      setPptTemplates(data.templates || [])
+      const res = await fetch(apiUrl("/api/v1/research/ppt_templates"));
+      if (!res.ok) return;
+      const data = await res.json();
+      setPptTemplates(data.templates || []);
       if (data.templates?.length > 0) {
-        const templateNames = data.templates.map((template: PptTemplateInfo) => template.name)
-        if (!selectedPptTemplate || !templateNames.includes(selectedPptTemplate)) {
-          setSelectedPptTemplate(data.templates[0].name)
+        const templateNames = data.templates.map(
+          (template: PptTemplateInfo) => template.name,
+        );
+        if (
+          !selectedPptTemplate ||
+          !templateNames.includes(selectedPptTemplate)
+        ) {
+          setSelectedPptTemplate(data.templates[0].name);
         }
       }
     } catch (err) {
-      console.error('Failed to fetch PPT templates:', err)
+      console.error("Failed to fetch PPT templates:", err);
     }
-  }
+  };
 
   const fetchBananaPptConfig = async () => {
     try {
-      const res = await fetch(apiUrl('/api/v1/research/ppt_config'))
-      if (!res.ok) return
-      const data = await res.json()
-      setBananaPptEnabled(Boolean(data.enabled))
-      if (typeof data.max_slides === 'number') {
-        setBananaPptMaxSlides(data.max_slides)
+      const res = await fetch(apiUrl("/api/v1/research/ppt_config"));
+      if (!res.ok) return;
+      const data = await res.json();
+      setBananaPptEnabled(Boolean(data.enabled));
+      if (typeof data.max_slides === "number") {
+        setBananaPptMaxSlides(data.max_slides);
       }
-      if (Array.isArray(data.style_templates) && data.style_templates.length > 0) {
-        setPptStyleTemplates(data.style_templates)
-        const ids = data.style_templates.map((template: PptStyleTemplate) => template.id)
+      if (
+        Array.isArray(data.style_templates) &&
+        data.style_templates.length > 0
+      ) {
+        setPptStyleTemplates(data.style_templates);
+        const ids = data.style_templates.map(
+          (template: PptStyleTemplate) => template.id,
+        );
         if (!selectedPptStyleId || !ids.includes(selectedPptStyleId)) {
-          setSelectedPptStyleId(data.style_templates[0].id)
+          setSelectedPptStyleId(data.style_templates[0].id);
         }
       }
     } catch (err) {
-      console.error('Failed to fetch BananaPPT config:', err)
+      console.error("Failed to fetch BananaPPT config:", err);
     }
-  }
+  };
 
   const handleUploadPptTemplate = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-    setPptTemplateUploading(true)
+    setPptTemplateUploading(true);
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const res = await fetch(apiUrl('/api/v1/research/ppt_templates/upload'), {
-        method: 'POST',
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(apiUrl("/api/v1/research/ppt_templates/upload"), {
+        method: "POST",
         body: formData,
-      })
-      if (!res.ok) throw new Error('Upload failed')
-      await fetchPptTemplates()
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      await fetchPptTemplates();
       if (pptTemplateInputRef.current) {
-        pptTemplateInputRef.current.value = ''
+        pptTemplateInputRef.current.value = "";
       }
     } catch (err) {
-      console.error('PPT template upload failed:', err)
+      console.error("PPT template upload failed:", err);
     } finally {
-      setPptTemplateUploading(false)
+      setPptTemplateUploading(false);
     }
-  }
+  };
 
   // Check if sources KB is ready for querying
   const checkSourcesKbStatus = async (): Promise<boolean> => {
     try {
-      const res = await fetch(apiUrl(`/api/v1/notebook/${notebookId}/sources_kb_status`))
-      if (!res.ok) return true // Assume ready if check fails
-      const data = await res.json()
-      return data.ready === true
+      const res = await fetch(
+        apiUrl(`/api/v1/notebook/${notebookId}/sources_kb_status`),
+      );
+      if (!res.ok) return true; // Assume ready if check fails
+      const data = await res.json();
+      return data.ready === true;
     } catch {
-      return true // Assume ready if check fails
+      return true; // Assume ready if check fails
     }
-  }
+  };
 
   // Wait for sources KB to be ready with polling
   const waitForSourcesKbReady = async (): Promise<boolean> => {
-    const maxAttempts = 30 // 30 seconds max
-    const pollInterval = 1000 // 1 second
+    const maxAttempts = 30; // 30 seconds max
+    const pollInterval = 1000; // 1 second
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const isReady = await checkSourcesKbStatus()
+      const isReady = await checkSourcesKbStatus();
       if (isReady) {
-        return true
+        return true;
       }
-      await new Promise(resolve => setTimeout(resolve, pollInterval))
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
     }
-    return false // Timeout
-  }
+    return false; // Timeout
+  };
 
   const buildSelectedSourceCatalog = useCallback((): CitationCatalogItem[] => {
-    const byKey = new Map<string, CitationCatalogItem>()
-    selectedSourcesList.forEach(source => {
-      const sourceKey = buildSourceKey(source)
-      if (!sourceKey) return
+    const byKey = new Map<string, CitationCatalogItem>();
+    selectedSourcesList.forEach((source) => {
+      const sourceKey = buildSourceKey(source);
+      if (!sourceKey) return;
       const assignedRef =
         source.ref_number ||
         citationRegistryRef.current.get(sourceKey) ||
-        registerCitationKey(sourceKey)
-      if (!assignedRef) return
+        registerCitationKey(sourceKey);
+      if (!assignedRef) return;
       byKey.set(sourceKey, {
         ref_number: assignedRef,
         source_key: sourceKey,
         title: source.title,
         url: source.url,
         type: source.type,
-      })
-    })
-    return Array.from(byKey.values()).sort((a, b) => a.ref_number - b.ref_number)
-  }, [selectedSourcesList, registerCitationKey])
+      });
+    });
+    return Array.from(byKey.values()).sort(
+      (a, b) => a.ref_number - b.ref_number,
+    );
+  }, [selectedSourcesList, registerCitationKey]);
 
-  const normalizeSourceCatalog = useCallback((catalog: any[]): CitationCatalogItem[] => {
-    if (!Array.isArray(catalog)) return []
-    const normalized: CitationCatalogItem[] = []
-    catalog.forEach(item => {
-      const refNumber = Number(item?.ref_number)
-      if (!Number.isFinite(refNumber) || refNumber <= 0) return
-      const normalizedItem: CitationCatalogItem = {
-        ref_number: Math.floor(refNumber),
-        source_key:
-          item?.source_key ||
-          buildSourceKey({
-            type: item?.type || 'web',
-            title: item?.title || '',
-            url: item?.url || '',
-          }),
-        title: item?.title || `引用 ${Math.floor(refNumber)}`,
-        url: item?.url || '',
-        type:
-          item?.type === 'web' ||
-          item?.type === 'file' ||
-          item?.type === 'kb' ||
-          item?.type === 'report'
-            ? item.type
-            : 'web',
-      }
-      normalized.push(normalizedItem)
-    })
-    return normalized.sort((a, b) => a.ref_number - b.ref_number)
-  }, [])
+  const normalizeSourceCatalog = useCallback(
+    (catalog: any[]): CitationCatalogItem[] => {
+      if (!Array.isArray(catalog)) return [];
+      const normalized: CitationCatalogItem[] = [];
+      catalog.forEach((item) => {
+        const refNumber = Number(item?.ref_number);
+        if (!Number.isFinite(refNumber) || refNumber <= 0) return;
+        const normalizedItem: CitationCatalogItem = {
+          ref_number: Math.floor(refNumber),
+          source_key:
+            item?.source_key ||
+            buildSourceKey({
+              type: item?.type || "web",
+              title: item?.title || "",
+              url: item?.url || "",
+            }),
+          title: item?.title || `引用 ${Math.floor(refNumber)}`,
+          url: item?.url || "",
+          type:
+            item?.type === "web" ||
+            item?.type === "file" ||
+            item?.type === "kb" ||
+            item?.type === "report"
+              ? item.type
+              : "web",
+        };
+        normalized.push(normalizedItem);
+      });
+      return normalized.sort((a, b) => a.ref_number - b.ref_number);
+    },
+    [],
+  );
 
   const mergeSourcesWithCatalog = useCallback(
     (prev: Source[], incoming: Source[], catalog: CitationCatalogItem[]) => {
-      const byKey = new Map<string, Source>()
-      const catalogByKey = new Map<string, CitationCatalogItem>()
-      const catalogByUrl = new Map<string, CitationCatalogItem>()
+      const byKey = new Map<string, Source>();
+      const catalogByKey = new Map<string, CitationCatalogItem>();
+      const catalogByUrl = new Map<string, CitationCatalogItem>();
 
-      catalog.forEach(item => {
+      catalog.forEach((item) => {
         const key =
           item.source_key ||
           buildSourceKey({
-            type: item.type || 'web',
+            type: item.type || "web",
             title: item.title,
             url: item.url,
-          })
-        if (!key) return
-        catalogByKey.set(key, item)
-        const normalizedUrl = normalizeSourceUrl(item.url)
+          });
+        if (!key) return;
+        catalogByKey.set(key, item);
+        const normalizedUrl = normalizeSourceUrl(item.url);
         if (normalizedUrl) {
-          catalogByUrl.set(normalizedUrl, item)
+          catalogByUrl.set(normalizedUrl, item);
         }
-        registerCitationKey(key, item.ref_number)
-      })
+        registerCitationKey(key, item.ref_number);
+      });
 
       const addOne = (raw: Source) => {
-        const normalized = withSourceIdentity(raw)
-        const sourceKey = normalized.source_key || buildSourceKey(normalized)
-        if (!sourceKey) return
-        const normalizedUrl = normalizeSourceUrl(normalized.url)
+        const normalized = withSourceIdentity(raw);
+        const sourceKey = normalized.source_key || buildSourceKey(normalized);
+        if (!sourceKey) return;
+        const normalizedUrl = normalizeSourceUrl(normalized.url);
         const catalogMatch =
           catalogByKey.get(sourceKey) ||
-          (normalizedUrl ? catalogByUrl.get(normalizedUrl) : undefined)
-        const preferredRef = catalogMatch?.ref_number || normalized.ref_number
-        const refNumber = registerCitationKey(sourceKey, preferredRef)
-        const existing = byKey.get(sourceKey)
+          (normalizedUrl ? catalogByUrl.get(normalizedUrl) : undefined);
+        const preferredRef = catalogMatch?.ref_number || normalized.ref_number;
+        const refNumber = registerCitationKey(sourceKey, preferredRef);
+        const existing = byKey.get(sourceKey);
         const next: Source = {
           ...(existing || normalized),
           ...normalized,
           source_key: sourceKey,
-          ref_number: refNumber || existing?.ref_number || normalized.ref_number,
+          ref_number:
+            refNumber || existing?.ref_number || normalized.ref_number,
           selected: normalized.selected !== false,
-        }
+        };
         if (catalogMatch?.title && next.title !== catalogMatch.title) {
-          next.title = next.title || catalogMatch.title
+          next.title = next.title || catalogMatch.title;
         }
         if (!next.url && catalogMatch?.url) {
-          next.url = catalogMatch.url
+          next.url = catalogMatch.url;
         }
-        byKey.set(sourceKey, next)
-      }
+        byKey.set(sourceKey, next);
+      };
 
-      prev.forEach(source => addOne(source))
-      incoming.forEach(source => addOne(source))
+      prev.forEach((source) => addOne(source));
+      incoming.forEach((source) => addOne(source));
 
-      catalog.forEach(item => {
+      catalog.forEach((item) => {
         const sourceKey =
           item.source_key ||
           buildSourceKey({
-            type: item.type || 'web',
+            type: item.type || "web",
             title: item.title,
             url: item.url,
-          })
-        if (!sourceKey || byKey.has(sourceKey)) return
-        const refNumber = registerCitationKey(sourceKey, item.ref_number)
+          });
+        if (!sourceKey || byKey.has(sourceKey)) return;
+        const refNumber = registerCitationKey(sourceKey, item.ref_number);
         byKey.set(sourceKey, {
           id: `catalog-${sourceKey}`,
-          type: item.type || 'web',
+          type: item.type || "web",
           title: item.title,
           url: item.url,
           selected: true,
-          content: '',
+          content: "",
           source_key: sourceKey,
           ref_number: refNumber || item.ref_number,
-        })
-      })
+        });
+      });
 
-      return Array.from(byKey.values())
+      return Array.from(byKey.values());
     },
-    [registerCitationKey]
-  )
+    [registerCitationKey],
+  );
 
   // Chat function using WebSocket
   const handleSendChat = async () => {
-    if (!chatInput.trim() || isChatting) return
-    const activeSessionId = ensureActiveSession()
-    setHasSessionActivity(true)
+    if (!chatInput.trim() || isChatting) return;
+    const activeSessionId = ensureActiveSession();
+    setHasSessionActivity(true);
 
     const userMessage: ChatMessage = {
-      id: makeClientId('chat-user'),
-      role: 'user',
+      id: makeClientId("chat-user"),
+      role: "user",
       content: chatInput,
-    }
+    };
 
-    setChatMessages(prev => [...prev, userMessage])
-    setChatInput('')
-    setIsChatting(true)
-    setChatError(null)
+    setChatMessages((prev) => [...prev, userMessage]);
+    setChatInput("");
+    setIsChatting(true);
+    setChatError(null);
 
     // If there are selected sources, wait for KB to be ready
-    const hasSelectedSources = sources.some(s => s.selected)
+    const hasSelectedSources = sources.some((s) => s.selected);
     if (hasSelectedSources) {
-      setSourcesKbIndexing(true)
-      const isReady = await waitForSourcesKbReady()
-      setSourcesKbIndexing(false)
+      setSourcesKbIndexing(true);
+      const isReady = await waitForSourcesKbReady();
+      setSourcesKbIndexing(false);
 
       if (!isReady) {
-        setChatError('准备中，请稍后再试')
-        setIsChatting(false)
-        return
+        setChatError("准备中，请稍后再试");
+        setIsChatting(false);
+        return;
       }
     }
 
     setTimeout(() => {
-      const needsSourceSync = selectedSourcesList.length > 0
-      scheduleSessionSave(needsSourceSync, activeSessionId)
-    }, 0)
+      const needsSourceSync = selectedSourcesList.length > 0;
+      scheduleSessionSave(needsSourceSync, activeSessionId);
+    }, 0);
 
     // Close existing WebSocket
     if (chatWsRef.current) {
-      chatWsRef.current.close()
+      chatWsRef.current.close();
     }
 
-    const ws = new WebSocket(wsUrl('/api/v1/notebook/chat'))
-    chatWsRef.current = ws
-    const assistantId = makeClientId('chat-assistant')
-    let fullContent = ''
+    const ws = new WebSocket(wsUrl("/api/v1/notebook/chat"));
+    chatWsRef.current = ws;
+    const assistantId = makeClientId("chat-assistant");
+    let fullContent = "";
 
     // Connection timeout
     const connectionTimeout = setTimeout(() => {
       if (ws.readyState !== WebSocket.OPEN) {
-        ws.close()
-        setChatError('连接超时，请检查后端服务是否正常运行')
-        setIsChatting(false)
+        ws.close();
+        setChatError("连接超时，请检查后端服务是否正常运行");
+        setIsChatting(false);
       }
-    }, 10000)
+    }, 10000);
 
     ws.onopen = () => {
-      clearTimeout(connectionTimeout)
+      clearTimeout(connectionTimeout);
       // Build history from existing messages
-      const history = chatMessages.map(msg => ({
+      const history = chatMessages.map((msg) => ({
         role: msg.role,
         content: msg.content,
-      }))
-      const selectedSourceCatalog = buildSelectedSourceCatalog()
+      }));
+      const selectedSourceCatalog = buildSelectedSourceCatalog();
 
       ws.send(
         JSON.stringify({
@@ -2175,60 +2387,68 @@ export default function NotebookDetailPage() {
           enable_web_search: false, // 笔记本内禁用联网，使用来源 + 知识库问答
           require_sources: true,
           selected_sources: selectedSourceCatalog,
-        })
-      )
+        }),
+      );
 
       // Add placeholder assistant message
-      setChatMessages(prev => [
+      setChatMessages((prev) => [
         ...prev,
-        { id: assistantId, role: 'assistant', content: '', isStreaming: true },
-      ])
-    }
+        { id: assistantId, role: "assistant", content: "", isStreaming: true },
+      ]);
+    };
 
-    ws.onmessage = event => {
+    ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data)
-        if (data.type === 'stream') {
-          fullContent += data.content
-          setChatMessages(prev =>
-            prev.map(msg => (msg.id === assistantId ? { ...msg, content: fullContent } : msg))
-          )
-        } else if (data.type === 'sources') {
-          const sourceCatalog = normalizeSourceCatalog(data.source_catalog || [])
-          const incomingSources: Source[] = []
+        const data = JSON.parse(event.data);
+        if (data.type === "stream") {
+          fullContent += data.content;
+          setChatMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantId ? { ...msg, content: fullContent } : msg,
+            ),
+          );
+        } else if (data.type === "sources") {
+          const sourceCatalog = normalizeSourceCatalog(
+            data.source_catalog || [],
+          );
+          const incomingSources: Source[] = [];
 
           if (Array.isArray(data.web)) {
             data.web.forEach((item: any, idx: number) => {
               incomingSources.push(
                 withSourceIdentity({
-                  id: makeClientId('chat-web'),
-                  type: 'web',
+                  id: makeClientId("chat-web"),
+                  type: "web",
                   title: item?.title || item?.url || `网络来源 ${idx + 1}`,
-                  url: item?.url || '',
-                  content: item?.content || item?.snippet || '',
+                  url: item?.url || "",
+                  content: item?.content || item?.snippet || "",
                   selected: true,
-                })
-              )
-            })
+                }),
+              );
+            });
           }
 
           if (Array.isArray(data.rag)) {
             data.rag.forEach((item: any, idx: number) => {
               incomingSources.push(
                 withSourceIdentity({
-                  id: makeClientId('chat-rag'),
-                  type: 'kb',
-                  title: item?.title || item?.source || item?.kb_name || `知识库来源 ${idx + 1}`,
-                  url: item?.url || '',
-                  content: item?.content || item?.snippet || '',
+                  id: makeClientId("chat-rag"),
+                  type: "kb",
+                  title:
+                    item?.title ||
+                    item?.source ||
+                    item?.kb_name ||
+                    `知识库来源 ${idx + 1}`,
+                  url: item?.url || "",
+                  content: item?.content || item?.snippet || "",
                   selected: true,
-                })
-              )
-            })
+                }),
+              );
+            });
           }
 
-          setChatMessages(prev =>
-            prev.map(msg =>
+          setChatMessages((prev) =>
+            prev.map((msg) =>
               msg.id === assistantId
                 ? {
                     ...msg,
@@ -2238,112 +2458,116 @@ export default function NotebookDetailPage() {
                     },
                     source_catalog: sourceCatalog,
                   }
-                : msg
-            )
-          )
+                : msg,
+            ),
+          );
 
           if (incomingSources.length > 0 || sourceCatalog.length > 0) {
-            setSources(prev => mergeSourcesWithCatalog(prev, incomingSources, sourceCatalog))
-            setCitationRegistryVersion(prev => prev + 1)
+            setSources((prev) =>
+              mergeSourcesWithCatalog(prev, incomingSources, sourceCatalog),
+            );
+            setCitationRegistryVersion((prev) => prev + 1);
           }
-        } else if (data.type === 'result') {
-          setChatMessages(prev =>
-            prev.map(msg =>
-              msg.id === assistantId ? { ...msg, content: data.content, isStreaming: false } : msg
-            )
-          )
-          scheduleSessionSave(true)
-          ws.close()
-        } else if (data.type === 'error') {
-          setChatError(data.message || '发生未知错误')
-          setChatMessages(prev =>
-            prev.map(msg =>
+        } else if (data.type === "result") {
+          setChatMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantId
+                ? { ...msg, content: data.content, isStreaming: false }
+                : msg,
+            ),
+          );
+          scheduleSessionSave(true);
+          ws.close();
+        } else if (data.type === "error") {
+          setChatError(data.message || "发生未知错误");
+          setChatMessages((prev) =>
+            prev.map((msg) =>
               msg.id === assistantId
                 ? {
                     ...msg,
-                    content: '抱歉，发生了错误，请重试。',
+                    content: "抱歉，发生了错误，请重试。",
                     isStreaming: false,
                   }
-                : msg
-            )
-          )
-          scheduleSessionSave(true)
+                : msg,
+            ),
+          );
+          scheduleSessionSave(true);
         }
       } catch {
         // Ignore parse errors for malformed messages
       }
-    }
+    };
 
     ws.onerror = () => {
-      clearTimeout(connectionTimeout)
-      setChatError('WebSocket 连接失败，请检查网络或后端服务')
-      setChatMessages(prev =>
-        prev.map(msg =>
+      clearTimeout(connectionTimeout);
+      setChatError("WebSocket 连接失败，请检查网络或后端服务");
+      setChatMessages((prev) =>
+        prev.map((msg) =>
           msg.id === assistantId && msg.isStreaming
             ? {
                 ...msg,
-                content: '抱歉，由于网络或服务异常，连接已中断。请重试。',
+                content: "抱歉，由于网络或服务异常，连接已中断。请重试。",
                 isStreaming: false,
               }
-            : msg
-        )
-      )
-      setIsChatting(false)
-    }
+            : msg,
+        ),
+      );
+      setIsChatting(false);
+    };
 
     ws.onclose = () => {
-      clearTimeout(connectionTimeout)
-      setChatMessages(prev =>
-        prev.map(msg =>
+      clearTimeout(connectionTimeout);
+      setChatMessages((prev) =>
+        prev.map((msg) =>
           msg.id === assistantId && msg.isStreaming
             ? {
                 ...msg,
-                content: '连接被异常中断。如有网络波动，请检查后重试。',
+                content: "连接被异常中断。如有网络波动，请检查后重试。",
                 isStreaming: false,
               }
-            : msg
-        )
-      )
-      setIsChatting(false)
-    }
-  }
+            : msg,
+        ),
+      );
+      setIsChatting(false);
+    };
+  };
 
   // Fast Research - Quick web search using chat API with web_search enabled
   const handleFastResearch = () => {
-    if (!searchQuery.trim() || isSearching) return
-    ensureActiveSession()
-    setHasSessionActivity(true)
+    if (!searchQuery.trim() || isSearching) return;
+    ensureActiveSession();
+    setHasSessionActivity(true);
 
     // 将用户查询作为聊天消息添加
     const userMessage: ChatMessage = {
-      id: makeClientId('fast-user'),
-      role: 'user',
+      id: makeClientId("fast-user"),
+      role: "user",
       content: `🔍 快速搜索：${searchQuery}`,
-    }
-    setChatMessages(prev => [...prev, userMessage])
+    };
+    setChatMessages((prev) => [...prev, userMessage]);
 
-    const url = wsUrl('/api/v1/notebook/chat')
-    console.log('Fast Research connecting to:', url)
+    const url = wsUrl("/api/v1/notebook/chat");
+    console.log("Fast Research connecting to:", url);
 
-    setIsSearching(true)
-    setChatError(null)
+    setIsSearching(true);
+    setChatError(null);
 
-    const ws = new WebSocket(url)
-    let fullResponse = ''
+    const ws = new WebSocket(url);
+    let fullResponse = "";
 
     // Connection timeout
     const connectionTimeout = setTimeout(() => {
       if (ws.readyState !== WebSocket.OPEN) {
-        ws.close()
-        setChatError('连接超时，请重试')
-        alert(`Fast Research 连接超时: ${url}`)
-        setIsSearching(false)
+        ws.close();
+        setChatError("连接超时，请重试");
+        alert(`Fast Research 连接超时: ${url}`);
+        setIsSearching(false);
       }
-    }, 15000)
+    }, 15000);
 
     ws.onopen = () => {
-      clearTimeout(connectionTimeout)
-      console.log('Fast Research WS Connected')
+      clearTimeout(connectionTimeout);
+      console.log("Fast Research WS Connected");
       ws.send(
         JSON.stringify({
           message: `请搜索以下内容并返回相关网页链接：${searchQuery}`,
@@ -2351,200 +2575,216 @@ export default function NotebookDetailPage() {
           kb_name: enableRag ? selectedKb || undefined : undefined,
           enable_rag: enableRag && !!selectedKb,
           enable_web_search: true,
-          model: 'gpt-3.5-turbo',
+          model: "gpt-3.5-turbo",
           stream: true,
-        })
-      )
-    }
+        }),
+      );
+    };
 
-    ws.onmessage = event => {
+    ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data)
-        if (data.type === 'stream' && data.content) {
-          fullResponse += data.content
-        } else if (data.type === 'sources') {
+        const data = JSON.parse(event.data);
+        if (data.type === "stream" && data.content) {
+          fullResponse += data.content;
+        } else if (data.type === "sources") {
           // Handle structured sources from backend
-          const newSources: Source[] = []
-          const sourceCatalog = normalizeSourceCatalog(data.source_catalog || [])
+          const newSources: Source[] = [];
+          const sourceCatalog = normalizeSourceCatalog(
+            data.source_catalog || [],
+          );
           const catalogSourceKeys = new Set(
             sourceCatalog
-              .map(item => (typeof item.source_key === 'string' ? item.source_key.trim() : ''))
-              .filter(key => key.length > 0)
-          )
+              .map((item) =>
+                typeof item.source_key === "string"
+                  ? item.source_key.trim()
+                  : "",
+              )
+              .filter((key) => key.length > 0),
+          );
           const catalogSourceUrls = new Set(
-            sourceCatalog.map(item => normalizeSourceUrl(item.url)).filter(url => url.length > 0)
-          )
+            sourceCatalog
+              .map((item) => normalizeSourceUrl(item.url))
+              .filter((url) => url.length > 0),
+          );
 
           // Handle web sources
           if (data.web && Array.isArray(data.web)) {
             data.web.forEach((s: any, idx: number) => {
               newSources.push({
-                id: makeClientId('web'),
-                type: 'web' as const,
+                id: makeClientId("web"),
+                type: "web" as const,
                 title: s.title || s.url || `网络来源 ${idx + 1}`,
                 url: s.url,
-                content: s.content || s.snippet || '',
+                content: s.content || s.snippet || "",
                 selected: true,
                 source_key: s.source_key,
-                ref_number: typeof s.ref_number === 'number' ? s.ref_number : undefined,
-              })
-            })
+                ref_number:
+                  typeof s.ref_number === "number" ? s.ref_number : undefined,
+              });
+            });
           }
 
           // Handle RAG sources
           if (data.rag && Array.isArray(data.rag)) {
             data.rag.forEach((s: any, idx: number) => {
-              const sourceKey = typeof s.source_key === 'string' ? s.source_key.trim() : ''
-              const normalizedUrl = normalizeSourceUrl(typeof s.url === 'string' ? s.url : '')
-              const refNumber = Number(s.ref_number)
-              const hasRefNumber = Number.isFinite(refNumber) && refNumber > 0
+              const sourceKey =
+                typeof s.source_key === "string" ? s.source_key.trim() : "";
+              const normalizedUrl = normalizeSourceUrl(
+                typeof s.url === "string" ? s.url : "",
+              );
+              const refNumber = Number(s.ref_number);
+              const hasRefNumber = Number.isFinite(refNumber) && refNumber > 0;
               const hasCatalogMatch =
                 (sourceKey && catalogSourceKeys.has(sourceKey)) ||
-                (normalizedUrl && catalogSourceUrls.has(normalizedUrl))
+                (normalizedUrl && catalogSourceUrls.has(normalizedUrl));
 
               // Fast research may return summary-only RAG context; only keep citable entries.
               if (!hasRefNumber && !sourceKey && !hasCatalogMatch) {
-                return
+                return;
               }
 
               newSources.push({
-                id: makeClientId('rag'),
-                type: 'kb' as const,
+                id: makeClientId("rag"),
+                type: "kb" as const,
                 title: s.title || s.source || `知识库来源 ${idx + 1}`,
-                url: s.url || '',
-                content: s.content || '',
+                url: s.url || "",
+                content: s.content || "",
                 selected: true,
                 source_key: sourceKey || undefined,
                 ref_number: hasRefNumber ? Math.floor(refNumber) : undefined,
-              })
-            })
+              });
+            });
           }
 
-          const citableSources = newSources.filter(source => {
-            const sourceKey = buildSourceKey(source)
-            const normalizedUrl = normalizeSourceUrl(source.url)
+          const citableSources = newSources.filter((source) => {
+            const sourceKey = buildSourceKey(source);
+            const normalizedUrl = normalizeSourceUrl(source.url);
             const hasCatalogMatch =
               (sourceKey && catalogSourceKeys.has(sourceKey)) ||
-              (normalizedUrl && catalogSourceUrls.has(normalizedUrl))
-            const hasRefNumber = typeof source.ref_number === 'number' && source.ref_number > 0
+              (normalizedUrl && catalogSourceUrls.has(normalizedUrl));
+            const hasRefNumber =
+              typeof source.ref_number === "number" && source.ref_number > 0;
             const hasSourceKey =
-              typeof source.source_key === 'string' && source.source_key.trim().length > 0
+              typeof source.source_key === "string" &&
+              source.source_key.trim().length > 0;
 
             if (sourceCatalog.length > 0) {
-              return hasCatalogMatch
+              return hasCatalogMatch;
             }
-            return hasRefNumber || hasSourceKey
-          })
+            return hasRefNumber || hasSourceKey;
+          });
 
           if (citableSources.length > 0 || sourceCatalog.length > 0) {
             // Only citation-mappable raw references are persisted to selected sources.
-            setSources(prev => mergeSourcesWithCatalog(prev, citableSources, sourceCatalog))
-            setCitationRegistryVersion(prev => prev + 1)
-            scheduleSessionSave(true)
+            setSources((prev) =>
+              mergeSourcesWithCatalog(prev, citableSources, sourceCatalog),
+            );
+            setCitationRegistryVersion((prev) => prev + 1);
+            scheduleSessionSave(true);
           }
-        } else if (data.type === 'result') {
+        } else if (data.type === "result") {
           // Use final result content if available
-          const finalContent = data.content || fullResponse
+          const finalContent = data.content || fullResponse;
 
           // Fast Research summary message does not become a source.
           // Also add the AI summary as a chat message
           if (finalContent.trim()) {
-            setChatMessages(prev => [
+            setChatMessages((prev) => [
               ...prev,
               {
-                id: makeClientId('fast'),
-                role: 'assistant',
+                id: makeClientId("fast"),
+                role: "assistant",
                 content: `**快速搜索结果：** ${searchQuery}\n\n${finalContent}`,
               },
-            ])
+            ]);
           }
-          scheduleSessionSave(true)
+          scheduleSessionSave(true);
 
-          setSearchQuery('')
-          ws.close()
-          setIsSearching(false)
-        } else if (data.type === 'error') {
-          console.error('Fast Research Error:', data.content)
-          setChatError(data.content || '搜索失败')
-          scheduleSessionSave(true)
-          ws.close()
-          setIsSearching(false)
+          setSearchQuery("");
+          ws.close();
+          setIsSearching(false);
+        } else if (data.type === "error") {
+          console.error("Fast Research Error:", data.content);
+          setChatError(data.content || "搜索失败");
+          scheduleSessionSave(true);
+          ws.close();
+          setIsSearching(false);
         }
       } catch (e) {
-        console.error('Fast research parse error:', e)
+        console.error("Fast research parse error:", e);
       }
-    }
+    };
 
-    ws.onerror = e => {
-      clearTimeout(connectionTimeout)
-      console.error('Fast Research WS Error:', e)
-      setChatError('网络搜索连接失败')
-      alert(`Fast Research WebSocket Error: 连接失败 ${url}`)
-      setIsSearching(false)
-    }
+    ws.onerror = (e) => {
+      clearTimeout(connectionTimeout);
+      console.error("Fast Research WS Error:", e);
+      setChatError("网络搜索连接失败");
+      alert(`Fast Research WebSocket Error: 连接失败 ${url}`);
+      setIsSearching(false);
+    };
 
     ws.onclose = () => {
-      clearTimeout(connectionTimeout)
-      setIsSearching(false)
-    }
-  }
+      clearTimeout(connectionTimeout);
+      setIsSearching(false);
+    };
+  };
 
   // Paper Search - Search academic papers on ArXiv
   const handlePaperSearch = async () => {
-    if (!searchQuery.trim() || isSearching) return
-    ensureActiveSession()
-    setHasSessionActivity(true)
+    if (!searchQuery.trim() || isSearching) return;
+    ensureActiveSession();
+    setHasSessionActivity(true);
 
     // Add user query as chat message
     const userMessage: ChatMessage = {
-      id: makeClientId('paper-user'),
-      role: 'user',
+      id: makeClientId("paper-user"),
+      role: "user",
       content: `📄 论文搜索：${searchQuery}`,
-    }
-    setChatMessages(prev => [...prev, userMessage])
+    };
+    setChatMessages((prev) => [...prev, userMessage]);
 
-    setIsSearching(true)
-    setChatError(null)
+    setIsSearching(true);
+    setChatError(null);
 
     try {
       const response = await fetch(`${apiUrl}/api/v1/tools/paper_search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: searchQuery,
           max_results: 5,
           years_limit: 3,
-          sort_by: 'relevance',
+          sort_by: "relevance",
         }),
-      })
+      });
 
       if (!response.ok) {
-        throw new Error(`Paper search failed: ${response.statusText}`)
+        throw new Error(`Paper search failed: ${response.statusText}`);
       }
 
-      const data = await response.json()
-      const papers = data.papers || []
+      const data = await response.json();
+      const papers = data.papers || [];
 
       if (papers.length === 0) {
-        setChatMessages(prev => [
+        setChatMessages((prev) => [
           ...prev,
           {
-            id: makeClientId('paper-result'),
-            role: 'assistant',
+            id: makeClientId("paper-result"),
+            role: "assistant",
             content: `**论文搜索结果：** ${searchQuery}\n\n未找到相关论文。请尝试使用不同的英文关键词。`,
           },
-        ])
-        setSearchQuery('')
-        setIsSearching(false)
-        scheduleSessionSave(true)
-        return
+        ]);
+        setSearchQuery("");
+        setIsSearching(false);
+        scheduleSessionSave(true);
+        return;
       }
 
       // Convert papers to Source objects
       const paperSources: Source[] = papers.map((paper: any) =>
         withSourceIdentity({
-          id: makeClientId('paper'),
-          type: 'paper' as const,
+          id: makeClientId("paper"),
+          type: "paper" as const,
           title: paper.title,
           url: paper.url,
           selected: true,
@@ -2552,390 +2792,413 @@ export default function NotebookDetailPage() {
           year: paper.year,
           arxiv_id: paper.arxiv_id,
           abstract: paper.abstract,
-        })
-      )
+        }),
+      );
 
       // Add papers to sources list
-      setSources(prev => [...prev, ...paperSources])
-      setCitationRegistryVersion(prev => prev + 1)
+      setSources((prev) => [...prev, ...paperSources]);
+      setCitationRegistryVersion((prev) => prev + 1);
 
       // Create summary message
       const summaryLines = papers.map(
         (paper: any, idx: number) =>
-          `${idx + 1}. **${paper.title}**\n   ${paper.authors && paper.authors.length > 0 ? paper.authors[0] : 'Unknown'} et al., ${paper.year || 'N/A'}\n   [ArXiv](${paper.url})`
-      )
+          `${idx + 1}. **${paper.title}**\n   ${paper.authors && paper.authors.length > 0 ? paper.authors[0] : "Unknown"} et al., ${paper.year || "N/A"}\n   [ArXiv](${paper.url})`,
+      );
 
-      setChatMessages(prev => [
+      setChatMessages((prev) => [
         ...prev,
         {
-          id: makeClientId('paper-result'),
-          role: 'assistant',
-          content: `**论文搜索结果：** ${searchQuery}\n\n找到 ${papers.length} 篇相关论文：\n\n${summaryLines.join('\n\n')}`,
+          id: makeClientId("paper-result"),
+          role: "assistant",
+          content: `**论文搜索结果：** ${searchQuery}\n\n找到 ${papers.length} 篇相关论文：\n\n${summaryLines.join("\n\n")}`,
         },
-      ])
+      ]);
 
-      setSearchQuery('')
-      scheduleSessionSave(true)
+      setSearchQuery("");
+      scheduleSessionSave(true);
     } catch (error) {
-      console.error('Paper search error:', error)
-      setChatError('论文搜索失败，请重试')
-      setChatMessages(prev => [
+      console.error("Paper search error:", error);
+      setChatError("论文搜索失败，请重试");
+      setChatMessages((prev) => [
         ...prev,
         {
-          id: makeClientId('paper-error'),
-          role: 'assistant',
-          content: `**论文搜索失败**\n\n${error instanceof Error ? error.message : '未知错误'}`,
+          id: makeClientId("paper-error"),
+          role: "assistant",
+          content: `**论文搜索失败**\n\n${error instanceof Error ? error.message : "未知错误"}`,
         },
-      ])
-      scheduleSessionSave(true)
+      ]);
+      scheduleSessionSave(true);
     } finally {
-      setIsSearching(false)
+      setIsSearching(false);
     }
-  }
+  };
 
   // Toggle source selection
   const toggleSourceSelection = (sessionId: string, sourceId: string) => {
-    setHasSessionActivity(true)
+    setHasSessionActivity(true);
     if (sessionId === currentSessionId) {
-      setSources(prev => prev.map(s => (s.id === sourceId ? { ...s, selected: !s.selected } : s)))
-      scheduleSessionSave(true, sessionId)
-      return
+      setSources((prev) =>
+        prev.map((s) =>
+          s.id === sourceId ? { ...s, selected: !s.selected } : s,
+        ),
+      );
+      scheduleSessionSave(true, sessionId);
+      return;
     }
-    let updatedSession: SessionSnapshot | null = null
-    setSessions(prev => {
-      const next = prev.map(session => {
-        if (session.session_id !== sessionId) return session
-        const nextSources = normalizeSources(session.sources || []).map(source =>
-          source.id === sourceId ? { ...source, selected: !source.selected } : source
-        )
+    let updatedSession: SessionSnapshot | null = null;
+    setSessions((prev) => {
+      const next = prev.map((session) => {
+        if (session.session_id !== sessionId) return session;
+        const nextSources = normalizeSources(session.sources || []).map(
+          (source) =>
+            source.id === sourceId
+              ? { ...source, selected: !source.selected }
+              : source,
+        );
         updatedSession = {
           ...session,
           sources: nextSources,
           updated_at: Date.now(),
-        }
-        return updatedSession
-      })
-      return next
-    })
+        };
+        return updatedSession;
+      });
+      return next;
+    });
     if (updatedSession) {
-      void saveSessionSnapshot(updatedSession)
+      void saveSessionSnapshot(updatedSession);
     }
-  }
+  };
 
   const toggleSessionSources = (sessionId: string, selected: boolean) => {
-    setHasSessionActivity(true)
+    setHasSessionActivity(true);
     if (sessionId === currentSessionId) {
-      setSources(prev => prev.map(s => ({ ...s, selected })))
-      scheduleSessionSave(true, sessionId)
-      return
+      setSources((prev) => prev.map((s) => ({ ...s, selected })));
+      scheduleSessionSave(true, sessionId);
+      return;
     }
-    let updatedSession: SessionSnapshot | null = null
-    setSessions(prev => {
-      const next = prev.map(session => {
-        if (session.session_id !== sessionId) return session
-        const nextSources = normalizeSources(session.sources || []).map(source => ({
-          ...source,
-          selected,
-        }))
+    let updatedSession: SessionSnapshot | null = null;
+    setSessions((prev) => {
+      const next = prev.map((session) => {
+        if (session.session_id !== sessionId) return session;
+        const nextSources = normalizeSources(session.sources || []).map(
+          (source) => ({
+            ...source,
+            selected,
+          }),
+        );
         updatedSession = {
           ...session,
           sources: nextSources,
           updated_at: Date.now(),
-        }
-        return updatedSession
-      })
-      return next
-    })
+        };
+        return updatedSession;
+      });
+      return next;
+    });
     if (updatedSession) {
-      void saveSessionSnapshot(updatedSession)
+      void saveSessionSnapshot(updatedSession);
     }
-  }
+  };
 
   // Select/deselect all sources
   const toggleAllSources = (selected: boolean) => {
-    setHasSessionActivity(true)
-    setSources(prev => prev.map(s => ({ ...s, selected })))
-    let updatedSessions: SessionSnapshot[] = []
-    setSessions(prev => {
-      updatedSessions = prev.map(session => ({
+    setHasSessionActivity(true);
+    setSources((prev) => prev.map((s) => ({ ...s, selected })));
+    let updatedSessions: SessionSnapshot[] = [];
+    setSessions((prev) => {
+      updatedSessions = prev.map((session) => ({
         ...session,
-        sources: normalizeSources(session.sources || []).map(source => ({
+        sources: normalizeSources(session.sources || []).map((source) => ({
           ...source,
           selected,
         })),
         updated_at: Date.now(),
-      }))
-      return updatedSessions
-    })
+      }));
+      return updatedSessions;
+    });
     if (currentSessionId) {
-      scheduleSessionSave(true, currentSessionId)
+      scheduleSessionSave(true, currentSessionId);
     }
-    updatedSessions.forEach(session => {
+    updatedSessions.forEach((session) => {
       if (session.session_id !== currentSessionId) {
-        void saveSessionSnapshot(session)
+        void saveSessionSnapshot(session);
       }
-    })
-  }
+    });
+  };
 
   // Remove a source
   const removeSource = (sourceId: string) => {
-    setHasSessionActivity(true)
-    setSources(prev => prev.filter(s => s.id !== sourceId))
-    scheduleSessionSave(true)
-  }
+    setHasSessionActivity(true);
+    setSources((prev) => prev.filter((s) => s.id !== sourceId));
+    scheduleSessionSave(true);
+  };
 
   // Add note to notebook
   const handleAddNote = async () => {
     if (!noteTitle.trim() || !noteContent.trim() || !notebook) {
-      alert('请填写标题和内容')
-      return
+      alert("请填写标题和内容");
+      return;
     }
 
     try {
-      const res = await fetch(apiUrl(`/api/v1/notebook/${notebook.id}/records`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'note',
-          title: noteTitle,
-          user_query: noteTitle,
-          output: noteContent,
-          metadata: {},
-        }),
-      })
+      const res = await fetch(
+        apiUrl(`/api/v1/notebook/${notebook.id}/records`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "note",
+            title: noteTitle,
+            user_query: noteTitle,
+            output: noteContent,
+            metadata: {},
+          }),
+        },
+      );
 
       if (!res.ok) {
-        const errorText = await res.text()
-        console.error('Save note failed:', res.status, errorText)
-        alert(`保存失败: ${res.status} - ${errorText}`)
-        return
+        const errorText = await res.text();
+        console.error("Save note failed:", res.status, errorText);
+        alert(`保存失败: ${res.status} - ${errorText}`);
+        return;
       }
 
-      const data = await res.json()
+      const data = await res.json();
       if (data.success) {
-        fetchNotebook()
-        setShowAddNoteModal(false)
-        setNoteTitle('')
-        setNoteContent('')
+        fetchNotebook();
+        setShowAddNoteModal(false);
+        setNoteTitle("");
+        setNoteContent("");
       } else {
-        alert('保存失败，请重试')
+        alert("保存失败，请重试");
       }
     } catch (err) {
-      console.error('Failed to add note:', err)
-      alert(`保存失败: ${err}`)
+      console.error("Failed to add note:", err);
+      alert(`保存失败: ${err}`);
     }
-  }
+  };
 
   const handleQuickAddNote = async (content: string) => {
-    if (!notebook) return
+    if (!notebook) return;
 
     try {
       const extractTitleLine = (raw: string) => {
-        const lines = raw.split('\n')
+        const lines = raw.split("\n");
         const normalizedFirst =
           lines.length > 0
             ? lines[0]
-                .replace(/^[#>*\s]+/, '')
-                .replace(/\*\*/g, '')
+                .replace(/^[#>*\s]+/, "")
+                .replace(/\*\*/g, "")
                 .trim()
-            : ''
-        const startIndex = normalizedFirst.includes('深度研究完成') ? 1 : 0
-        const tail = lines.slice(startIndex)
-        const h1 = tail.find(line => /^#\s+\S/.test(line))
-        if (h1) return h1.replace(/^#\s+/, '').trim()
-        const heading = tail.find(line => /^#{2,6}\s+\S/.test(line))
-        if (heading) return heading.replace(/^#{2,6}\s+/, '').trim()
+            : "";
+        const startIndex = normalizedFirst.includes("深度研究完成") ? 1 : 0;
+        const tail = lines.slice(startIndex);
+        const h1 = tail.find((line) => /^#\s+\S/.test(line));
+        if (h1) return h1.replace(/^#\s+/, "").trim();
+        const heading = tail.find((line) => /^#{2,6}\s+\S/.test(line));
+        if (heading) return heading.replace(/^#{2,6}\s+/, "").trim();
         for (const line of tail) {
           const cleaned = line
-            .replace(/^[#>*\s]+/, '')
-            .replace(/\*\*/g, '')
-            .trim()
-          if (cleaned) return cleaned
+            .replace(/^[#>*\s]+/, "")
+            .replace(/\*\*/g, "")
+            .trim();
+          if (cleaned) return cleaned;
         }
-        return ''
-      }
+        return "";
+      };
       // Generate title using LLM for higher quality
-      const res = await fetch(apiUrl('/api/v1/notebook/generate_title'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch(apiUrl("/api/v1/notebook/generate_title"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
-      })
-      const data = await res.json()
-      const title = data.title || extractTitleLine(content) || 'AI 生成笔记'
+      });
+      const data = await res.json();
+      const title = data.title || extractTitleLine(content) || "AI 生成笔记";
 
-      setNoteTitle(title)
-      setNoteContent(content)
-      setShowAddNoteModal(true)
+      setNoteTitle(title);
+      setNoteContent(content);
+      setShowAddNoteModal(true);
     } catch (err) {
-      console.error('Failed to generate title:', err)
+      console.error("Failed to generate title:", err);
       // Fallback to first line extraction
       const firstLine = (() => {
-        const lines = content.split('\n')
+        const lines = content.split("\n");
         const normalizedFirst =
           lines.length > 0
             ? lines[0]
-                .replace(/^[#>*\s]+/, '')
-                .replace(/\*\*/g, '')
+                .replace(/^[#>*\s]+/, "")
+                .replace(/\*\*/g, "")
                 .trim()
-            : ''
-        const startIndex = normalizedFirst.includes('深度研究完成') ? 1 : 0
-        const tail = lines.slice(startIndex)
-        const h1 = tail.find(line => /^#\s+\S/.test(line))
-        if (h1) return h1.replace(/^#\s+/, '').trim()
-        const heading = tail.find(line => /^#{2,6}\s+\S/.test(line))
-        if (heading) return heading.replace(/^#{2,6}\s+/, '').trim()
+            : "";
+        const startIndex = normalizedFirst.includes("深度研究完成") ? 1 : 0;
+        const tail = lines.slice(startIndex);
+        const h1 = tail.find((line) => /^#\s+\S/.test(line));
+        if (h1) return h1.replace(/^#\s+/, "").trim();
+        const heading = tail.find((line) => /^#{2,6}\s+\S/.test(line));
+        if (heading) return heading.replace(/^#{2,6}\s+/, "").trim();
         for (const line of tail) {
           const cleaned = line
-            .replace(/^[#>*\s]+/, '')
-            .replace(/\*\*/g, '')
-            .trim()
-          if (cleaned) return cleaned
+            .replace(/^[#>*\s]+/, "")
+            .replace(/\*\*/g, "")
+            .trim();
+          if (cleaned) return cleaned;
         }
-        return ''
-      })()
+        return "";
+      })();
       const autoTitle =
-        firstLine.length > 30 ? firstLine.substring(0, 30) + '...' : firstLine || '新 AI 笔记'
-      setNoteTitle(autoTitle)
-      setNoteContent(content)
-      setShowAddNoteModal(true)
+        firstLine.length > 30
+          ? firstLine.substring(0, 30) + "..."
+          : firstLine || "新 AI 笔记";
+      setNoteTitle(autoTitle);
+      setNoteContent(content);
+      setShowAddNoteModal(true);
     }
-  }
+  };
 
   // Delete record
   const handleDeleteRecord = async (recordId: string) => {
-    if (!confirm('确定要删除这条记录吗？')) return
+    if (!confirm("确定要删除这条记录吗？")) return;
     try {
-      const res = await fetch(apiUrl(`/api/v1/notebook/${params.id}/records/${recordId}`), {
-        method: 'DELETE',
-      })
-      const data = await res.json()
+      const res = await fetch(
+        apiUrl(`/api/v1/notebook/${params.id}/records/${recordId}`),
+        {
+          method: "DELETE",
+        },
+      );
+      const data = await res.json();
       if (data.success) {
-        fetchNotebook()
+        fetchNotebook();
       }
     } catch (err) {
-      console.error('Failed to delete record:', err)
+      console.error("Failed to delete record:", err);
     }
-  }
+  };
 
   // Download record
   const handleDownloadRecord = (record: any) => {
-    const content = `# ${record.title}\n\n${record.output || record.user_query}\n\n---\nCreated: ${new Date(record.created_at * 1000).toLocaleString()}`
-    const blob = new Blob([content], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${record.title || '笔记'}.md`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }
+    const content = `# ${record.title}\n\n${record.output || record.user_query}\n\n---\nCreated: ${new Date(record.created_at * 1000).toLocaleString()}`;
+    const blob = new Blob([content], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${record.title || "笔记"}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   // Add URL as source
   const handleAddSourceUrl = () => {
-    if (!sourceUrl.trim()) return
+    if (!sourceUrl.trim()) return;
 
     const newSource: Source = withSourceIdentity({
-      id: makeClientId('url'),
-      type: 'web',
+      id: makeClientId("url"),
+      type: "web",
       title: sourceUrl,
       url: sourceUrl,
       selected: true,
-    })
-    setHasSessionActivity(true)
-    setSources(prev => mergeSourcesWithCatalog(prev, [newSource], []))
-    scheduleSessionSave(true)
-    setSourceUrl('')
-    setShowAddSourceModal(false)
-  }
+    });
+    setHasSessionActivity(true);
+    setSources((prev) => mergeSourcesWithCatalog(prev, [newSource], []));
+    scheduleSessionSave(true);
+    setSourceUrl("");
+    setShowAddSourceModal(false);
+  };
 
   // Research function with enhanced error handling
   // Can be called with optional topic parameter (for Deep Research from chat)
   const startResearchWithTopic = (topic?: string) => {
-    const researchTopicToUse = topic || researchTopic
-    if (!researchTopicToUse.trim() || researchRunning || pendingResearchRecovery) {
-      return
+    const researchTopicToUse = topic || researchTopic;
+    if (
+      !researchTopicToUse.trim() ||
+      researchRunning ||
+      pendingResearchRecovery
+    ) {
+      return;
     }
-    const activeSessionId = ensureActiveSession()
-    setHasSessionActivity(true)
-    setResearchTopic(researchTopicToUse)
-    setSearchQuery(researchTopicToUse)
+    const activeSessionId = ensureActiveSession();
+    setHasSessionActivity(true);
+    setResearchTopic(researchTopicToUse);
+    setSearchQuery(researchTopicToUse);
 
     // 将用户查询作为聊天消息添加
     const userMessage: ChatMessage = {
-      id: makeClientId('research-user'),
-      role: 'user',
+      id: makeClientId("research-user"),
+      role: "user",
       content: `🔬 深度研究：${researchTopicToUse}`,
-    }
-    setChatMessages(prev => [...prev, userMessage])
+    };
+    setChatMessages((prev) => [...prev, userMessage]);
 
-    if (wsRef.current) wsRef.current.close()
+    if (wsRef.current) wsRef.current.close();
 
-    const url = wsUrl('/api/v1/research/run')
-    console.log('Deep Research connecting to:', url)
+    const url = wsUrl("/api/v1/research/run");
+    console.log("Deep Research connecting to:", url);
 
-    setResearchRunning(true)
-    setResearchStartTime(Date.now())
-    setEstimatedTimeRemaining('')
-    setResearchReport('')
-    setResearchError(null)
-    setIsChatting(true) // Show loading state in chat if triggered from there
-    setActiveResearchId(null)
-    setPendingResearchRecovery(true)
+    setResearchRunning(true);
+    setResearchStartTime(Date.now());
+    setEstimatedTimeRemaining("");
+    setResearchReport("");
+    setResearchError(null);
+    setIsChatting(true); // Show loading state in chat if triggered from there
+    setActiveResearchId(null);
+    setPendingResearchRecovery(true);
 
     // Generate a unique ID for this research session's streaming message
-    const streamingMsgId = makeClientId('research-stream')
+    const streamingMsgId = makeClientId("research-stream");
 
     // Always create a streaming message when starting research
-    setChatMessages(prev => {
+    setChatMessages((prev) => {
       // Check if there's already a streaming message (from handleSendChat)
-      const hasStreaming = prev.some(msg => msg.isStreaming)
+      const hasStreaming = prev.some((msg) => msg.isStreaming);
       if (hasStreaming) {
-        return prev
+        return prev;
       }
       // Add a new streaming message
       return [
         ...prev,
         {
           id: streamingMsgId,
-          role: 'assistant' as const,
-          content: '🚀 正在启动深度研究...',
+          role: "assistant" as const,
+          content: "🚀 正在启动深度研究...",
           isStreaming: true,
         },
-      ]
-    })
+      ];
+    });
 
-    const ws = new WebSocket(url)
-    wsRef.current = ws
-    let duplicateRunDetected = false
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+    let duplicateRunDetected = false;
 
     // Connection timeout (15 seconds)
     const connectionTimeout = setTimeout(() => {
       if (ws.readyState !== WebSocket.OPEN) {
-        ws.close()
-        setResearchError('连接超时，请检查后端服务是否正常运行')
-        alert(`Deep Research 连接超时: ${url}`)
-        setResearchRunning(false)
-        setIsChatting(false)
+        ws.close();
+        setResearchError("连接超时，请检查后端服务是否正常运行");
+        alert(`Deep Research 连接超时: ${url}`);
+        setResearchRunning(false);
+        setIsChatting(false);
       }
-    }, 15000)
+    }, 15000);
 
     // Research timeout (90 minutes max for complex topics)
     const researchTimeout = setTimeout(() => {
       if (wsRef.current === ws && ws.readyState === WebSocket.OPEN) {
-        ws.close()
-        setResearchError('研究超时 - 请尝试使用更简单的主题或较少的研究深度')
-        alert('Deep Research 研究超时')
-        setResearchRunning(false)
-        setIsChatting(false)
+        ws.close();
+        setResearchError("研究超时 - 请尝试使用更简单的主题或较少的研究深度");
+        alert("Deep Research 研究超时");
+        setResearchRunning(false);
+        setIsChatting(false);
       }
-    }, 5400000)
+    }, 5400000);
 
     ws.onopen = () => {
-      clearTimeout(connectionTimeout)
-      console.log('Deep Research WS Connected')
-      const baseTools = ragEnabled ? enabledTools : enabledTools.filter(tool => tool !== 'RAG')
-      const toolsToUse = Array.from(new Set(['Web', ...baseTools]))
+      clearTimeout(connectionTimeout);
+      console.log("Deep Research WS Connected");
+      const baseTools = ragEnabled
+        ? enabledTools
+        : enabledTools.filter((tool) => tool !== "RAG");
+      const toolsToUse = Array.from(new Set(["Web", ...baseTools]));
       ws.send(
         JSON.stringify({
           topic: researchTopicToUse,
@@ -2945,255 +3208,280 @@ export default function NotebookDetailPage() {
           skip_rephrase: !enableOptimization,
           notebook_id: notebookId,
           session_id: activeSessionId,
-        })
-      )
-    }
+        }),
+      );
+    };
 
-    ws.onmessage = event => {
+    ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data)
-        if (data.type === 'result') {
-          clearTimeout(researchTimeout)
-          const report = data.report || ''
-          applyResearchResult(report, data.metadata, researchTopicToUse, data.research_id)
-        } else if (data.type === 'report_path') {
-          const path = typeof data.path === 'string' ? data.path : ''
-          const filename = path.split(/[\\\\/]/).pop()
+        const data = JSON.parse(event.data);
+        if (data.type === "result") {
+          clearTimeout(researchTimeout);
+          const report = data.report || "";
+          applyResearchResult(
+            report,
+            data.metadata,
+            researchTopicToUse,
+            data.research_id,
+          );
+        } else if (data.type === "report_path") {
+          const path = typeof data.path === "string" ? data.path : "";
+          const filename = path.split(/[\\\\/]/).pop();
           if (filename) {
-            const reportUrl = `/api/outputs/research/reports/${filename}`
+            const reportUrl = `/api/outputs/research/reports/${filename}`;
             void (async () => {
-              const reportText = await fetchReportText(reportUrl)
+              const reportText = await fetchReportText(reportUrl);
               if (reportText) {
-                const topic = researchTopicToUse || researchTopic || searchQuery || ''
+                const topic =
+                  researchTopicToUse || researchTopic || searchQuery || "";
                 applyResearchResult(
                   reportText,
                   null,
                   topic,
-                  activeResearchIdRef.current || undefined
-                )
+                  activeResearchIdRef.current || undefined,
+                );
               }
-            })()
+            })();
           }
-        } else if (data.type === 'error') {
-          clearTimeout(researchTimeout)
-          console.error('Deep Research Error:', data)
-          setResearchError(data.content || data.message || '研究过程中发生错误')
-          setResearchRunning(false)
-          setIsChatting(false)
-          setResearchPhase('idle')
-          setPendingResearchRecovery(false)
+        } else if (data.type === "error") {
+          clearTimeout(researchTimeout);
+          console.error("Deep Research Error:", data);
+          setResearchError(
+            data.content || data.message || "研究过程中发生错误",
+          );
+          setResearchRunning(false);
+          setIsChatting(false);
+          setResearchPhase("idle");
+          setPendingResearchRecovery(false);
           // Update chat with error
-          setChatMessages(prev =>
-            prev.map(msg =>
+          setChatMessages((prev) =>
+            prev.map((msg) =>
               msg.isStreaming
                 ? {
                     ...msg,
                     content: `❌ 研究失败: ${data.content || data.message}`,
                     isStreaming: false,
                   }
-                : msg
-            )
-          )
-          scheduleSessionSave(true)
-        } else if (data.type === 'progress') {
+                : msg,
+            ),
+          );
+          scheduleSessionSave(true);
+        } else if (data.type === "progress") {
           // Handle progress events from backend
-          const stage = data.stage as 'planning' | 'researching' | 'reporting'
+          const stage = data.stage as "planning" | "researching" | "reporting";
           if (stage) {
-            setResearchPhase(stage)
+            setResearchPhase(stage);
           }
 
           // Update progress based on status
-          const status = data.status as string
+          const status = data.status as string;
 
-          if (status === 'planning_started') {
-            setResearchPhase('planning')
+          if (status === "planning_started") {
+            setResearchPhase("planning");
             // total = 3 (planning) + 0 (N unknown) + 3 (reporting estimate)
-            setGlobalProgress({ completed: 0, total: 3 + 0 + 3 })
-            updateStreamingMessage('📋 正在分析研究主题...')
-          } else if (status === 'rephrase_completed' || status === 'rephrase_skipped') {
-            setGlobalProgress(prev => ({
+            setGlobalProgress({ completed: 0, total: 3 + 0 + 3 });
+            updateStreamingMessage("📋 正在分析研究主题...");
+          } else if (
+            status === "rephrase_completed" ||
+            status === "rephrase_skipped"
+          ) {
+            setGlobalProgress((prev) => ({
               ...prev,
               completed: prev.completed + 1,
-            }))
-          } else if (status === 'decompose_completed') {
-            const totalBlocks = data.generated_subtopics || data.total_blocks || 0
-            setResearchProgress({ current: 0, total: totalBlocks })
+            }));
+          } else if (status === "decompose_completed") {
+            const totalBlocks =
+              data.generated_subtopics || data.total_blocks || 0;
+            setResearchProgress({ current: 0, total: totalBlocks });
             // N is now known, update total = 3 (planning) + N (researching) + 3 (reporting estimate)
-            setGlobalProgress(prev => ({
+            setGlobalProgress((prev) => ({
               completed: prev.completed + 1,
               total: 3 + totalBlocks + 3,
-            }))
-            updateStreamingMessage(`📋 已分解为 ${totalBlocks} 个子主题`)
-          } else if (status === 'planning_completed') {
-            setGlobalProgress(prev => ({
+            }));
+            updateStreamingMessage(`📋 已分解为 ${totalBlocks} 个子主题`);
+          } else if (status === "planning_completed") {
+            setGlobalProgress((prev) => ({
               ...prev,
               completed: prev.completed + 1,
-            }))
-          } else if (status === 'researching_started') {
-            setResearchPhase('researching')
-            const totalBlocks = data.total_blocks || researchProgress.total
-            setResearchProgress(prev => ({ ...prev, total: totalBlocks }))
-            updateStreamingMessage(`🔬 开始深度研究 (${totalBlocks} 个子主题)...`)
-          } else if (status === 'block_started') {
-            const currentBlock = data.current_block || researchProgress.current + 1
-            const totalBlocks = data.total_blocks || researchProgress.total
-            setResearchProgress({ current: currentBlock, total: totalBlocks })
-            setCurrentSubTopic(data.sub_topic || '')
+            }));
+          } else if (status === "researching_started") {
+            setResearchPhase("researching");
+            const totalBlocks = data.total_blocks || researchProgress.total;
+            setResearchProgress((prev) => ({ ...prev, total: totalBlocks }));
             updateStreamingMessage(
-              `🔬 正在研究 (${currentBlock}/${totalBlocks}): ${data.sub_topic || ''}`
-            )
+              `🔬 开始深度研究 (${totalBlocks} 个子主题)...`,
+            );
+          } else if (status === "block_started") {
+            const currentBlock =
+              data.current_block || researchProgress.current + 1;
+            const totalBlocks = data.total_blocks || researchProgress.total;
+            setResearchProgress({ current: currentBlock, total: totalBlocks });
+            setCurrentSubTopic(data.sub_topic || "");
+            updateStreamingMessage(
+              `🔬 正在研究 (${currentBlock}/${totalBlocks}): ${data.sub_topic || ""}`,
+            );
 
             // Calculate ETA
             if (researchStartTime && currentBlock > 0 && totalBlocks > 0) {
-              const progressPercentage = (currentBlock / totalBlocks) * 100
-              const elapsed = Date.now() - researchStartTime
-              const estimatedTotal = elapsed / (progressPercentage / 100)
-              const remaining = estimatedTotal - elapsed
+              const progressPercentage = (currentBlock / totalBlocks) * 100;
+              const elapsed = Date.now() - researchStartTime;
+              const estimatedTotal = elapsed / (progressPercentage / 100);
+              const remaining = estimatedTotal - elapsed;
               if (remaining > 0) {
-                const minutes = Math.floor(remaining / 60000)
-                const seconds = Math.floor((remaining % 60000) / 1000)
-                setEstimatedTimeRemaining(`${minutes}分${seconds}秒`)
+                const minutes = Math.floor(remaining / 60000);
+                const seconds = Math.floor((remaining % 60000) / 1000);
+                setEstimatedTimeRemaining(`${minutes}分${seconds}秒`);
               }
             }
-          } else if (status === 'block_completed') {
-            const currentBlock = data.current_block || researchProgress.current
-            const totalBlocks = data.total_blocks || researchProgress.total
-            setResearchProgress({ current: currentBlock, total: totalBlocks })
-            setGlobalProgress(prev => ({
+          } else if (status === "block_completed") {
+            const currentBlock = data.current_block || researchProgress.current;
+            const totalBlocks = data.total_blocks || researchProgress.total;
+            setResearchProgress({ current: currentBlock, total: totalBlocks });
+            setGlobalProgress((prev) => ({
               ...prev,
               completed: prev.completed + 1,
-            }))
-          } else if (status === 'rag_degraded') {
-            const degradedTopic = data.sub_topic || currentSubTopic || '当前子主题'
-            updateStreamingMessage(`⚠️ ${degradedTopic} 在知识库中命中不足，已切换到联网检索`)
-          } else if (status === 'researching_completed') {
+            }));
+          } else if (status === "rag_degraded") {
+            const degradedTopic =
+              data.sub_topic || currentSubTopic || "当前子主题";
+            updateStreamingMessage(
+              `⚠️ ${degradedTopic} 在知识库中命中不足，已切换到联网检索`,
+            );
+          } else if (status === "researching_completed") {
             // No extra action needed, total already set
-          } else if (status === 'reporting_started') {
-            setResearchPhase('reporting')
-            setCurrentSubTopic('')
-            updateStreamingMessage('📝 正在生成研究报告...')
-          } else if (status === 'deduplicate_completed') {
-            setGlobalProgress(prev => ({
+          } else if (status === "reporting_started") {
+            setResearchPhase("reporting");
+            setCurrentSubTopic("");
+            updateStreamingMessage("📝 正在生成研究报告...");
+          } else if (status === "deduplicate_completed") {
+            setGlobalProgress((prev) => ({
               ...prev,
               completed: prev.completed + 1,
-            }))
-          } else if (status === 'outline_completed') {
-            const totalSections = data.sections || 0
+            }));
+          } else if (status === "outline_completed") {
+            const totalSections = data.sections || 0;
             // M is now known, update total = 3 (planning) + N (researching) + 2 + M + 1 (reporting)
-            setGlobalProgress(prev => {
-              const planningSteps = 3
-              const researchingSteps = prev.total - planningSteps - 3 // subtract old reporting estimate
-              const newReportingSteps = 2 + totalSections + 1
+            setGlobalProgress((prev) => {
+              const planningSteps = 3;
+              const researchingSteps = prev.total - planningSteps - 3; // subtract old reporting estimate
+              const newReportingSteps = 2 + totalSections + 1;
               return {
                 completed: prev.completed + 1,
                 total: planningSteps + researchingSteps + newReportingSteps,
-              }
-            })
-          } else if (status === 'writing_section') {
-            const section = data.section_title || data.section || ''
-            setGlobalProgress(prev => ({
+              };
+            });
+          } else if (status === "writing_section") {
+            const section = data.section_title || data.section || "";
+            setGlobalProgress((prev) => ({
               ...prev,
               completed: prev.completed + 1,
-            }))
-            updateStreamingMessage(`📝 正在撰写: ${section}`)
-          } else if (status === 'writing_completed') {
-            setGlobalProgress(prev => ({
+            }));
+            updateStreamingMessage(`📝 正在撰写: ${section}`);
+          } else if (status === "writing_completed") {
+            setGlobalProgress((prev) => ({
               ...prev,
               completed: prev.completed + 1,
-            }))
-          } else if (status === 'reporting_completed') {
+            }));
+          } else if (status === "reporting_completed") {
             // Ensure 100%
-            setGlobalProgress(prev => ({ ...prev, completed: prev.total }))
+            setGlobalProgress((prev) => ({ ...prev, completed: prev.total }));
           }
-        } else if (data.type === 'status') {
+        } else if (data.type === "status") {
           // Handle status updates
           if (data.research_id) {
-            setActiveResearchId(data.research_id)
+            setActiveResearchId(data.research_id);
           }
-          if (data.content === 'started') {
-            setResearchPhase('planning')
-            updateStreamingMessage('🚀 深度研究已启动...')
-          } else if (data.content === 'already_running') {
-            duplicateRunDetected = true
-            updateStreamingMessage('🔄 检测到已有深度研究任务，正在恢复状态...')
-            void recoverResearchIfNeeded('already-running')
+          if (data.content === "started") {
+            setResearchPhase("planning");
+            updateStreamingMessage("🚀 深度研究已启动...");
+          } else if (data.content === "already_running") {
+            duplicateRunDetected = true;
+            updateStreamingMessage(
+              "🔄 检测到已有深度研究任务，正在恢复状态...",
+            );
+            void recoverResearchIfNeeded("already-running");
           }
         }
         // Silently ignore "log" and "ping" types
       } catch (e) {
-        console.error('Deep research parse error:', e)
+        console.error("Deep research parse error:", e);
       }
-    }
+    };
 
     // Helper function to update the streaming message
     const updateStreamingMessage = (content: string) => {
-      setChatMessages(prev => prev.map(msg => (msg.isStreaming ? { ...msg, content } : msg)))
-    }
+      setChatMessages((prev) =>
+        prev.map((msg) => (msg.isStreaming ? { ...msg, content } : msg)),
+      );
+    };
 
-    ws.onerror = e => {
-      clearTimeout(connectionTimeout)
-      clearTimeout(researchTimeout)
-      console.error('Deep Research WS Error:', e)
-      setResearchError('WebSocket 连接失败，请检查网络或后端服务')
-      alert(`Deep Research WebSocket 错误: 连接失败 ${url}`)
-      setResearchRunning(false)
-      setIsChatting(false)
-      setChatMessages(prev =>
-        prev.map(msg =>
-          msg.isStreaming ? { ...msg, content: '❌ 研究连接失败', isStreaming: false } : msg
-        )
-      )
-    }
+    ws.onerror = (e) => {
+      clearTimeout(connectionTimeout);
+      clearTimeout(researchTimeout);
+      console.error("Deep Research WS Error:", e);
+      setResearchError("WebSocket 连接失败，请检查网络或后端服务");
+      alert(`Deep Research WebSocket 错误: 连接失败 ${url}`);
+      setResearchRunning(false);
+      setIsChatting(false);
+      setChatMessages((prev) =>
+        prev.map((msg) =>
+          msg.isStreaming
+            ? { ...msg, content: "❌ 研究连接失败", isStreaming: false }
+            : msg,
+        ),
+      );
+    };
 
     ws.onclose = () => {
-      clearTimeout(connectionTimeout)
-      clearTimeout(researchTimeout)
-      setResearchRunning(false)
-      setIsChatting(false)
+      clearTimeout(connectionTimeout);
+      clearTimeout(researchTimeout);
+      setResearchRunning(false);
+      setIsChatting(false);
 
       // If connection closes while still streaming (no result received), mark as failed
-      setChatMessages(prev => {
-        const hasStreaming = prev.some(msg => msg.isStreaming)
+      setChatMessages((prev) => {
+        const hasStreaming = prev.some((msg) => msg.isStreaming);
         if (hasStreaming) {
-          return prev.map(msg =>
+          return prev.map((msg) =>
             msg.isStreaming
               ? {
                   ...msg,
                   content: duplicateRunDetected
-                    ? '🔄 已检测到同会话进行中的深度研究，正在尝试恢复结果...'
-                    : msg.content + '\n\n[连接断开，未收到完整报告。请尝试刷新页面。]',
+                    ? "🔄 已检测到同会话进行中的深度研究，正在尝试恢复结果..."
+                    : msg.content +
+                      "\n\n[连接断开，未收到完整报告。请尝试刷新页面。]",
                   isStreaming: false,
                 }
-              : msg
-          )
+              : msg,
+          );
         }
-        return prev
-      })
-      scheduleSessionSave(true, activeSessionId)
+        return prev;
+      });
+      scheduleSessionSave(true, activeSessionId);
       if (pendingRecoveryRef.current) {
         setTimeout(() => {
-          void recoverResearchIfNeeded('ws-close')
-        }, 1500)
+          void recoverResearchIfNeeded("ws-close");
+        }, 1500);
       }
-    }
-  }
+    };
+  };
 
   // Export functions
   const getExportMarkdown = async () => {
-    if (exportContentSource === 'research') {
-      return researchReport
+    if (exportContentSource === "research") {
+      return researchReport;
     }
 
     if (selectedSourcesList.length === 0) {
-      alert('请先选择来源')
-      return ''
+      alert("请先选择来源");
+      return "";
     }
 
-    const res = await fetch(apiUrl('/api/v1/research/compose_from_sources'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await fetch(apiUrl("/api/v1/research/compose_from_sources"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sources: selectedSourcesList.map(source => ({
+        sources: selectedSourcesList.map((source) => ({
           type: source.type,
           title: source.title,
           url: source.url,
@@ -3201,114 +3489,128 @@ export default function NotebookDetailPage() {
         })),
         topic: notebook?.name || undefined,
       }),
-    })
+    });
 
-    if (!res.ok) throw new Error('生成失败')
+    if (!res.ok) throw new Error("生成失败");
 
-    const data = await res.json()
-    return data.markdown || ''
-  }
+    const data = await res.json();
+    return data.markdown || "";
+  };
 
-  const resolvePodcastAudioUrl = (audioUrl: string | undefined, audioId: string) => {
-    if (audioUrl?.startsWith('http')) return audioUrl
-    if (audioUrl) return apiUrl(audioUrl)
-    return apiUrl(`/api/v1/co_writer/stream_audio/${audioId}`)
-  }
+  const resolvePodcastAudioUrl = (
+    audioUrl: string | undefined,
+    audioId: string,
+  ) => {
+    if (audioUrl?.startsWith("http")) return audioUrl;
+    if (audioUrl) return apiUrl(audioUrl);
+    return apiUrl(`/api/v1/co_writer/stream_audio/${audioId}`);
+  };
 
   const waitWithAbort = (ms: number, signal?: AbortSignal): Promise<void> =>
     new Promise((resolve, reject) => {
       if (signal?.aborted) {
-        reject(new DOMException('Operation aborted', 'AbortError'))
-        return
+        reject(new DOMException("Operation aborted", "AbortError"));
+        return;
       }
       const onAbort = () => {
-        window.clearTimeout(timer)
-        signal?.removeEventListener('abort', onAbort)
-        reject(new DOMException('Operation aborted', 'AbortError'))
-      }
+        window.clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        reject(new DOMException("Operation aborted", "AbortError"));
+      };
       const timer = window.setTimeout(() => {
-        signal?.removeEventListener('abort', onAbort)
-        resolve()
-      }, ms)
-      signal?.addEventListener('abort', onAbort, { once: true })
-    })
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, ms);
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
 
   const waitForAudioReady = useCallback(
     async (
       audioId: string,
       streamUrl: string,
       maxPolls = 100,
-      signal?: AbortSignal
+      signal?: AbortSignal,
     ): Promise<{ audioUrl: string; blobUrl: string }> => {
       for (let i = 0; i < maxPolls; i++) {
-        await waitWithAbort(3000, signal)
+        await waitWithAbort(3000, signal);
 
         try {
           if (signal?.aborted) {
-            throw new DOMException('Operation aborted', 'AbortError')
+            throw new DOMException("Operation aborted", "AbortError");
           }
-          const statusRes = await fetch(apiUrl(`/api/v1/co_writer/audio_status/${audioId}`), {
-            signal,
-          })
+          const statusRes = await fetch(
+            apiUrl(`/api/v1/co_writer/audio_status/${audioId}`),
+            {
+              signal,
+            },
+          );
           if (!statusRes.ok) {
-            throw new Error(`音频状态查询失败: HTTP ${statusRes.status}`)
+            throw new Error(`音频状态查询失败: HTTP ${statusRes.status}`);
           }
 
-          const statusData = await statusRes.json()
-          if (statusData.status === 'ready') {
-            const audioRes = await fetch(streamUrl, { signal })
+          const statusData = await statusRes.json();
+          if (statusData.status === "ready") {
+            const audioRes = await fetch(streamUrl, { signal });
             if (!audioRes.ok) {
-              const fetchErr: any = new Error(`音频获取失败: HTTP ${audioRes.status}`)
-              fetchErr.fatal = true
-              throw fetchErr
+              const fetchErr: any = new Error(
+                `音频获取失败: HTTP ${audioRes.status}`,
+              );
+              fetchErr.fatal = true;
+              throw fetchErr;
             }
-            const audioBlob = await audioRes.blob()
-            const blobUrl = URL.createObjectURL(audioBlob)
-            return { audioUrl: streamUrl, blobUrl }
+            const audioBlob = await audioRes.blob();
+            const blobUrl = URL.createObjectURL(audioBlob);
+            return { audioUrl: streamUrl, blobUrl };
           }
-          if (statusData.status === 'failed') {
-            const failedErr: any = new Error(statusData.error || '音频生成失败')
-            failedErr.fatal = true
-            throw failedErr
+          if (statusData.status === "failed") {
+            const failedErr: any = new Error(
+              statusData.error || "音频生成失败",
+            );
+            failedErr.fatal = true;
+            throw failedErr;
           }
-          if (statusData.status === 'not_found') {
-            const missingErr: any = new Error('音频任务不存在或已过期，请重新生成')
-            missingErr.fatal = true
-            throw missingErr
+          if (statusData.status === "not_found") {
+            const missingErr: any = new Error(
+              "音频任务不存在或已过期，请重新生成",
+            );
+            missingErr.fatal = true;
+            throw missingErr;
           }
         } catch (statusErr: any) {
-          if (statusErr?.name === 'AbortError') {
-            throw statusErr
+          if (statusErr?.name === "AbortError") {
+            throw statusErr;
           }
           if (statusErr?.fatal) {
-            throw statusErr
+            throw statusErr;
           }
           if (i === maxPolls - 1) {
-            throw new Error('音频状态查询失败，请稍后重试')
+            throw new Error("音频状态查询失败，请稍后重试");
           }
         }
       }
 
-      throw new Error('音频生成超时，请稍后重试')
+      throw new Error("音频生成超时，请稍后重试");
     },
-    []
-  )
+    [],
+  );
 
   const getSelectedPptStylePrompt = () => {
-    const selected = pptStyleTemplates.find(tmpl => tmpl.id === selectedPptStyleId)
-    return selected?.prompt || ''
-  }
+    const selected = pptStyleTemplates.find(
+      (tmpl) => tmpl.id === selectedPptStyleId,
+    );
+    return selected?.prompt || "";
+  };
 
   const getSourcesStylePrompt = async () => {
     if (selectedSourcesList.length === 0) {
-      alert('请先选择来源以生成风格')
-      return ''
+      alert("请先选择来源以生成风格");
+      return "";
     }
-    const res = await fetch(apiUrl('/api/v1/research/ppt_style_from_sources'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await fetch(apiUrl("/api/v1/research/ppt_style_from_sources"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sources: selectedSourcesList.map(source => ({
+        sources: selectedSourcesList.map((source) => ({
           type: source.type,
           title: source.title,
           url: source.url,
@@ -3316,396 +3618,404 @@ export default function NotebookDetailPage() {
         })),
         topic: notebook?.name || undefined,
       }),
-    })
-    if (!res.ok) throw new Error('生成失败')
-    const data = await res.json()
-    return data.style_prompt || ''
-  }
+    });
+    if (!res.ok) throw new Error("生成失败");
+    const data = await res.json();
+    return data.style_prompt || "";
+  };
 
-  const getPromptForSource = async (source: 'preset' | 'sources') => {
-    if (source === 'preset') {
-      return getSelectedPptStylePrompt()
+  const getPromptForSource = async (source: "preset" | "sources") => {
+    if (source === "preset") {
+      return getSelectedPptStylePrompt();
     }
-    return getSourcesStylePrompt()
-  }
+    return getSourcesStylePrompt();
+  };
 
   const getPptStylePrompt = async () => {
-    if (pptStyleMode === 'preset') {
-      return getPromptForSource('preset')
+    if (pptStyleMode === "preset") {
+      return getPromptForSource("preset");
     }
 
-    if (pptStyleMode === 'sources') {
-      return getPromptForSource('sources')
+    if (pptStyleMode === "sources") {
+      return getPromptForSource("sources");
     }
 
-    return ''
-  }
+    return "";
+  };
 
   const handlePreviewPptStyle = async () => {
-    if (pptStyleMode === 'template') {
-      setPptStylePreviewError('模板模式暂不支持风格预览')
-      return
+    if (pptStyleMode === "template") {
+      setPptStylePreviewError("模板模式暂不支持风格预览");
+      return;
     }
 
-    setPptStylePreviewLoading(true)
-    setPptStylePreviewError('')
+    setPptStylePreviewLoading(true);
+    setPptStylePreviewError("");
     try {
-      const stylePrompt = await getPptStylePrompt()
-      if (pptStyleMode === 'preset' && !stylePrompt) {
-        alert('请选择风格模板')
-        return
+      const stylePrompt = await getPptStylePrompt();
+      if (pptStyleMode === "preset" && !stylePrompt) {
+        alert("请选择风格模板");
+        return;
       }
-      if (pptStyleMode === 'sources' && !stylePrompt) {
-        return
+      if (pptStyleMode === "sources" && !stylePrompt) {
+        return;
       }
 
-      const res = await fetch(apiUrl('/api/v1/research/ppt_style_preview'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch(apiUrl("/api/v1/research/ppt_style_preview"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           style_prompt: stylePrompt || undefined,
         }),
-      })
+      });
 
-      if (!res.ok) throw new Error('预览失败')
-      const data = await res.json()
-      setPptStylePreviewSvg(data.preview_svg || '')
+      if (!res.ok) throw new Error("预览失败");
+      const data = await res.json();
+      setPptStylePreviewSvg(data.preview_svg || "");
     } catch (err) {
-      console.error('PPT style preview failed:', err)
-      setPptStylePreviewError('风格预览失败')
+      console.error("PPT style preview failed:", err);
+      setPptStylePreviewError("风格预览失败");
     } finally {
-      setPptStylePreviewLoading(false)
+      setPptStylePreviewLoading(false);
     }
-  }
+  };
 
   const resetPptPreview = () => {
-    setPptPreviewOpen(false)
-    setPptOutline(null)
-    setPptGeneratingIndices([])
-    setPptImageProgress({ current: 0, total: 0 })
-  }
+    setPptPreviewOpen(false);
+    setPptOutline(null);
+    setPptGeneratingIndices([]);
+    setPptImageProgress({ current: 0, total: 0 });
+  };
 
   const handleUpdatePptSlide = (index: number, updatedSlide: SlideContent) => {
-    setPptOutline(prev => {
-      if (!prev) return prev
-      const nextSlides = [...prev.slides]
-      nextSlides[index] = updatedSlide
-      return { ...prev, slides: nextSlides }
-    })
-  }
+    setPptOutline((prev) => {
+      if (!prev) return prev;
+      const nextSlides = [...prev.slides];
+      nextSlides[index] = updatedSlide;
+      return { ...prev, slides: nextSlides };
+    });
+  };
 
   const handleDownloadPptx = async () => {
-    if (!pptOutline) return
-    setIsPptExporting(true)
+    if (!pptOutline) return;
+    setIsPptExporting(true);
     try {
-      await exportToPptx(pptOutline)
+      await exportToPptx(pptOutline);
     } catch (err) {
-      console.error('PPTX export failed:', err)
+      console.error("PPTX export failed:", err);
     } finally {
-      setIsPptExporting(false)
+      setIsPptExporting(false);
     }
-  }
+  };
 
   const handleExportPdf = async () => {
-    setIsExporting(true)
+    setIsExporting(true);
     try {
-      const markdown = await getExportMarkdown()
+      const markdown = await getExportMarkdown();
       if (!markdown) {
-        alert('没有可导出的内容')
-        return
+        alert("没有可导出的内容");
+        return;
       }
 
-      const res = await fetch(apiUrl('/api/v1/research/export_pdf'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch(apiUrl("/api/v1/research/export_pdf"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           markdown,
           title: notebook?.name || undefined,
         }),
-      })
+      });
 
-      if (!res.ok) throw new Error('导出失败')
+      if (!res.ok) throw new Error("导出失败");
 
-      const data = await res.json()
+      const data = await res.json();
       if (data.download_url) {
-        const a = document.createElement('a')
-        a.href = apiUrl(data.download_url)
-        a.download = data.filename || `${notebook?.name}.pdf`
-        a.click()
+        const a = document.createElement("a");
+        a.href = apiUrl(data.download_url);
+        a.download = data.filename || `${notebook?.name}.pdf`;
+        a.click();
       }
     } catch (err) {
-      console.error('PDF export failed:', err)
+      console.error("PDF export failed:", err);
     } finally {
-      setIsExporting(false)
+      setIsExporting(false);
     }
-  }
+  };
 
   const handleExportPptx = async () => {
     if (!bananaPptEnabled) {
-      alert('PPT 功能未启用')
-      return
+      alert("PPT 功能未启用");
+      return;
     }
-    if (pptStyleMode === 'template') {
-      alert('模板模式暂不支持 Banana PPT')
-      return
+    if (pptStyleMode === "template") {
+      alert("模板模式暂不支持 Banana PPT");
+      return;
     }
 
-    setIsPptGenerating(true)
-    setPptOutline(null)
-    setPptImageProgress({ current: 0, total: 0 })
-    setPptPreviewOpen(true)
+    setIsPptGenerating(true);
+    setPptOutline(null);
+    setPptImageProgress({ current: 0, total: 0 });
+    setPptPreviewOpen(true);
     try {
-      const markdown = await getExportMarkdown()
-      if (!markdown) return
+      const markdown = await getExportMarkdown();
+      if (!markdown) return;
 
-      const stylePrompt = await getPptStylePrompt()
-      if (pptStyleMode === 'preset' && !stylePrompt) {
-        alert('请选择风格模板')
-        return
+      const stylePrompt = await getPptStylePrompt();
+      if (pptStyleMode === "preset" && !stylePrompt) {
+        alert("请选择风格模板");
+        return;
       }
-      if (pptStyleMode === 'sources' && !stylePrompt) {
-        return
+      if (pptStyleMode === "sources" && !stylePrompt) {
+        return;
       }
 
-      const res = await fetch(apiUrl('/api/v1/research/ppt_outline'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch(apiUrl("/api/v1/research/ppt_outline"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           source_content: markdown,
           style_prompt: stylePrompt || undefined,
           max_slides: bananaPptMaxSlides,
         }),
-      })
+      });
 
-      if (!res.ok) throw new Error('生成失败')
+      if (!res.ok) throw new Error("生成失败");
 
-      const outline = (await res.json()) as PresentationOutline
-      setPptOutline(outline)
-      setPptPreviewOpen(true)
+      const outline = (await res.json()) as PresentationOutline;
+      setPptOutline(outline);
+      setPptPreviewOpen(true);
 
-      const slides = outline.slides || []
+      const slides = outline.slides || [];
       const slidesWithImages = slides
         .map((slide, index) => ({ slide, index }))
-        .filter(item => item.slide.imagePrompt)
-      const totalImages = slidesWithImages.length
-      setPptImageProgress({ current: 0, total: totalImages })
+        .filter((item) => item.slide.imagePrompt);
+      const totalImages = slidesWithImages.length;
+      setPptImageProgress({ current: 0, total: totalImages });
 
       if (!totalImages) {
-        setPptGeneratingIndices([])
-        return
+        setPptGeneratingIndices([]);
+        return;
       }
 
-      const updatedSlides = [...slides]
-      let generatedCount = 0
+      const updatedSlides = [...slides];
+      let generatedCount = 0;
 
-      const concurrency = Math.min(3, slidesWithImages.length)
-      let cursor = 0
+      const concurrency = Math.min(3, slidesWithImages.length);
+      let cursor = 0;
 
       const startSlide = (index: number) => {
-        setPptGeneratingIndices(prev => (prev.includes(index) ? prev : [...prev, index]))
-      }
+        setPptGeneratingIndices((prev) =>
+          prev.includes(index) ? prev : [...prev, index],
+        );
+      };
 
       const finishSlide = (index: number) => {
-        setPptGeneratingIndices(prev => prev.filter(i => i !== index))
-      }
+        setPptGeneratingIndices((prev) => prev.filter((i) => i !== index));
+      };
 
       const runWorker = async () => {
         while (cursor < slidesWithImages.length) {
-          const current = slidesWithImages[cursor]
-          cursor += 1
-          const slideIndex = current.index
+          const current = slidesWithImages[cursor];
+          cursor += 1;
+          const slideIndex = current.index;
 
-          startSlide(slideIndex)
+          startSlide(slideIndex);
           try {
-            const imageRes = await fetch(apiUrl('/api/v1/research/ppt_image'), {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+            const imageRes = await fetch(apiUrl("/api/v1/research/ppt_image"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ prompt: current.slide.imagePrompt }),
-            })
+            });
             if (imageRes.ok) {
-              const imageData = await imageRes.json()
+              const imageData = await imageRes.json();
               if (imageData.image_data_url) {
                 // Use the latest slide data from updatedSlides, not the stale closure reference
                 updatedSlides[slideIndex] = {
                   ...updatedSlides[slideIndex],
                   generatedImageUrl: imageData.image_data_url,
-                }
+                };
                 console.log(
-                  `[PPT] Image loaded for slide ${slideIndex}, data length: ${imageData.image_data_url.length}`
-                )
+                  `[PPT] Image loaded for slide ${slideIndex}, data length: ${imageData.image_data_url.length}`,
+                );
               }
             }
           } catch (err) {
-            console.error('PPT image generation failed:', err)
+            console.error("PPT image generation failed:", err);
           } finally {
-            finishSlide(slideIndex)
-            generatedCount += 1
+            finishSlide(slideIndex);
+            generatedCount += 1;
             setPptImageProgress({
               current: generatedCount,
               total: totalImages,
-            })
-            setPptOutline(prev => (prev ? { ...prev, slides: [...updatedSlides] } : prev))
+            });
+            setPptOutline((prev) =>
+              prev ? { ...prev, slides: [...updatedSlides] } : prev,
+            );
           }
         }
-      }
+      };
 
-      await Promise.all(Array.from({ length: concurrency }, () => runWorker()))
+      await Promise.all(Array.from({ length: concurrency }, () => runWorker()));
     } catch (err) {
-      console.error('PPT outline generation failed:', err)
-      resetPptPreview()
+      console.error("PPT outline generation failed:", err);
+      resetPptPreview();
     } finally {
-      setPptGeneratingIndices([])
-      setIsPptGenerating(false)
+      setPptGeneratingIndices([]);
+      setIsPptGenerating(false);
     }
-  }
+  };
 
   const handleGenerateMindmap = async () => {
-    setIsExporting(true)
+    setIsExporting(true);
     try {
-      const markdown = await getExportMarkdown()
-      if (!markdown) return
+      const markdown = await getExportMarkdown();
+      if (!markdown) return;
 
-      const res = await fetch(apiUrl('/api/v1/research/export_mindmap'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch(apiUrl("/api/v1/research/export_mindmap"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           markdown,
           use_llm: false,
         }),
-      })
+      });
 
-      if (!res.ok) throw new Error('生成失败')
+      if (!res.ok) throw new Error("生成失败");
 
-      const data = await res.json()
-      setMindmapCode(data.mindmap || '')
-      setStudioMode('mindmap')
+      const data = await res.json();
+      setMindmapCode(data.mindmap || "");
+      setStudioMode("mindmap");
     } catch (err) {
-      console.error('Mindmap generation failed:', err)
+      console.error("Mindmap generation failed:", err);
     } finally {
-      setIsExporting(false)
+      setIsExporting(false);
     }
-  }
+  };
 
   const handleGeneratePodcast = async () => {
-    setIsGeneratingAudio(true)
-    setAudioError(null)
-    recoveringAudioIdRef.current = null
-    setAudioResult(null)
+    setIsGeneratingAudio(true);
+    setAudioError(null);
+    recoveringAudioIdRef.current = null;
+    setAudioResult(null);
     // Clean up previous blob URL
     if (audioBlobUrl) {
-      URL.revokeObjectURL(audioBlobUrl)
-      setAudioBlobUrl(null)
+      URL.revokeObjectURL(audioBlobUrl);
+      setAudioBlobUrl(null);
     }
     try {
-      const markdown = await getExportMarkdown()
+      const markdown = await getExportMarkdown();
       if (!markdown) {
-        setIsGeneratingAudio(false)
-        return
+        setIsGeneratingAudio(false);
+        return;
       }
 
       // Step 1: Trigger narration (returns quickly, audio generated in background)
-      const res = await fetch(apiUrl('/api/v1/co_writer/narrate'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch(apiUrl("/api/v1/co_writer/narrate"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: markdown,
-          style: 'friendly',
+          style: "friendly",
           skip_audio: false,
           podcast_config: {
             speakers: [podcastSpeakerA, podcastSpeakerB],
             speech_rate: podcastSpeechRate,
           },
         }),
-      })
+      });
 
       if (!res.ok) {
-        const detail = await res.text()
-        throw new Error(detail || `HTTP ${res.status}`)
+        const detail = await res.text();
+        throw new Error(detail || `HTTP ${res.status}`);
       }
 
-      const data = await res.json()
+      const data = await res.json();
       if (!data.has_audio || !data.audio_id) {
-        throw new Error(data.audio_error || '音频生成失败')
+        throw new Error(data.audio_error || "音频生成失败");
       }
 
-      const audioId = data.audio_id
-      const streamUrl = resolvePodcastAudioUrl(data.audio_url, audioId)
+      const audioId = data.audio_id;
+      const streamUrl = resolvePodcastAudioUrl(data.audio_url, audioId);
 
       // Persist task identity immediately so refresh can continue polling with same audio_id.
-      recoveringAudioIdRef.current = audioId
-      setAudioResult({ audioId })
-      setStudioMode('podcast')
-      setHasSessionActivity(true)
-      scheduleSessionSave(true)
+      recoveringAudioIdRef.current = audioId;
+      setAudioResult({ audioId });
+      setStudioMode("podcast");
+      setHasSessionActivity(true);
+      scheduleSessionSave(true);
 
       // Step 2: Poll status and fetch complete audio once ready.
-      const { audioUrl, blobUrl } = await waitForAudioReady(audioId, streamUrl, 100)
+      const { audioUrl, blobUrl } = await waitForAudioReady(
+        audioId,
+        streamUrl,
+        100,
+      );
       if (audioBlobUrl) {
-        URL.revokeObjectURL(audioBlobUrl)
+        URL.revokeObjectURL(audioBlobUrl);
       }
-      setAudioBlobUrl(blobUrl)
-      setAudioResult({ audioId, audioUrl })
-      scheduleSessionSave(true)
+      setAudioBlobUrl(blobUrl);
+      setAudioResult({ audioId, audioUrl });
+      scheduleSessionSave(true);
     } catch (err: any) {
-      console.error('Podcast generation failed:', err)
-      setAudioError(err?.message || '播客生成失败，请稍后重试')
+      console.error("Podcast generation failed:", err);
+      setAudioError(err?.message || "播客生成失败，请稍后重试");
     } finally {
-      setIsGeneratingAudio(false)
+      setIsGeneratingAudio(false);
     }
-  }
+  };
 
   useEffect(() => {
-    if (studioMode !== 'podcast') return
-    if (!audioResult?.audioId || audioResult.audioUrl) return
-    const audioId = audioResult.audioId
-    const pendingAudioUrl = audioResult.audioUrl
-    if (recoveringAudioIdRef.current === audioId) return
+    if (studioMode !== "podcast") return;
+    if (!audioResult?.audioId || audioResult.audioUrl) return;
+    const audioId = audioResult.audioId;
+    const pendingAudioUrl = audioResult.audioUrl;
+    if (recoveringAudioIdRef.current === audioId) return;
 
-    let cancelled = false
-    const abortController = new AbortController()
-    recoveringAudioIdRef.current = audioId
+    let cancelled = false;
+    const abortController = new AbortController();
+    recoveringAudioIdRef.current = audioId;
 
     const resumeAudioPolling = async () => {
-      setIsGeneratingAudio(true)
-      setAudioError(null)
+      setIsGeneratingAudio(true);
+      setAudioError(null);
       try {
-        const streamUrl = resolvePodcastAudioUrl(pendingAudioUrl, audioId)
+        const streamUrl = resolvePodcastAudioUrl(pendingAudioUrl, audioId);
         const { audioUrl, blobUrl } = await waitForAudioReady(
           audioId,
           streamUrl,
           300,
-          abortController.signal
-        )
+          abortController.signal,
+        );
         if (cancelled) {
-          URL.revokeObjectURL(blobUrl)
-          return
+          URL.revokeObjectURL(blobUrl);
+          return;
         }
         if (audioBlobUrl) {
-          URL.revokeObjectURL(audioBlobUrl)
+          URL.revokeObjectURL(audioBlobUrl);
         }
-        setAudioBlobUrl(blobUrl)
-        setAudioResult({ audioId, audioUrl })
-        setHasSessionActivity(true)
-        scheduleSessionSave(true)
+        setAudioBlobUrl(blobUrl);
+        setAudioResult({ audioId, audioUrl });
+        setHasSessionActivity(true);
+        scheduleSessionSave(true);
       } catch (err: any) {
-        if (err?.name === 'AbortError') {
-          return
+        if (err?.name === "AbortError") {
+          return;
         }
         if (!cancelled && isMountedRef.current) {
-          setAudioError(err?.message || '播客生成失败，请稍后重试')
+          setAudioError(err?.message || "播客生成失败，请稍后重试");
         }
       } finally {
         if (isMountedRef.current) {
-          setIsGeneratingAudio(false)
+          setIsGeneratingAudio(false);
         }
       }
-    }
+    };
 
-    void resumeAudioPolling()
+    void resumeAudioPolling();
     return () => {
-      cancelled = true
-      abortController.abort()
-    }
+      cancelled = true;
+      abortController.abort();
+    };
   }, [
     studioMode,
     audioResult?.audioId,
@@ -3713,35 +4023,35 @@ export default function NotebookDetailPage() {
     audioBlobUrl,
     waitForAudioReady,
     scheduleSessionSave,
-  ])
+  ]);
 
   const renderExportSourceToggle = () => (
     <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
       <span>内容来源</span>
       <div className="flex rounded-lg bg-slate-100 dark:bg-slate-800 p-1">
         <button
-          onClick={() => setExportContentSource('research')}
+          onClick={() => setExportContentSource("research")}
           className={`px-2 py-1 rounded-md transition-colors ${
-            exportContentSource === 'research'
-              ? 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-sm border border-slate-200 dark:border-slate-700'
-              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+            exportContentSource === "research"
+              ? "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-sm border border-slate-200 dark:border-slate-700"
+              : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
           }`}
         >
           深度研究
         </button>
         <button
-          onClick={() => setExportContentSource('sources')}
+          onClick={() => setExportContentSource("sources")}
           className={`px-2 py-1 rounded-md transition-colors ${
-            exportContentSource === 'sources'
-              ? 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-sm border border-slate-200 dark:border-slate-700'
-              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+            exportContentSource === "sources"
+              ? "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-sm border border-slate-200 dark:border-slate-700"
+              : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
           }`}
         >
           已选来源
         </button>
       </div>
     </div>
-  )
+  );
 
   const renderPptStylePanel = () => (
     <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/60 p-4 text-left">
@@ -3754,18 +4064,18 @@ export default function NotebookDetailPage() {
         <span>风格来源</span>
         <div className="flex rounded-lg bg-white dark:bg-slate-800 p-1 shadow-sm border border-slate-200 dark:border-slate-700">
           {[
-            { id: 'default', label: '默认' },
-            { id: 'preset', label: '预设' },
-            { id: 'template', label: '模板' },
-            { id: 'sources', label: '来源' },
-          ].map(item => (
+            { id: "default", label: "默认" },
+            { id: "preset", label: "预设" },
+            { id: "template", label: "模板" },
+            { id: "sources", label: "来源" },
+          ].map((item) => (
             <button
               key={item.id}
               onClick={() => setPptStyleMode(item.id as typeof pptStyleMode)}
               className={`px-2.5 py-1 rounded-md transition-colors ${
                 pptStyleMode === item.id
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-500 hover:text-slate-700"
               }`}
             >
               {item.label}
@@ -3774,31 +4084,34 @@ export default function NotebookDetailPage() {
         </div>
       </div>
 
-      {pptStyleMode === 'default' && (
+      {pptStyleMode === "default" && (
         <p className="text-xs text-slate-500">使用系统默认风格与布局。</p>
       )}
 
-      {pptStyleMode === 'preset' && (
+      {pptStyleMode === "preset" && (
         <div className="space-y-2">
           <select
             value={selectedPptStyleId}
-            onChange={e => setSelectedPptStyleId(e.target.value)}
+            onChange={(e) => setSelectedPptStyleId(e.target.value)}
             className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
           >
-            {pptStyleTemplates.length === 0 && <option value="">暂无预设</option>}
-            {pptStyleTemplates.map(tmpl => (
+            {pptStyleTemplates.length === 0 && (
+              <option value="">暂无预设</option>
+            )}
+            {pptStyleTemplates.map((tmpl) => (
               <option key={tmpl.id} value={tmpl.id}>
                 {tmpl.name}
               </option>
             ))}
           </select>
           <p className="text-[11px] text-slate-400 line-clamp-2">
-            {getSelectedPptStylePrompt() || '选择预设风格后，将使用对应的提示词优化演示风格。'}
+            {getSelectedPptStylePrompt() ||
+              "选择预设风格后，将使用对应的提示词优化演示风格。"}
           </p>
         </div>
       )}
 
-      {pptStyleMode === 'template' && (
+      {pptStyleMode === "template" && (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <button
@@ -3806,7 +4119,7 @@ export default function NotebookDetailPage() {
               disabled={pptTemplateUploading}
               className="px-3 py-2 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500 hover:bg-orange-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
             >
-              {pptTemplateUploading ? '上传中...' : '上传模板'}
+              {pptTemplateUploading ? "上传中..." : "上传模板"}
             </button>
             <input
               ref={pptTemplateInputRef}
@@ -3819,11 +4132,11 @@ export default function NotebookDetailPage() {
           </div>
           <select
             value={selectedPptTemplate}
-            onChange={e => setSelectedPptTemplate(e.target.value)}
+            onChange={(e) => setSelectedPptTemplate(e.target.value)}
             className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
           >
             {pptTemplates.length === 0 && <option value="">暂无模板</option>}
-            {pptTemplates.map(tmpl => (
+            {pptTemplates.map((tmpl) => (
               <option key={tmpl.name} value={tmpl.name}>
                 {tmpl.name}
               </option>
@@ -3833,7 +4146,7 @@ export default function NotebookDetailPage() {
             <input
               type="checkbox"
               checked={pptTemplateUseLlm}
-              onChange={e => setPptTemplateUseLlm(e.target.checked)}
+              onChange={(e) => setPptTemplateUseLlm(e.target.checked)}
               className="rounded border-slate-300 text-orange-600 focus:ring-orange-500"
             />
             使用 LLM 生成结构
@@ -3843,16 +4156,20 @@ export default function NotebookDetailPage() {
               <span>结构来源</span>
               <div className="flex rounded-lg bg-white dark:bg-slate-800 p-1 shadow-sm border border-slate-200 dark:border-slate-700">
                 {[
-                  { id: 'preset', label: '预设' },
-                  { id: 'sources', label: '来源' },
-                ].map(item => (
+                  { id: "preset", label: "预设" },
+                  { id: "sources", label: "来源" },
+                ].map((item) => (
                   <button
                     key={item.id}
-                    onClick={() => setPptTemplatePromptSource(item.id as 'preset' | 'sources')}
+                    onClick={() =>
+                      setPptTemplatePromptSource(
+                        item.id as "preset" | "sources",
+                      )
+                    }
                     className={`px-2 py-1 rounded-md transition-colors ${
                       pptTemplatePromptSource === item.id
-                        ? 'bg-slate-900 text-white'
-                        : 'text-slate-500 hover:text-slate-700'
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-500 hover:text-slate-700"
                     }`}
                   >
                     {item.label}
@@ -3864,26 +4181,30 @@ export default function NotebookDetailPage() {
         </div>
       )}
 
-      {pptStyleMode === 'sources' && (
+      {pptStyleMode === "sources" && (
         <div className="space-y-2">
           <p className="text-xs text-slate-500">根据已选来源生成风格提示词。</p>
           <div className="text-[11px] text-slate-400">
-            {hasSelectedSources ? `已选来源 ${selectedSourcesCount} 个` : '暂无已选来源'}
+            {hasSelectedSources
+              ? `已选来源 ${selectedSourcesCount} 个`
+              : "暂无已选来源"}
           </div>
         </div>
       )}
 
-      {pptStyleMode !== 'template' && (
+      {pptStyleMode !== "template" && (
         <div className="mt-3">
           <button
             onClick={handlePreviewPptStyle}
             disabled={pptStylePreviewLoading}
             className="px-3 py-2 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500 hover:bg-orange-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
           >
-            {pptStylePreviewLoading ? '生成预览...' : '预览风格'}
+            {pptStylePreviewLoading ? "生成预览..." : "预览风格"}
           </button>
           {pptStylePreviewError && (
-            <p className="text-[11px] text-rose-500 mt-2">{pptStylePreviewError}</p>
+            <p className="text-[11px] text-rose-500 mt-2">
+              {pptStylePreviewError}
+            </p>
           )}
           {pptStylePreviewSvg && (
             <div
@@ -3894,7 +4215,7 @@ export default function NotebookDetailPage() {
         </div>
       )}
     </div>
-  )
+  );
 
   const renderPodcastConfigPanel = () => (
     <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/60 p-4 text-left">
@@ -3907,10 +4228,10 @@ export default function NotebookDetailPage() {
           <label className="block text-xs text-slate-500 mb-1">发声人 A</label>
           <select
             value={podcastSpeakerA}
-            onChange={e => setPodcastSpeakerA(e.target.value)}
+            onChange={(e) => setPodcastSpeakerA(e.target.value)}
             className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
           >
-            {podcastSpeakers.map(s => (
+            {podcastSpeakers.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>
@@ -3922,10 +4243,10 @@ export default function NotebookDetailPage() {
           <label className="block text-xs text-slate-500 mb-1">发声人 B</label>
           <select
             value={podcastSpeakerB}
-            onChange={e => setPodcastSpeakerB(e.target.value)}
+            onChange={(e) => setPodcastSpeakerB(e.target.value)}
             className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
           >
-            {podcastSpeakers.map(s => (
+            {podcastSpeakers.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>
@@ -3936,7 +4257,9 @@ export default function NotebookDetailPage() {
         <div>
           <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
             <span>语速</span>
-            <span className="font-medium text-indigo-600">{podcastSpeechRate.toFixed(1)}x</span>
+            <span className="font-medium text-indigo-600">
+              {podcastSpeechRate.toFixed(1)}x
+            </span>
           </div>
           <input
             type="range"
@@ -3948,10 +4271,13 @@ export default function NotebookDetailPage() {
                 ? ((podcastSpeechRate - 0.5) / 0.5) * 50
                 : 50 + ((podcastSpeechRate - 1.0) / 1.0) * 50
             }
-            onChange={e => {
-              const pos = parseInt(e.target.value)
-              const rate = pos <= 50 ? 0.5 + (pos / 50) * 0.5 : 1.0 + ((pos - 50) / 50) * 1.0
-              setPodcastSpeechRate(Math.round(rate * 10) / 10)
+            onChange={(e) => {
+              const pos = parseInt(e.target.value);
+              const rate =
+                pos <= 50
+                  ? 0.5 + (pos / 50) * 0.5
+                  : 1.0 + ((pos - 50) / 50) * 1.0;
+              setPodcastSpeechRate(Math.round(rate * 10) / 10);
             }}
             className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
           />
@@ -3963,27 +4289,27 @@ export default function NotebookDetailPage() {
         </div>
       </div>
     </div>
-  )
+  );
 
-  const openStudioTool = (path: '/question' | '/guide') => {
-    const query = new URLSearchParams({ notebook_id: notebookId })
+  const openStudioTool = (path: "/question" | "/guide") => {
+    const query = new URLSearchParams({ notebook_id: notebookId });
     if (notebook?.name) {
-      query.set('notebook_name', notebook.name)
+      query.set("notebook_name", notebook.name);
     }
-    const url = `${path}?${query.toString()}`
-    window.open(url, '_blank', 'noopener,noreferrer')
-  }
+    const url = `${path}?${query.toString()}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
 
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-slate-50">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
       </div>
-    )
+    );
   }
 
   if (!notebook) {
-    return null
+    return null;
   }
 
   return (
@@ -3991,7 +4317,7 @@ export default function NotebookDetailPage() {
       {/* Left Panel - Sources */}
       <div
         className={`min-h-0 flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 ${
-          leftCollapsed ? 'w-0 overflow-hidden' : 'w-72'
+          leftCollapsed ? "w-0 overflow-hidden" : "w-72"
         }`}
       >
         {/* Header */}
@@ -4001,7 +4327,7 @@ export default function NotebookDetailPage() {
         >
           <div className="flex items-center gap-3 mb-3">
             <button
-              onClick={() => router.push('/notebooks')}
+              onClick={() => router.push("/notebooks")}
               className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
             >
               <ArrowLeft className="w-4 h-4 text-slate-500" />
@@ -4016,7 +4342,9 @@ export default function NotebookDetailPage() {
               <BookOpen className="w-4 h-4" />
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="font-bold text-slate-900 truncate text-sm">{notebook.name}</h2>
+              <h2 className="font-bold text-slate-900 truncate text-sm">
+                {notebook.name}
+              </h2>
             </div>
           </div>
 
@@ -4041,11 +4369,11 @@ export default function NotebookDetailPage() {
               <input
                 type="checkbox"
                 checked={enableRag}
-                onChange={e => {
-                  const checked = e.target.checked
-                  setEnableRag(checked)
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setEnableRag(checked);
                   if (!checked) {
-                    setSelectedKb('')
+                    setSelectedKb("");
                   }
                 }}
                 className="sr-only peer"
@@ -4056,14 +4384,14 @@ export default function NotebookDetailPage() {
           <div>
             <select
               value={selectedKb}
-              onChange={e => setSelectedKb(e.target.value)}
+              onChange={(e) => setSelectedKb(e.target.value)}
               disabled={!enableRag}
               className={`w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none dark:text-slate-200 ${
-                !enableRag ? 'opacity-60 cursor-not-allowed' : ''
+                !enableRag ? "opacity-60 cursor-not-allowed" : ""
               }`}
             >
               <option value="">不使用知识库</option>
-              {kbs.map(kb => (
+              {kbs.map((kb) => (
                 <option key={kb.name} value={kb.name}>
                   {kb.display_name || kb.name}
                 </option>
@@ -4077,33 +4405,33 @@ export default function NotebookDetailPage() {
           {/* Mode Switch */}
           <div className="flex bg-slate-100 dark:bg-slate-800/50 p-1 rounded-lg mb-3">
             <button
-              onClick={() => setResearchMode('fast')}
+              onClick={() => setResearchMode("fast")}
               className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-medium transition-all ${
-                researchMode === 'fast'
-                  ? 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 shadow-sm border border-slate-200 dark:border-slate-700'
-                  : 'text-slate-500 hover:text-slate-700'
+                researchMode === "fast"
+                  ? "bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 shadow-sm border border-slate-200 dark:border-slate-700"
+                  : "text-slate-500 hover:text-slate-700"
               }`}
             >
               <Zap className="w-3.5 h-3.5" />
               Fast
             </button>
             <button
-              onClick={() => setResearchMode('paper')}
+              onClick={() => setResearchMode("paper")}
               className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-medium transition-all ${
-                researchMode === 'paper'
-                  ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-400 shadow-sm border border-slate-200 dark:border-slate-700'
-                  : 'text-slate-500 hover:text-slate-700'
+                researchMode === "paper"
+                  ? "bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-400 shadow-sm border border-slate-200 dark:border-slate-700"
+                  : "text-slate-500 hover:text-slate-700"
               }`}
             >
               <GraduationCap className="w-3.5 h-3.5" />
               Paper
             </button>
             <button
-              onClick={() => setResearchMode('deep')}
+              onClick={() => setResearchMode("deep")}
               className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-medium transition-all ${
-                researchMode === 'deep'
-                  ? 'bg-white dark:bg-slate-800 text-purple-700 dark:text-purple-400 shadow-sm border border-slate-200 dark:border-slate-700'
-                  : 'text-slate-500 hover:text-slate-700'
+                researchMode === "deep"
+                  ? "bg-white dark:bg-slate-800 text-purple-700 dark:text-purple-400 shadow-sm border border-slate-200 dark:border-slate-700"
+                  : "text-slate-500 hover:text-slate-700"
               }`}
             >
               <Microscope className="w-3.5 h-3.5" />
@@ -4114,9 +4442,9 @@ export default function NotebookDetailPage() {
           {/* Input Area */}
           <div className="space-y-3">
             <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500">
-              {researchMode === 'fast' ? (
+              {researchMode === "fast" ? (
                 <Globe className="w-4 h-4 text-emerald-500 shrink-0" />
-              ) : researchMode === 'paper' ? (
+              ) : researchMode === "paper" ? (
                 <GraduationCap className="w-4 h-4 text-indigo-500 shrink-0" />
               ) : (
                 <Microscope className="w-4 h-4 text-purple-500 shrink-0" />
@@ -4124,59 +4452,62 @@ export default function NotebookDetailPage() {
               <input
                 type="text"
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    if (researchMode === 'fast') handleFastResearch()
-                    else if (researchMode === 'paper') handlePaperSearch()
-                    else if (researchMode === 'deep') startResearchWithTopic(searchQuery)
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    if (researchMode === "fast") handleFastResearch();
+                    else if (researchMode === "paper") handlePaperSearch();
+                    else if (researchMode === "deep")
+                      startResearchWithTopic(searchQuery);
                   }
                 }}
                 placeholder={
-                  researchMode === 'fast'
-                    ? '搜索关键词...'
-                    : researchMode === 'paper'
-                      ? '搜索学术论文 (英文关键词)...'
-                      : '输入研究主题...'
+                  researchMode === "fast"
+                    ? "搜索关键词..."
+                    : researchMode === "paper"
+                      ? "搜索学术论文 (英文关键词)..."
+                      : "输入研究主题..."
                 }
                 className="flex-1 bg-transparent text-sm outline-none w-full min-w-0"
               />
             </div>
 
             {/* Paper Search Hint */}
-            {researchMode === 'paper' && (
+            {researchMode === "paper" && (
               <p className="text-[10px] text-slate-400 px-1">
                 💡 提示：使用英文关键词，如 "transformer attention mechanism"
               </p>
             )}
 
             {/* Deep Research Config (Only visible in Deep mode) */}
-            {researchMode === 'deep' && (
+            {researchMode === "deep" && (
               <div className="text-xs space-y-3 pt-2 px-1 border-t border-slate-200/50">
                 <div className="space-y-1.5">
                   <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                     计划深度
                   </div>
                   <div className="grid grid-cols-4 gap-1">
-                    {(['quick', 'medium', 'deep', 'auto'] as const).map(mode => (
-                      <button
-                        key={mode}
-                        onClick={() => setPlanMode(mode)}
-                        className={`px-1 py-1 rounded text-center transition-colors ${
-                          planMode === mode
-                            ? 'bg-purple-100 text-purple-700 font-medium'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                        }`}
-                      >
-                        {mode === 'quick'
-                          ? '快速'
-                          : mode === 'medium'
-                            ? '标准'
-                            : mode === 'deep'
-                              ? '深入'
-                              : '自动'}
-                      </button>
-                    ))}
+                    {(["quick", "medium", "deep", "auto"] as const).map(
+                      (mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => setPlanMode(mode)}
+                          className={`px-1 py-1 rounded text-center transition-colors ${
+                            planMode === mode
+                              ? "bg-purple-100 text-purple-700 font-medium"
+                              : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                          }`}
+                        >
+                          {mode === "quick"
+                            ? "快速"
+                            : mode === "medium"
+                              ? "标准"
+                              : mode === "deep"
+                                ? "深入"
+                                : "自动"}
+                        </button>
+                      ),
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -4184,10 +4515,13 @@ export default function NotebookDetailPage() {
                     type="checkbox"
                     id="opt-toggle"
                     checked={enableOptimization}
-                    onChange={e => setEnableOptimization(e.target.checked)}
+                    onChange={(e) => setEnableOptimization(e.target.checked)}
                     className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
                   />
-                  <label htmlFor="opt-toggle" className="text-slate-600 cursor-pointer select-none">
+                  <label
+                    htmlFor="opt-toggle"
+                    className="text-slate-600 cursor-pointer select-none"
+                  >
                     使用 AI 优化主题
                   </label>
                 </div>
@@ -4197,74 +4531,77 @@ export default function NotebookDetailPage() {
             {/* Action Button */}
             <button
               onClick={() => {
-                if (researchMode === 'fast') handleFastResearch()
-                else if (researchMode === 'paper') handlePaperSearch()
-                else startResearchWithTopic(searchQuery)
+                if (researchMode === "fast") handleFastResearch();
+                else if (researchMode === "paper") handlePaperSearch();
+                else startResearchWithTopic(searchQuery);
               }}
               disabled={
-                isSearching || researchRunning || pendingResearchRecovery || !searchQuery.trim()
+                isSearching ||
+                researchRunning ||
+                pendingResearchRecovery ||
+                !searchQuery.trim()
               }
               className={`w-full py-2 px-4 rounded-lg text-sm font-medium text-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
-                researchMode === 'fast'
-                  ? 'bg-emerald-600 hover:bg-emerald-700'
-                  : researchMode === 'paper'
-                    ? 'bg-indigo-600 hover:bg-indigo-700'
-                    : 'bg-purple-600 hover:bg-purple-700'
+                researchMode === "fast"
+                  ? "bg-emerald-600 hover:bg-emerald-700"
+                  : researchMode === "paper"
+                    ? "bg-indigo-600 hover:bg-indigo-700"
+                    : "bg-purple-600 hover:bg-purple-700"
               }`}
             >
               {isSearching || researchRunning || pendingResearchRecovery ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  {researchMode === 'fast'
-                    ? '搜索中...'
-                    : researchMode === 'paper'
-                      ? '搜索论文中...'
+                  {researchMode === "fast"
+                    ? "搜索中..."
+                    : researchMode === "paper"
+                      ? "搜索论文中..."
                       : pendingResearchRecovery
-                        ? '恢复中...'
-                        : '研究中...'}
+                        ? "恢复中..."
+                        : "研究中..."}
                 </>
               ) : (
                 <>
-                  {researchMode === 'fast' ? (
+                  {researchMode === "fast" ? (
                     <Search className="w-4 h-4" />
-                  ) : researchMode === 'paper' ? (
+                  ) : researchMode === "paper" ? (
                     <GraduationCap className="w-4 h-4" />
                   ) : (
                     <Sparkles className="w-4 h-4" />
                   )}
-                  {researchMode === 'fast'
-                    ? '搜索来源'
-                    : researchMode === 'paper'
-                      ? '搜索论文'
-                      : '开始深度研究'}
+                  {researchMode === "fast"
+                    ? "搜索来源"
+                    : researchMode === "paper"
+                      ? "搜索论文"
+                      : "开始深度研究"}
                 </>
               )}
             </button>
 
             {/* Deep Research Progress Indicator */}
-            {researchRunning && researchMode === 'deep' && (
+            {researchRunning && researchMode === "deep" && (
               <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-lg space-y-2 animate-in fade-in duration-300">
                 {/* Phase Indicator */}
                 <div className="flex items-center gap-2">
                   <div
                     className={`w-2 h-2 rounded-full animate-pulse ${
-                      researchPhase === 'planning'
-                        ? 'bg-blue-500'
-                        : researchPhase === 'researching'
-                          ? 'bg-purple-500'
-                          : researchPhase === 'reporting'
-                            ? 'bg-emerald-500'
-                            : 'bg-slate-400'
+                      researchPhase === "planning"
+                        ? "bg-blue-500"
+                        : researchPhase === "researching"
+                          ? "bg-purple-500"
+                          : researchPhase === "reporting"
+                            ? "bg-emerald-500"
+                            : "bg-slate-400"
                     }`}
                   />
                   <span className="text-xs font-medium text-slate-700">
-                    {researchPhase === 'planning'
-                      ? '📋 规划中'
-                      : researchPhase === 'researching'
-                        ? '🔬 研究中'
-                        : researchPhase === 'reporting'
-                          ? '📝 生成报告'
-                          : '准备中'}
+                    {researchPhase === "planning"
+                      ? "📋 规划中"
+                      : researchPhase === "researching"
+                        ? "🔬 研究中"
+                        : researchPhase === "reporting"
+                          ? "📝 生成报告"
+                          : "准备中"}
                   </span>
                 </div>
 
@@ -4284,7 +4621,12 @@ export default function NotebookDetailPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-slate-400 tabular-nums">
-                            {Math.round((globalProgress.completed / globalProgress.total) * 100)}%
+                            {Math.round(
+                              (globalProgress.completed /
+                                globalProgress.total) *
+                                100,
+                            )}
+                            %
                           </span>
                           {estimatedTimeRemaining && (
                             <span className="text-[10px] text-slate-400">
@@ -4299,7 +4641,10 @@ export default function NotebookDetailPage() {
 
                 {/* Current Sub-topic */}
                 {currentSubTopic && (
-                  <div className="text-[10px] text-slate-600 truncate" title={currentSubTopic}>
+                  <div
+                    className="text-[10px] text-slate-600 truncate"
+                    title={currentSubTopic}
+                  >
                     当前: {currentSubTopic}
                   </div>
                 )}
@@ -4318,7 +4663,7 @@ export default function NotebookDetailPage() {
               onClick={() => toggleAllSources(!allSourcesSelected)}
               className="text-xs text-blue-600 hover:underline"
             >
-              {allSourcesSelected ? '取消全选' : '全选'}
+              {allSourcesSelected ? "取消全选" : "全选"}
             </button>
           )}
         </div>
@@ -4329,18 +4674,20 @@ export default function NotebookDetailPage() {
             <div className="text-center py-8">
               <FileText className="w-10 h-10 text-slate-200 mx-auto mb-3" />
               <p className="text-sm text-slate-500 mb-1">暂无来源</p>
-              <p className="text-xs text-slate-400">使用 Fast Research 搜索或点击上方按钮添加</p>
+              <p className="text-xs text-slate-400">
+                使用 Fast Research 搜索或点击上方按钮添加
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
-              {groupedSources.map(group => {
-                const isCollapsed = !!collapsedSessionIds[group.session_id]
+              {groupedSources.map((group) => {
+                const isCollapsed = !!collapsedSessionIds[group.session_id];
                 return (
                   <div key={group.session_id}>
                     <div className="text-[11px] text-slate-400 uppercase tracking-wide mb-1 flex items-center justify-between">
                       <button
                         onClick={() =>
-                          setCollapsedSessionIds(prev => ({
+                          setCollapsedSessionIds((prev) => ({
                             ...prev,
                             [group.session_id]: !prev[group.session_id],
                           }))
@@ -4359,38 +4706,50 @@ export default function NotebookDetailPage() {
                           {group.selectedCount}/{group.sources.length}
                         </span>
                         <button
-                          onClick={() => toggleSessionSources(group.session_id, !group.allSelected)}
+                          onClick={() =>
+                            toggleSessionSources(
+                              group.session_id,
+                              !group.allSelected,
+                            )
+                          }
                           className="text-blue-600 hover:underline"
                         >
-                          {group.allSelected ? '取消' : '全选'}
+                          {group.allSelected ? "取消" : "全选"}
                         </button>
                       </div>
                     </div>
                     {!isCollapsed && (
                       <div className="space-y-1">
-                        {group.sources.map(source => {
-                          const sourceKey = source.source_key || buildSourceKey(source)
-                          const refNumber = getSourceRefNumber(source)
-                          const isHighlighted = !!sourceKey && sourceKey === highlightedSourceKey
+                        {group.sources.map((source) => {
+                          const sourceKey =
+                            source.source_key || buildSourceKey(source);
+                          const refNumber = getSourceRefNumber(source);
+                          const isHighlighted =
+                            !!sourceKey && sourceKey === highlightedSourceKey;
                           return (
                             <div
                               key={sourceKey || source.id}
-                              ref={node => {
+                              ref={(node) => {
                                 if (sourceKey) {
-                                  sourceRowRefs.current[sourceKey] = node
+                                  sourceRowRefs.current[sourceKey] = node;
                                 }
                               }}
-                              data-source-key={sourceKey || ''}
+                              data-source-key={sourceKey || ""}
                               className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${
                                 isHighlighted
-                                  ? 'bg-amber-50 ring-1 ring-amber-300'
+                                  ? "bg-amber-50 ring-1 ring-amber-300"
                                   : group.isCurrent
-                                    ? 'hover:bg-slate-50 dark:hover:bg-slate-800'
-                                    : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/70'
+                                    ? "hover:bg-slate-50 dark:hover:bg-slate-800"
+                                    : "hover:bg-slate-50/70 dark:hover:bg-slate-800/70"
                               } group`}
                             >
                               <button
-                                onClick={() => toggleSourceSelection(group.session_id, source.id)}
+                                onClick={() =>
+                                  toggleSourceSelection(
+                                    group.session_id,
+                                    source.id,
+                                  )
+                                }
                                 className="shrink-0"
                               >
                                 {source.selected ? (
@@ -4401,21 +4760,24 @@ export default function NotebookDetailPage() {
                               </button>
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm text-slate-700 truncate">
-                                  {refNumber ? `[${refNumber}] ` : ''}
-                                  {source.type === 'paper' && (
+                                  {refNumber ? `[${refNumber}] ` : ""}
+                                  {source.type === "paper" && (
                                     <GraduationCap className="w-3.5 h-3.5 inline mr-1 text-purple-600" />
                                   )}
                                   {source.title}
                                 </p>
-                                {source.type === 'paper' &&
+                                {source.type === "paper" &&
                                   source.authors &&
                                   source.authors.length > 0 && (
                                     <p className="text-xs text-slate-500 mt-0.5">
-                                      {source.authors[0]} et al., {source.year || 'N/A'}
+                                      {source.authors[0]} et al.,{" "}
+                                      {source.year || "N/A"}
                                     </p>
                                   )}
                                 {source.url && (
-                                  <p className="text-xs text-slate-400 truncate">{source.url}</p>
+                                  <p className="text-xs text-slate-400 truncate">
+                                    {source.url}
+                                  </p>
                                 )}
                               </div>
                               {group.isCurrent && (
@@ -4427,12 +4789,12 @@ export default function NotebookDetailPage() {
                                 </button>
                               )}
                             </div>
-                          )
+                          );
                         })}
                       </div>
                     )}
                   </div>
-                )
+                );
               })}
             </div>
           )}
@@ -4474,18 +4836,23 @@ export default function NotebookDetailPage() {
         </div>
 
         {/* Chat Messages */}
-        <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div
+          ref={chatContainerRef}
+          className="flex-1 overflow-y-auto p-4 space-y-4"
+        >
           {displayMessagesWithRenderKey.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center">
               <Bot className="w-12 h-12 text-slate-200 mb-3" />
               <p className="text-slate-500 text-sm">开始对话吧</p>
-              <p className="text-slate-400 text-xs mt-1">输入问题，AI 将基于知识库回答</p>
+              <p className="text-slate-400 text-xs mt-1">
+                输入问题，AI 将基于知识库回答
+              </p>
             </div>
           ) : (
             displayMessagesWithRenderKey.map(({ msg, renderKey }) => {
               const markdownContent = processLatexContent(
-                linkifyKnownCitationTokens(msg.content || '')
-              )
+                linkifyKnownCitationTokens(msg.content || ""),
+              );
 
               if (msg.isSeparator) {
                 return (
@@ -4495,27 +4862,27 @@ export default function NotebookDetailPage() {
                   >
                     {msg.content}
                   </div>
-                )
+                );
               }
 
               return (
                 <div
                   key={renderKey}
-                  className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
-                  {msg.role === 'assistant' && (
+                  {msg.role === "assistant" && (
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0">
                       <Bot className="w-4 h-4 text-white" />
                     </div>
                   )}
                   <div
                     className={`max-w-[70%] rounded-2xl px-4 py-3 ${
-                      msg.role === 'user'
-                        ? 'bg-blue-600 text-white rounded-br-none'
-                        : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-bl-none'
+                      msg.role === "user"
+                        ? "bg-blue-600 text-white rounded-br-none"
+                        : "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-bl-none"
                     }`}
                   >
-                    {msg.role === 'assistant' ? (
+                    {msg.role === "assistant" ? (
                       <>
                         <MarkdownErrorBoundary
                           resetKey={markdownContent}
@@ -4531,19 +4898,29 @@ export default function NotebookDetailPage() {
                               rehypePlugins={[rehypeKatex]}
                               components={{
                                 a: ({ href, title, className, children }) => {
-                                  const isInternalRef = /^#ref-\d+$/i.test(href || '')
+                                  const isInternalRef = /^#ref-\d+$/i.test(
+                                    href || "",
+                                  );
                                   return (
                                     <a
                                       href={href}
                                       title={title}
                                       className={className}
-                                      onClick={event => handleCitationAnchorClick(href, event)}
-                                      target={isInternalRef ? undefined : '_blank'}
-                                      rel={isInternalRef ? undefined : 'noopener noreferrer'}
+                                      onClick={(event) =>
+                                        handleCitationAnchorClick(href, event)
+                                      }
+                                      target={
+                                        isInternalRef ? undefined : "_blank"
+                                      }
+                                      rel={
+                                        isInternalRef
+                                          ? undefined
+                                          : "noopener noreferrer"
+                                      }
                                     >
                                       {children}
                                     </a>
-                                  )
+                                  );
                                 },
                               }}
                             >
@@ -4568,13 +4945,13 @@ export default function NotebookDetailPage() {
                       <p className="text-sm">{msg.content}</p>
                     )}
                   </div>
-                  {msg.role === 'user' && (
+                  {msg.role === "user" && (
                     <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
                       <User className="w-4 h-4 text-slate-500" />
                     </div>
                   )}
                 </div>
-              )
+              );
             })
           )}
         </div>
@@ -4609,9 +4986,11 @@ export default function NotebookDetailPage() {
             <input
               type="text"
               value={chatInput}
-              onChange={e => setChatInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSendChat()}
-              placeholder={sourcesKbIndexing ? '等待中...' : '输入你的问题...'}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) =>
+                e.key === "Enter" && !e.shiftKey && handleSendChat()
+              }
+              placeholder={sourcesKbIndexing ? "等待中..." : "输入你的问题..."}
               disabled={isChatting || sourcesKbIndexing}
               className="flex-1 px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none disabled:opacity-50"
             />
@@ -4619,7 +4998,7 @@ export default function NotebookDetailPage() {
               onClick={handleSendChat}
               disabled={!chatInput.trim() || isChatting || sourcesKbIndexing}
               className="px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              title={sourcesKbIndexing ? '等待中...' : ''}
+              title={sourcesKbIndexing ? "等待中..." : ""}
             >
               {isChatting || sourcesKbIndexing ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -4634,7 +5013,7 @@ export default function NotebookDetailPage() {
       {/* Right Panel - Studio */}
       <div
         className={`min-h-0 flex flex-col bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 transition-all duration-300 ${
-          rightCollapsed ? 'w-0 overflow-hidden' : 'w-80'
+          rightCollapsed ? "w-0 overflow-hidden" : "w-80"
         }`}
       >
         {/* Studio Header */}
@@ -4645,7 +5024,7 @@ export default function NotebookDetailPage() {
 
         {/* Studio Content */}
         <div className="flex-1 overflow-y-auto p-4">
-          {studioMode === 'idle' && (
+          {studioMode === "idle" && (
             <div className="space-y-4">
               {/* Core Features */}
               <div>
@@ -4655,7 +5034,7 @@ export default function NotebookDetailPage() {
                 <div className="space-y-2">
                   {/* Question Generator */}
                   <button
-                    onClick={() => openStudioTool('/question')}
+                    onClick={() => openStudioTool("/question")}
                     disabled={notebook.records.length === 0 && !researchReport}
                     className="w-full p-3 rounded-xl border border-slate-200 hover:border-purple-300 hover:bg-purple-50/50 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -4664,11 +5043,13 @@ export default function NotebookDetailPage() {
                         <PenTool className="w-4 h-4 text-purple-600" />
                       </div>
                       <div>
-                        <h4 className="font-medium text-slate-900 text-sm">题目生成</h4>
+                        <h4 className="font-medium text-slate-900 text-sm">
+                          题目生成
+                        </h4>
                         <p className="text-xs text-slate-400">
                           {notebook.records.length > 0 || researchReport
-                            ? '生成练习题'
-                            : '需要笔记或研究报告'}
+                            ? "生成练习题"
+                            : "需要笔记或研究报告"}
                         </p>
                       </div>
                     </div>
@@ -4676,7 +5057,7 @@ export default function NotebookDetailPage() {
 
                   {/* Guided Learning */}
                   <button
-                    onClick={() => openStudioTool('/guide')}
+                    onClick={() => openStudioTool("/guide")}
                     disabled={notebook.records.length === 0}
                     className="w-full p-3 rounded-xl border border-slate-200 hover:border-amber-300 hover:bg-amber-50/50 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -4685,9 +5066,13 @@ export default function NotebookDetailPage() {
                         <GraduationCap className="w-4 h-4 text-amber-600" />
                       </div>
                       <div>
-                        <h4 className="font-medium text-slate-900 text-sm">引导学习</h4>
+                        <h4 className="font-medium text-slate-900 text-sm">
+                          引导学习
+                        </h4>
                         <p className="text-xs text-slate-400">
-                          {notebook.records.length > 0 ? '知识点学习' : '需要笔记记录'}
+                          {notebook.records.length > 0
+                            ? "知识点学习"
+                            : "需要笔记记录"}
                         </p>
                       </div>
                     </div>
@@ -4734,7 +5119,7 @@ export default function NotebookDetailPage() {
 
                   {/* Podcast */}
                   <button
-                    onClick={() => setStudioMode('podcast')}
+                    onClick={() => setStudioMode("podcast")}
                     disabled={!canExport || isGeneratingAudio}
                     className="p-3 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all text-center disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -4744,9 +5129,9 @@ export default function NotebookDetailPage() {
                 </div>
                 {!canExport && (
                   <p className="text-xs text-slate-400 text-center mt-2">
-                    {exportContentSource === 'research'
-                      ? '完成深度研究后可导出'
-                      : '选择来源后可导出'}
+                    {exportContentSource === "research"
+                      ? "完成深度研究后可导出"
+                      : "选择来源后可导出"}
                   </p>
                 )}
                 <div className="mt-3">{renderPptStylePanel()}</div>
@@ -4766,7 +5151,7 @@ export default function NotebookDetailPage() {
                     notebook.records
                       .slice()
                       .reverse()
-                      .map(record => (
+                      .map((record) => (
                         <div
                           key={record.id}
                           className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-blue-300 transition-all group"
@@ -4780,9 +5165,9 @@ export default function NotebookDetailPage() {
                             </div>
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
-                                onClick={e => {
-                                  e.stopPropagation()
-                                  handleDownloadRecord(record)
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownloadRecord(record);
                                 }}
                                 className="p-1 text-slate-400 hover:text-blue-600 rounded"
                                 title="下载"
@@ -4790,9 +5175,9 @@ export default function NotebookDetailPage() {
                                 <FileDown className="w-3.5 h-3.5" />
                               </button>
                               <button
-                                onClick={e => {
-                                  e.stopPropagation()
-                                  handleDeleteRecord(record.id)
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteRecord(record.id);
                                 }}
                                 className="p-1 text-slate-400 hover:text-red-600 rounded"
                                 title="删除"
@@ -4810,22 +5195,26 @@ export default function NotebookDetailPage() {
                           <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-400">
                             <span
                               className={`px-1.5 py-0.5 rounded ${
-                                record.type === 'note'
-                                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                                  : record.type === 'solve'
-                                    ? 'bg-purple-50 text-purple-600'
-                                    : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                                record.type === "note"
+                                  ? "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+                                  : record.type === "solve"
+                                    ? "bg-purple-50 text-purple-600"
+                                    : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
                               }`}
                             >
-                              {record.type === 'note'
-                                ? '笔记'
-                                : record.type === 'solve'
-                                  ? '解题'
-                                  : record.type === 'question'
-                                    ? '题目'
-                                    : '记录'}
+                              {record.type === "note"
+                                ? "笔记"
+                                : record.type === "solve"
+                                  ? "解题"
+                                  : record.type === "question"
+                                    ? "题目"
+                                    : "记录"}
                             </span>
-                            <span>{new Date(record.created_at * 1000).toLocaleDateString()}</span>
+                            <span>
+                              {new Date(
+                                record.created_at * 1000,
+                              ).toLocaleDateString()}
+                            </span>
                           </div>
                         </div>
                       ))
@@ -4836,10 +5225,10 @@ export default function NotebookDetailPage() {
           )}
 
           {/* Research Mode */}
-          {studioMode === 'research' && (
+          {studioMode === "research" && (
             <div className="space-y-4">
               <button
-                onClick={() => setStudioMode('idle')}
+                onClick={() => setStudioMode("idle")}
                 className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -4847,10 +5236,12 @@ export default function NotebookDetailPage() {
               </button>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">研究主题</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  研究主题
+                </label>
                 <textarea
                   value={researchTopic}
-                  onChange={e => setResearchTopic(e.target.value)}
+                  onChange={(e) => setResearchTopic(e.target.value)}
                   placeholder="输入你想研究的主题..."
                   rows={3}
                   className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none resize-none"
@@ -4859,13 +5250,17 @@ export default function NotebookDetailPage() {
 
               <button
                 onClick={() => startResearchWithTopic()}
-                disabled={!researchTopic.trim() || researchRunning || pendingResearchRecovery}
+                disabled={
+                  !researchTopic.trim() ||
+                  researchRunning ||
+                  pendingResearchRecovery
+                }
                 className="w-full py-3 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {researchRunning || pendingResearchRecovery ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    {pendingResearchRecovery ? '恢复中...' : '研究中...'}
+                    {pendingResearchRecovery ? "恢复中..." : "研究中..."}
                   </>
                 ) : (
                   <>
@@ -4880,7 +5275,9 @@ export default function NotebookDetailPage() {
                 <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
                   <div className="flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-                    <span className="text-red-600 text-sm flex-1">{researchError}</span>
+                    <span className="text-red-600 text-sm flex-1">
+                      {researchError}
+                    </span>
                   </div>
                   <button
                     onClick={() => setResearchError(null)}
@@ -4893,7 +5290,9 @@ export default function NotebookDetailPage() {
 
               {researchReport && (
                 <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-xl">
-                  <div className="text-xs font-semibold text-slate-500 mb-2">研究结果预览</div>
+                  <div className="text-xs font-semibold text-slate-500 mb-2">
+                    研究结果预览
+                  </div>
                   <div className="text-sm text-slate-700 line-clamp-6">
                     {researchReport.slice(0, 300)}...
                   </div>
@@ -4903,10 +5302,10 @@ export default function NotebookDetailPage() {
           )}
 
           {/* Podcast Mode */}
-          {studioMode === 'podcast' && (
+          {studioMode === "podcast" && (
             <div className="space-y-4">
               <button
-                onClick={() => setStudioMode('idle')}
+                onClick={() => setStudioMode("idle")}
                 className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -4920,13 +5319,17 @@ export default function NotebookDetailPage() {
                 {isGeneratingAudio ? (
                   <div className="flex flex-col items-center gap-4 py-4">
                     <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
-                    <p className="text-sm text-slate-500">正在生成播客音频，请稍候...</p>
+                    <p className="text-sm text-slate-500">
+                      正在生成播客音频，请稍候...
+                    </p>
                   </div>
                 ) : audioError ? (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-xl mb-4">
                     <div className="flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-                      <span className="text-red-600 text-sm flex-1">{audioError}</span>
+                      <span className="text-red-600 text-sm flex-1">
+                        {audioError}
+                      </span>
                     </div>
                     <button
                       onClick={() => handleGeneratePodcast()}
@@ -4946,7 +5349,9 @@ export default function NotebookDetailPage() {
                     </div>
                     <div className="flex gap-2 justify-center">
                       <a
-                        href={apiUrl(`/api/v1/co_writer/download_audio/${audioResult.audioId}`)}
+                        href={apiUrl(
+                          `/api/v1/co_writer/download_audio/${audioResult.audioId}`,
+                        )}
                         download={`podcast-${audioResult.audioId}.mp3`}
                         className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center gap-2"
                       >
@@ -4965,7 +5370,9 @@ export default function NotebookDetailPage() {
                 ) : audioResult?.audioId ? (
                   <div className="flex flex-col items-center gap-4 py-4">
                     <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
-                    <p className="text-sm text-slate-500">正在恢复播客生成进度，请稍候...</p>
+                    <p className="text-sm text-slate-500">
+                      正在恢复播客生成进度，请稍候...
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -4983,9 +5390,9 @@ export default function NotebookDetailPage() {
                     </button>
                     {!canExport && (
                       <p className="text-xs text-slate-400">
-                        {exportContentSource === 'research'
-                          ? '完成深度研究后可生成'
-                          : '选择来源后可生成'}
+                        {exportContentSource === "research"
+                          ? "完成深度研究后可生成"
+                          : "选择来源后可生成"}
                       </p>
                     )}
                   </div>
@@ -4995,10 +5402,10 @@ export default function NotebookDetailPage() {
           )}
 
           {/* PDF Mode */}
-          {studioMode === 'pdf' && (
+          {studioMode === "pdf" && (
             <div className="space-y-4">
               <button
-                onClick={() => setStudioMode('idle')}
+                onClick={() => setStudioMode("idle")}
                 className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -5008,20 +5415,22 @@ export default function NotebookDetailPage() {
               <div className="text-center py-8">
                 <FileDown className="w-12 h-12 text-red-300 mx-auto mb-4" />
                 <p className="text-slate-700 font-medium mb-2">导出为 PDF</p>
-                <p className="text-sm text-slate-400 mb-6">将当前内容导出为 PDF 文档</p>
+                <p className="text-sm text-slate-400 mb-6">
+                  将当前内容导出为 PDF 文档
+                </p>
                 <div className="mb-4">{renderExportSourceToggle()}</div>
                 <button
                   onClick={handleExportPdf}
                   disabled={!canExport || isExporting}
                   className="px-6 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 disabled:opacity-50"
                 >
-                  {isExporting ? '导出中...' : '导出 PDF'}
+                  {isExporting ? "导出中..." : "导出 PDF"}
                 </button>
                 {!canExport && (
                   <p className="text-xs text-slate-400 mt-3">
-                    {exportContentSource === 'research'
-                      ? '完成深度研究后可导出'
-                      : '选择来源后可导出'}
+                    {exportContentSource === "research"
+                      ? "完成深度研究后可导出"
+                      : "选择来源后可导出"}
                   </p>
                 )}
               </div>
@@ -5029,10 +5438,10 @@ export default function NotebookDetailPage() {
           )}
 
           {/* PPT Mode */}
-          {studioMode === 'ppt' && (
+          {studioMode === "ppt" && (
             <div className="space-y-4">
               <button
-                onClick={() => setStudioMode('idle')}
+                onClick={() => setStudioMode("idle")}
                 className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -5042,7 +5451,9 @@ export default function NotebookDetailPage() {
               <div className="text-center py-8">
                 <Presentation className="w-12 h-12 text-orange-300 mx-auto mb-4" />
                 <p className="text-slate-700 font-medium mb-2">导出为 PPT</p>
-                <p className="text-sm text-slate-400 mb-6">将当前内容转换为演示文稿</p>
+                <p className="text-sm text-slate-400 mb-6">
+                  将当前内容转换为演示文稿
+                </p>
                 <div className="mb-4">{renderExportSourceToggle()}</div>
                 <div className="mb-4">{renderPptStylePanel()}</div>
                 <button
@@ -5050,21 +5461,21 @@ export default function NotebookDetailPage() {
                   disabled={!canExportPpt || isPptBusy}
                   className="px-6 py-3 bg-orange-600 text-white rounded-xl font-medium hover:bg-orange-700 disabled:opacity-50"
                 >
-                  {isPptBusy ? '导出中...' : '导出 PPT'}
+                  {isPptBusy ? "导出中..." : "导出 PPT"}
                 </button>
                 {!canExportPpt && (
                   <p className="text-xs text-slate-400 mt-3">
                     {!bananaPptEnabled
-                      ? 'PPT 功能未启用'
+                      ? "PPT 功能未启用"
                       : templateBlocked
-                        ? '模板模式暂不支持 Banana PPT'
+                        ? "模板模式暂不支持 Banana PPT"
                         : !canExportPptContent
-                          ? '完成深度研究后可导出'
+                          ? "完成深度研究后可导出"
                           : !canUsePresetStyle
-                            ? '请选择预设风格'
+                            ? "请选择预设风格"
                             : !canUseSourceStyle
-                              ? '选择来源后可生成风格'
-                              : ''}
+                              ? "选择来源后可生成风格"
+                              : ""}
                   </p>
                 )}
               </div>
@@ -5072,10 +5483,10 @@ export default function NotebookDetailPage() {
           )}
 
           {/* Mindmap Mode */}
-          {studioMode === 'mindmap' && (
+          {studioMode === "mindmap" && (
             <div className="space-y-4">
               <button
-                onClick={() => setStudioMode('idle')}
+                onClick={() => setStudioMode("idle")}
                 className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -5085,21 +5496,25 @@ export default function NotebookDetailPage() {
               {!mindmapCode ? (
                 <div className="text-center py-8">
                   <GitBranch className="w-12 h-12 text-purple-300 mx-auto mb-4" />
-                  <p className="text-slate-700 font-medium mb-2">生成思维导图</p>
-                  <p className="text-sm text-slate-400 mb-6">将内容结构可视化</p>
+                  <p className="text-slate-700 font-medium mb-2">
+                    生成思维导图
+                  </p>
+                  <p className="text-sm text-slate-400 mb-6">
+                    将内容结构可视化
+                  </p>
                   <div className="mb-4">{renderExportSourceToggle()}</div>
                   <button
                     onClick={handleGenerateMindmap}
                     disabled={!canExport || isExporting}
                     className="px-6 py-3 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 disabled:opacity-50"
                   >
-                    {isExporting ? '生成中...' : '生成思维导图'}
+                    {isExporting ? "生成中..." : "生成思维导图"}
                   </button>
                   {!canExport && (
                     <p className="text-xs text-slate-400 mt-3">
-                      {exportContentSource === 'research'
-                        ? '完成深度研究后可导出'
-                        : '选择来源后可导出'}
+                      {exportContentSource === "research"
+                        ? "完成深度研究后可导出"
+                        : "选择来源后可导出"}
                     </p>
                   )}
                 </div>
@@ -5135,16 +5550,20 @@ export default function NotebookDetailPage() {
       {showAddSourceModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-xl">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">添加来源</h3>
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">
+              添加来源
+            </h3>
 
             <div className="space-y-4">
               {/* URL Input */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">网址 URL</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  网址 URL
+                </label>
                 <input
                   type="text"
                   value={sourceUrl}
-                  onChange={e => setSourceUrl(e.target.value)}
+                  onChange={(e) => setSourceUrl(e.target.value)}
                   placeholder="https://example.com"
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
@@ -5154,8 +5573,8 @@ export default function NotebookDetailPage() {
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => {
-                  setShowAddSourceModal(false)
-                  setSourceUrl('')
+                  setShowAddSourceModal(false);
+                  setSourceUrl("");
                 }}
                 className="flex-1 px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
               >
@@ -5177,25 +5596,31 @@ export default function NotebookDetailPage() {
       {showAddNoteModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 w-full max-w-lg shadow-xl">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">添加笔记</h3>
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">
+              添加笔记
+            </h3>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">标题</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  标题
+                </label>
                 <input
                   type="text"
                   value={noteTitle}
-                  onChange={e => setNoteTitle(e.target.value)}
+                  onChange={(e) => setNoteTitle(e.target.value)}
                   placeholder="笔记标题"
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">内容</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  内容
+                </label>
                 <textarea
                   value={noteContent}
-                  onChange={e => setNoteContent(e.target.value)}
+                  onChange={(e) => setNoteContent(e.target.value)}
                   placeholder="输入笔记内容..."
                   rows={6}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none"
@@ -5206,9 +5631,9 @@ export default function NotebookDetailPage() {
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => {
-                  setShowAddNoteModal(false)
-                  setNoteTitle('')
-                  setNoteContent('')
+                  setShowAddNoteModal(false);
+                  setNoteTitle("");
+                  setNoteContent("");
                 }}
                 className="flex-1 px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
               >
@@ -5229,7 +5654,9 @@ export default function NotebookDetailPage() {
         isOpen={pptPreviewOpen}
         outline={pptOutline}
         isExporting={isPptExporting}
-        imageProgress={pptImageProgress.total > 0 ? pptImageProgress : undefined}
+        imageProgress={
+          pptImageProgress.total > 0 ? pptImageProgress : undefined
+        }
         generatingSlideIndices={pptGeneratingIndices}
         onClose={resetPptPreview}
         onExport={handleDownloadPptx}
@@ -5243,7 +5670,7 @@ export default function NotebookDetailPage() {
         >
           <div
             className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl animate-in zoom-in-95"
-            onClick={e => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-2xl">
               <h3 className="font-bold text-lg text-slate-900 truncate flex-1">
@@ -5259,8 +5686,10 @@ export default function NotebookDetailPage() {
             <div className="flex-1 overflow-y-auto p-6 prose prose-slate max-w-none">
               {(() => {
                 const recordMarkdownContent = processLatexContent(
-                  linkifyKnownCitationTokens(selectedRecord.output || selectedRecord.user_query)
-                )
+                  linkifyKnownCitationTokens(
+                    selectedRecord.output || selectedRecord.user_query,
+                  ),
+                );
                 return (
                   <MarkdownErrorBoundary
                     resetKey={recordMarkdownContent}
@@ -5275,26 +5704,32 @@ export default function NotebookDetailPage() {
                       rehypePlugins={[rehypeKatex]}
                       components={{
                         a: ({ href, title, className, children }) => {
-                          const isInternalRef = /^#ref-\d+$/i.test(href || '')
+                          const isInternalRef = /^#ref-\d+$/i.test(href || "");
                           return (
                             <a
                               href={href}
                               title={title}
                               className={className}
-                              onClick={event => handleCitationAnchorClick(href, event)}
-                              target={isInternalRef ? undefined : '_blank'}
-                              rel={isInternalRef ? undefined : 'noopener noreferrer'}
+                              onClick={(event) =>
+                                handleCitationAnchorClick(href, event)
+                              }
+                              target={isInternalRef ? undefined : "_blank"}
+                              rel={
+                                isInternalRef
+                                  ? undefined
+                                  : "noopener noreferrer"
+                              }
                             >
                               {children}
                             </a>
-                          )
+                          );
                         },
                       }}
                     >
                       {recordMarkdownContent}
                     </ReactMarkdown>
                   </MarkdownErrorBoundary>
-                )
+                );
               })()}
             </div>
             <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 rounded-b-2xl flex justify-end gap-2">
@@ -5316,5 +5751,5 @@ export default function NotebookDetailPage() {
         </div>
       )}
     </div>
-  )
+  );
 }

@@ -83,6 +83,10 @@ def _extract_notebook_id_from_sources_kb_name(kb_name: str) -> str:
     return match.group("notebook_id") if match else ""
 
 
+def _is_notebook_sources_kb(kb_name: str) -> bool:
+    return bool(_NOTEBOOK_SOURCES_KB_RE.match((kb_name or "").strip()))
+
+
 def _normalize_notebook_name(name: str) -> str:
     cleaned = " ".join((name or "").split()).strip()
     return cleaned or "未命名笔记本"
@@ -215,7 +219,7 @@ async def run_initialization_task(initializer: KnowledgeBaseInitializer):
         logger.info(f"[{task_id}] Initializing KB: {initializer.kb_name}")
 
         await initializer.process_documents()
-        initializer.extract_numbered_items()
+        await asyncio.to_thread(initializer.extract_numbered_items)
 
         initializer.progress_tracker.update(
             ProgressStage.COMPLETED, "Knowledge base initialization complete!", current=1, total=1
@@ -268,13 +272,27 @@ async def run_upload_processing_task(
         processed_files = await adder.process_new_documents(new_files)
 
         if processed_files:
-            progress_tracker.update(
-                ProgressStage.EXTRACTING_ITEMS,
-                "Extracting numbered items...",
-                current=0,
-                total=len(processed_files),
-            )
-            adder.extract_numbered_items_for_new_docs(processed_files, batch_size=20)
+            if _is_notebook_sources_kb(kb_name):
+                logger.info(
+                    f"[{task_id}] Skipping numbered items extraction for notebook sources KB "
+                    f"'{kb_name}'"
+                )
+                progress_tracker.update(
+                    ProgressStage.EXTRACTING_ITEMS,
+                    "Skipping numbered items extraction for notebook sources KB...",
+                    current=len(processed_files),
+                    total=len(processed_files),
+                )
+            else:
+                progress_tracker.update(
+                    ProgressStage.EXTRACTING_ITEMS,
+                    "Extracting numbered items...",
+                    current=0,
+                    total=len(processed_files),
+                )
+                await asyncio.to_thread(
+                    adder.extract_numbered_items_for_new_docs, processed_files, 20
+                )
 
         adder.update_metadata(len(new_files))
 

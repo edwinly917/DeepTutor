@@ -246,6 +246,11 @@ class BananaPptOutlineRequest(BaseModel):
 
 class BananaPptImageRequest(BaseModel):
     prompt: str
+    slide_title: str | None = None
+    slide_points: list[str] | None = None
+    layout: str | None = None
+    deck_title: str | None = None
+    style_prompt: str | None = None
 
 
 @router.post("/export_pptx")
@@ -466,7 +471,14 @@ async def generate_ppt_image(request: BananaPptImageRequest):
 
     service = BananaPptService(project_root)
     try:
-        image_data_url = await service.generate_image(request.prompt)
+        image_data_url = await service.generate_image(
+            prompt=request.prompt,
+            slide_title=request.slide_title,
+            slide_points=request.slide_points,
+            layout=request.layout,
+            deck_title=request.deck_title,
+            style_prompt=request.style_prompt,
+        )
         return {"image_data_url": image_data_url}
     except Exception as e:
         logger.error(f"Banana PPT image failed: {e}")

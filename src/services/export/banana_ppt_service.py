@@ -26,6 +26,7 @@ _LAYOUTS = {
     "SPLIT_LEFT",
     "SPLIT_RIGHT",
 }
+_PROMPT_CACHE_VERSION = "pptimg-v2-nonabstract"
 
 
 class BananaPptService:
@@ -71,13 +72,13 @@ class BananaPptService:
             f"- QUOTE: Large centered impactful quote with decorative marks\n"
             f"- TYPOGRAPHIC: Text-only with vertical accent bar (no image)\n\n"
             f"CRITICAL rules for 'imagePrompt' (follow strictly):\n"
-            f"- DO NOT request data charts, graphs, bar charts, pie charts, heat maps, or data visualizations\n"
-            f"- DO NOT request flowcharts, timelines, org charts, or diagrams with text labels\n"
-            f"- DO NOT include brand logos, company names, or specific product names\n"
-            f"- ONLY describe abstract visual metaphors, scenic illustrations, or conceptual imagery\n"
-            f"- Example: Instead of 'quarterly sales bar chart', use 'abstract upward arrows symbolizing growth with gradient colors'\n"
-            f"- Example: Instead of 'city sales heat map', use 'futuristic cityscape with glowing network connections'\n"
-            f"- The AI generates pure visual illustrations WITHOUT any text, numbers, or labels\n"
+            f"- imagePrompt must directly match the slide title and key points\n"
+            f"- Prefer concrete subject matter and realistic/conceptual scenes related to the topic\n"
+            f"- Include composition hints (main subject, setting, camera angle, lighting, mood)\n"
+            f"- Keep the image suitable for 16:9 presentation usage\n"
+            f"- Avoid logos, brand names, product names, and watermarks\n"
+            f"- Avoid readable text overlays, labels, and dense numbers to reduce rendering artifacts\n"
+            f"- If a slide mentions data/process, describe visual storytelling scenes instead of literal charts\n"
         )
         if style_prompt:
             user_prompt += f"- Style guidance: {style_prompt}\n"
@@ -113,7 +114,15 @@ class BananaPptService:
 
         return self._normalize_outline(data, max_slides)
 
-    async def generate_image(self, prompt: str) -> str:
+    async def generate_image(
+        self,
+        prompt: str,
+        slide_title: Optional[str] = None,
+        slide_points: Optional[list[str]] = None,
+        layout: Optional[str] = None,
+        deck_title: Optional[str] = None,
+        style_prompt: Optional[str] = None,
+    ) -> str:
         prompt = (prompt or "").strip()
         if not prompt:
             return ""
@@ -123,26 +132,104 @@ class BananaPptService:
             logger.warning("BananaPPT image config missing model/base_url")
             return ""
 
-        cache_key = self._hash_prompt(prompt, img_cfg)
+        primary_prompt = self._build_image_generation_prompt(
+            prompt=prompt,
+            slide_title=slide_title,
+            slide_points=slide_points,
+            layout=layout,
+            deck_title=deck_title,
+            style_prompt=style_prompt,
+            simplified=False,
+        )
+        image_data = self._generate_image_with_cache(primary_prompt, img_cfg)
+        if image_data:
+            return image_data
+
+        # Retry once with a simpler prompt when providers reject richer prompts.
+        fallback_prompt = self._build_image_generation_prompt(
+            prompt=prompt,
+            slide_title=slide_title,
+            slide_points=slide_points,
+            layout=layout,
+            deck_title=deck_title,
+            style_prompt=style_prompt,
+            simplified=True,
+        )
+        if fallback_prompt != primary_prompt:
+            logger.info("Retrying PPT image generation with simplified prompt")
+            image_data = self._generate_image_with_cache(fallback_prompt, img_cfg)
+            if image_data:
+                return image_data
+
+        return ""
+
+    def _generate_image_with_cache(self, effective_prompt: str, cfg: BananaPptImageConfig) -> Optional[str]:
+        cache_key = self._hash_prompt(effective_prompt, cfg)
         cached = self._read_cached_image(cache_key)
         if cached:
             return cached
 
-        if img_cfg.binding == "gemini":
-            image_data = self._generate_gemini_image(prompt, img_cfg)
-        elif img_cfg.binding == "openai":
-            image_data = self._generate_openai_image(prompt, img_cfg)
-        elif img_cfg.binding == "doubao":
-            image_data = self._generate_doubao_image(prompt, img_cfg)
-        else:
-            logger.warning(f"Unsupported image binding: {img_cfg.binding}")
-            return ""
-
+        image_data = self._run_image_provider(effective_prompt, cfg)
         if not image_data:
-            return ""
+            return None
 
         self._write_cached_image(cache_key, image_data)
         return image_data
+
+    def _run_image_provider(self, prompt: str, cfg: BananaPptImageConfig) -> Optional[str]:
+        if cfg.binding == "gemini":
+            return self._generate_gemini_image(prompt, cfg)
+        if cfg.binding == "openai":
+            return self._generate_openai_image(prompt, cfg)
+        if cfg.binding == "doubao":
+            return self._generate_doubao_image(prompt, cfg)
+        logger.warning(f"Unsupported image binding: {cfg.binding}")
+        return None
+
+    def _build_image_generation_prompt(
+        self,
+        prompt: str,
+        slide_title: Optional[str],
+        slide_points: Optional[list[str]],
+        layout: Optional[str],
+        deck_title: Optional[str],
+        style_prompt: Optional[str],
+        simplified: bool = False,
+    ) -> str:
+        clean_points = [str(p).strip() for p in (slide_points or []) if str(p).strip()]
+        lines = []
+        if simplified:
+            lines.append(
+                "Create a professional presentation illustration that matches the topic below."
+            )
+        else:
+            lines.append(
+                "Create a professional presentation illustration that directly matches this slide."
+            )
+
+        if deck_title:
+            lines.append(f"Deck title: {deck_title}")
+        if slide_title:
+            lines.append(f"Slide title: {slide_title}")
+        if clean_points and not simplified:
+            lines.append("Slide key points:")
+            for point in clean_points[:5]:
+                lines.append(f"- {point}")
+        if layout and not simplified:
+            lines.append(f"Target layout: {layout}")
+        if style_prompt and not simplified:
+            lines.append(f"Visual style guidance: {style_prompt}")
+
+        lines.extend(
+            [
+                "Hard constraints:",
+                "- Avoid logos, brand marks, and watermarks.",
+                "- Avoid long readable text overlays and dense numeric labels.",
+                "- Keep composition clear and suitable for a 16:9 slide.",
+                f"Image brief: {prompt}",
+            ]
+        )
+        return "\n".join(lines)
 
     def _generate_doubao_image(self, prompt: str, cfg: BananaPptImageConfig) -> Optional[str]:
         """
@@ -307,7 +394,11 @@ class BananaPptService:
 
     def _hash_prompt(self, prompt: str, cfg: BananaPptImageConfig) -> str:
         hasher = hashlib.sha256()
+        hasher.update(_PROMPT_CACHE_VERSION.encode("utf-8"))
+        hasher.update(b"|")
         hasher.update(cfg.model.encode("utf-8"))
+        hasher.update(b"|")
+        hasher.update(cfg.binding.encode("utf-8"))
         hasher.update(b"|")
         hasher.update(cfg.aspect_ratio.encode("utf-8"))
         hasher.update(b"|")
@@ -338,22 +429,8 @@ class BananaPptService:
         url = f"{url}/models/{cfg.model}:generateContent"
         params = {"key": cfg.api_key} if cfg.api_key else None
 
-        # Add constraint to prevent garbled text in generated images
-        # Also encourage abstract visual interpretation for data-related requests
-        enhanced_prompt = (
-            f"Create a professional, artistic illustration for a presentation slide. "
-            f"The theme is: {prompt}. "
-            f"CRITICAL RULES: "
-            f"1. Generate ONLY abstract visual metaphors, NOT literal data charts or graphs. "
-            f"2. Do NOT include any text, words, letters, numbers, labels, or typography. "
-            f"3. If the theme mentions charts/graphs/data, create abstract visual representations instead "
-            f"(e.g., flowing gradients, geometric patterns, upward arrows for growth). "
-            f"4. Use professional, modern design aesthetics with smooth gradients and clean shapes. "
-            f"5. The image should be purely visual and artistic."
-        )
-
         payload = {
-            "contents": [{"parts": [{"text": enhanced_prompt}]}],
+            "contents": [{"parts": [{"text": prompt}]}],
         }
         try:
             # Increase timeout to 120s for large image generation

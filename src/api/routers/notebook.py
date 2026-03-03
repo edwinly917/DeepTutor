@@ -3,6 +3,7 @@ Notebook API Router
 Provides notebook creation, querying, updating, deletion, and record management functions
 """
 
+import asyncio
 import hashlib
 import json
 from pathlib import Path
@@ -117,6 +118,52 @@ _LOW_QUALITY_CONTENT_MARKERS = (
     "你的浏览器版本过低，可能导致网站不能正常访问",
     "visit the bitauto international website",
 )
+_ACTIVE_SOURCES_SYNC_TASKS: dict[str, asyncio.Task] = {}
+_SOURCES_SYNC_LOCK = asyncio.Lock()
+
+
+def _log_async_task_result(task: asyncio.Task, task_name: str) -> None:
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        logger.info(f"Background task cancelled: {task_name}")
+    except Exception:
+        logger.exception(f"Background task failed: {task_name}")
+
+
+def _schedule_upload_processing_task(kb_name: str, file_paths: list[str]) -> None:
+    llm_cfg = get_llm_config()
+    task = asyncio.create_task(
+        run_upload_processing_task(
+            kb_name=kb_name,
+            base_dir=str(_kb_base_dir),
+            api_key=llm_cfg.api_key,
+            base_url=llm_cfg.base_url,
+            uploaded_file_paths=file_paths,
+        )
+    )
+    task.add_done_callback(
+        lambda done_task: _log_async_task_result(done_task, f"kb_upload:{kb_name}")
+    )
+
+
+async def _schedule_sources_kb_sync(notebook_id: str) -> bool:
+    async with _SOURCES_SYNC_LOCK:
+        existing_task = _ACTIVE_SOURCES_SYNC_TASKS.get(notebook_id)
+        if existing_task and not existing_task.done():
+            return False
+
+        task = asyncio.create_task(_sync_sources_kb(notebook_id))
+        _ACTIVE_SOURCES_SYNC_TASKS[notebook_id] = task
+
+        def _on_done(done_task: asyncio.Task, current_notebook_id: str = notebook_id) -> None:
+            current = _ACTIVE_SOURCES_SYNC_TASKS.get(current_notebook_id)
+            if current is done_task:
+                _ACTIVE_SOURCES_SYNC_TASKS.pop(current_notebook_id, None)
+            _log_async_task_result(done_task, f"sources_sync:{current_notebook_id}")
+
+        task.add_done_callback(_on_done)
+        return True
 
 
 def _safe_upload_filename(filename: str) -> str:
@@ -792,7 +839,7 @@ def _write_source_files(raw_dir: Path, sources: list[dict]) -> tuple[list[str], 
     return file_paths, indexable_paths
 
 
-async def _sync_sources_kb(notebook_id: str, background_tasks: BackgroundTasks) -> str | None:
+async def _sync_sources_kb(notebook_id: str) -> str | None:
     notebook_name = _get_notebook_name(notebook_id)
     sessions = notebook_manager.list_sessions(notebook_id)
     # Collect sources WITHOUT normalization first (to preserve full content for enrichment)
@@ -854,15 +901,7 @@ async def _sync_sources_kb(notebook_id: str, background_tasks: BackgroundTasks) 
     _write_sources_manifest(kb_dir, signature, selected_sources, notebook_name)
 
     if indexable_file_paths:
-        llm_cfg = get_llm_config()
-        background_tasks.add_task(
-            run_upload_processing_task,
-            kb_name=kb_name,
-            base_dir=str(_kb_base_dir),
-            api_key=llm_cfg.api_key,
-            base_url=llm_cfg.base_url,
-            uploaded_file_paths=indexable_file_paths,
-        )
+        _schedule_upload_processing_task(kb_name, indexable_file_paths)
     elif file_paths:
         logger.info(f"No indexable source files for {kb_name}; raw files kept for inspection")
 
@@ -1239,9 +1278,7 @@ async def latest_session(notebook_id: str):
 
 
 @router.post("/{notebook_id}/sessions")
-async def upsert_session(
-    notebook_id: str, request: SessionSnapshot, background_tasks: BackgroundTasks
-):
+async def upsert_session(notebook_id: str, request: SessionSnapshot):
     """Create or update a chat session snapshot"""
     if not notebook_manager.get_notebook(notebook_id):
         raise HTTPException(status_code=404, detail="Notebook not found")
@@ -1252,7 +1289,9 @@ async def upsert_session(
         selected_sources = _collect_selected_sources_raw(sessions)
         signature = _selected_sources_signature(selected_sources)
         if _should_sync_sources_kb(notebook_id, signature):
-            await _sync_sources_kb(notebook_id, background_tasks)
+            scheduled = await _schedule_sources_kb_sync(notebook_id)
+            if not scheduled:
+                logger.info(f"Sources KB sync already running for notebook '{notebook_id}'")
     except Exception as e:
         print(f"Failed to sync session sources to KB: {e}")
     return {"session": session}

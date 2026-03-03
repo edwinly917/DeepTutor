@@ -163,7 +163,9 @@ class BananaPptService:
 
         return ""
 
-    def _generate_image_with_cache(self, effective_prompt: str, cfg: BananaPptImageConfig) -> Optional[str]:
+    def _generate_image_with_cache(
+        self, effective_prompt: str, cfg: BananaPptImageConfig
+    ) -> Optional[str]:
         cache_key = self._hash_prompt(effective_prompt, cfg)
         cached = self._read_cached_image(cache_key)
         if cached:

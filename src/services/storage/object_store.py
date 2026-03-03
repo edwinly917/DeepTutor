@@ -40,9 +40,7 @@ def upload_file(bucket: str, object_key: str, file_path: str, content_type: str)
     client.fput_object(bucket, object_key, file_path, content_type=content_type)
 
 
-def upload_bytes(
-    bucket: str, object_key: str, data: bytes, content_type: str
-) -> None:
+def upload_bytes(bucket: str, object_key: str, data: bytes, content_type: str) -> None:
     client = get_minio_client()
     if client is None:
         raise ValueError("MinIO configuration missing")

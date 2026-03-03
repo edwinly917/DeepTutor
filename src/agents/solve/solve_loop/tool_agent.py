@@ -5,8 +5,8 @@ ToolAgent - Tool executor
 Responsible for reading tool calls in solve-chain, actually executing tools and producing summary
 """
 
-from pathlib import Path
 import asyncio
+from pathlib import Path
 import re
 import sys
 import time

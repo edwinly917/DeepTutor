@@ -15,10 +15,10 @@ Usage:
 """
 
 from .loader import (
+    PROJECT_ROOT,
     BananaPptConfig,
     BananaPptImageConfig,
     BananaPptOutlineConfig,
-    PROJECT_ROOT,
     _deep_merge,
     get_agent_params,
     get_banana_ppt_config,

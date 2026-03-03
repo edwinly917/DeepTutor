@@ -1,7 +1,7 @@
 """Doubao (Volcano Engine) multimodal embedding adapter."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import httpx
 
@@ -13,11 +13,11 @@ logger = logging.getLogger(__name__)
 class DoubaoEmbeddingAdapter(BaseEmbeddingAdapter):
     """
     Adapter for Doubao (Volcano Engine) multimodal embedding API.
-    
+
     Supports Doubao's embedding models like doubao-embedding-vision-251215.
     Uses the /embeddings/multimodal endpoint with a different input format.
     """
-    
+
     MODELS_INFO = {
         "doubao-embedding-vision-251215": {
             "default": 1024,
@@ -28,7 +28,7 @@ class DoubaoEmbeddingAdapter(BaseEmbeddingAdapter):
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize Doubao embedding adapter.
-        
+
         Args:
             config: Configuration dictionary with:
                 - api_key: Doubao API key (ARK_API_KEY)
@@ -57,24 +57,24 @@ class DoubaoEmbeddingAdapter(BaseEmbeddingAdapter):
             "encoding_format": "float",
             "sparse_embedding": {"type": "enabled"},
         }
-        
+
         # Add dimensions if specified (must use self.dimensions as fallback)
         if self.dimensions:
             payload["dimensions"] = self.dimensions
-            
+
         if self.instructions:
             payload["instructions"] = self.instructions
 
         url = f"{self.base_url}/embeddings/multimodal"
-        
+
         response = await client.post(url, json=payload, headers=headers)
-        
+
         if response.status_code >= 400:
             logger.error(f"HTTP {response.status_code} response body: {response.text}")
             response.raise_for_status()
-            
+
         data = response.json()
-        
+
         # Parse response
         # Structure: {"data": {"embedding": [0.1, 0.2, ...], ...}}
         try:
@@ -88,15 +88,15 @@ class DoubaoEmbeddingAdapter(BaseEmbeddingAdapter):
         """
         Generate embeddings using Doubao's multimodal API.
         Handles batch requests by sending concurrent single requests.
-        
+
         Args:
             request: EmbeddingRequest with texts to embed
-            
+
         Returns:
             EmbeddingResponse with embeddings and metadata
         """
         import asyncio
-        
+
         logger.debug(f"Process {len(request.texts)} texts with Doubao adapter")
 
         async with httpx.AsyncClient(timeout=self.request_timeout) as client:
@@ -122,13 +122,13 @@ class DoubaoEmbeddingAdapter(BaseEmbeddingAdapter):
             embeddings=embeddings,
             model=self.model,
             dimensions=actual_dims,
-            usage={"total_tokens": sum(len(t) for t in request.texts)}, # Approx usage
+            usage={"total_tokens": sum(len(t) for t in request.texts)},  # Approx usage
         )
 
     def get_model_info(self) -> Dict[str, Any]:
         """
         Return information about the configured Doubao model.
-        
+
         Returns:
             Dictionary with model metadata
         """

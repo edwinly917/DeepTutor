@@ -67,11 +67,7 @@ class SourceReportGenerator:
                 continue
 
             content = content[: self.max_source_chars]
-            source_block = (
-                f"[{idx}] {title}\n"
-                f"URL: {url or 'N/A'}\n"
-                f"Content:\n{content}\n"
-            )
+            source_block = f"[{idx}] {title}\nURL: {url or 'N/A'}\nContent:\n{content}\n"
 
             total_chars += len(source_block)
             if total_chars > self.max_total_chars:
@@ -89,7 +85,9 @@ class SourceReportGenerator:
             "skipped_sources": skipped_sources,
         }
 
-    async def generate(self, sources: List[Dict[str, Any]], topic: Optional[str] = None) -> Dict[str, Any]:
+    async def generate(
+        self, sources: List[Dict[str, Any]], topic: Optional[str] = None
+    ) -> Dict[str, Any]:
         result = await self._collect_sources(sources, topic)
         compiled_sources = result["compiled_sources"]
         used_sources = result["used_sources"]

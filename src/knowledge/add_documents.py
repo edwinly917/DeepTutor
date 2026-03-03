@@ -326,7 +326,7 @@ class DocumentAdder:
                     current=idx,
                     total=total_files,
                     file_name=doc_file.name,
-            )
+                )
 
             try:
                 if doc_file.suffix.lower() in [".md", ".txt"]:
@@ -371,9 +371,7 @@ class DocumentAdder:
                             rag, doc_file, fallback_text
                         )
                         if fallback_used:
-                            logger.info(
-                                f"  ✓ Fallback text ingestion complete: {doc_file.name}"
-                            )
+                            logger.info(f"  ✓ Fallback text ingestion complete: {doc_file.name}")
                             processed_files.append(doc_file)
                 if not fallback_used:
                     logger.error(f"  ✗ Processing timeout for {doc_file.name} (>10 minutes)")
@@ -400,9 +398,7 @@ class DocumentAdder:
                             rag, doc_file, fallback_text
                         )
                         if fallback_used:
-                            logger.info(
-                                f"  ✓ Fallback text ingestion complete: {doc_file.name}"
-                            )
+                            logger.info(f"  ✓ Fallback text ingestion complete: {doc_file.name}")
                             processed_files.append(doc_file)
                 if not fallback_used:
                     logger.error(f"  ✗ Processing failed {doc_file.name}: {e!s}")

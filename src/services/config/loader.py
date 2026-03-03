@@ -372,12 +372,8 @@ def get_banana_ppt_config(project_root: Optional[Path] = None) -> BananaPptConfi
     image = BananaPptImageConfig(
         model=_get_value_env_first(image_cfg, "model", "BANANA_PPT_IMAGE_MODEL", ""),
         api_key=_get_value_env_first(image_cfg, "api_key", "BANANA_PPT_IMAGE_API_KEY", ""),
-        base_url=_get_value_env_first(
-            image_cfg, "base_url", "BANANA_PPT_IMAGE_BASE_URL", ""
-        ),
-        binding=_get_value_env_first(
-            image_cfg, "binding", "BANANA_PPT_IMAGE_BINDING", "gemini"
-        ),
+        base_url=_get_value_env_first(image_cfg, "base_url", "BANANA_PPT_IMAGE_BASE_URL", ""),
+        binding=_get_value_env_first(image_cfg, "binding", "BANANA_PPT_IMAGE_BINDING", "gemini"),
         aspect_ratio=_get_value_env_first(
             image_cfg, "aspect_ratio", "BANANA_PPT_IMAGE_ASPECT_RATIO", "16:9"
         ),

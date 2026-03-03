@@ -398,6 +398,7 @@ class AgentCoordinator:
         if prompt_config and isinstance(prompt_config, str):
             # Parse the YAML-style prompt config
             import yaml
+
             try:
                 parsed = yaml.safe_load(prompt_config)
                 system_prompt = parsed.get("system", "")
@@ -408,7 +409,7 @@ class AgentCoordinator:
         else:
             system_prompt = ""
             user_template = ""
-        
+
         # Fallback if prompts not loaded
         if not system_prompt:
             system_prompt = (
@@ -423,7 +424,7 @@ class AgentCoordinator:
                 "3. Do not include functions, numerical values, or calculation tasks\n"
                 "4. Do not use questions or task descriptions\n"
             )
-        
+
         if user_template:
             user_prompt = user_template.format(
                 requirement_text=requirement_text,
@@ -620,6 +621,7 @@ class AgentCoordinator:
         prompt_config = self._prompts.get("check_retrieval_relevance", "")
         if prompt_config and isinstance(prompt_config, str):
             import yaml
+
             try:
                 parsed = yaml.safe_load(prompt_config)
                 system_prompt = parsed.get("system", "")
@@ -630,14 +632,14 @@ class AgentCoordinator:
         else:
             system_prompt = ""
             user_template = ""
-        
+
         # Fallback if prompts not loaded
         if not system_prompt:
             system_prompt = (
                 "You evaluate whether retrieved knowledge is relevant to a user's request. "
                 'Respond in JSON with key "relevant" (true/false) and optional "reason".'
             )
-        
+
         if user_template:
             user_prompt = user_template.format(
                 requirement_text=requirement_text,
@@ -649,7 +651,7 @@ class AgentCoordinator:
                 f"Retrieved knowledge summary:\n{knowledge_summary}\n\n"
                 "Is the retrieved knowledge substantively relevant to the request?"
             )
-        
+
         try:
             content = await self._call_llm(system_prompt=system_prompt, user_prompt=user_prompt)
             parsed = json.loads(content)
@@ -666,6 +668,7 @@ class AgentCoordinator:
         prompt_config = self._prompts.get("generate_child_requirements", "")
         if prompt_config and isinstance(prompt_config, str):
             import yaml
+
             try:
                 parsed = yaml.safe_load(prompt_config)
                 system_prompt = parsed.get("system", "")
@@ -676,7 +679,7 @@ class AgentCoordinator:
         else:
             system_prompt = ""
             user_template = ""
-        
+
         # Fallback if prompts not loaded
         if not system_prompt:
             system_prompt = (
@@ -686,7 +689,7 @@ class AgentCoordinator:
                 'Output JSON with key "requirements" (array of length requested) where each item has: '
                 '"title", "question_type", "difficulty", "additional_requirements".'
             )
-        
+
         if user_template:
             user_prompt = user_template.format(
                 base_requirement=json.dumps(base_requirement, ensure_ascii=False, indent=2),
@@ -699,7 +702,7 @@ class AgentCoordinator:
                 f"Knowledge summary:\n{knowledge_summary}\n\n"
                 f"Generate exactly {num_questions} sub-requirements in JSON."
             )
-        
+
         try:
             content = await self._call_llm(system_prompt=system_prompt, user_prompt=user_prompt)
             parsed = json.loads(content)
@@ -728,6 +731,7 @@ class AgentCoordinator:
         prompt_config = self._prompts.get("interpret_requirement_text", "")
         if prompt_config and isinstance(prompt_config, str):
             import yaml
+
             try:
                 parsed_config = yaml.safe_load(prompt_config)
                 system_prompt = parsed_config.get("system", "")
@@ -738,7 +742,7 @@ class AgentCoordinator:
         else:
             system_prompt = ""
             user_template = ""
-        
+
         # Fallback if prompts not loaded
         if not system_prompt:
             system_prompt = (
@@ -748,12 +752,12 @@ class AgentCoordinator:
                 "and additional requirements. Return JSON with keys: "
                 '"knowledge_point", "difficulty", "question_type", "additional_requirements".'
             )
-        
+
         if user_template:
             user_prompt = user_template.format(requirement_text=requirement_text)
         else:
             user_prompt = f"Requirement:\n{requirement_text}\n\nReturn JSON only."
-        
+
         try:
             content = await self._call_llm(system_prompt=system_prompt, user_prompt=user_prompt)
             parsed = json.loads(content)

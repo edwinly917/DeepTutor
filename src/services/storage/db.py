@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import os
 
-from sqlalchemy import Column, DateTime, JSON, MetaData, String, Table, create_engine
+from sqlalchemy import JSON, Column, DateTime, MetaData, String, Table, create_engine
 
 _engine = None
 _metadata = MetaData()

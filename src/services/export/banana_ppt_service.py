@@ -1,8 +1,8 @@
 import base64
 import hashlib
 import json
-import re
 from pathlib import Path
+import re
 from typing import Any, Dict, Optional, Tuple
 
 import requests
@@ -147,7 +147,7 @@ class BananaPptService:
     def _generate_doubao_image(self, prompt: str, cfg: BananaPptImageConfig) -> Optional[str]:
         """
         Generate image using Doubao (Volcano Engine Ark) API.
-        Reference curl example: 
+        Reference curl example:
         {
           "model": "doubao-seedream-4-5-251128",
           "prompt": "...",
@@ -163,12 +163,9 @@ class BananaPptService:
             url = f"{base}/api/v3/images/generations"
         else:
             url = f"{base}/images/generations" if not base.endswith("/images/generations") else base
-            
-        headers = {
-            "Authorization": f"Bearer {cfg.api_key}",
-            "Content-Type": "application/json"
-        }
-        
+
+        headers = {"Authorization": f"Bearer {cfg.api_key}", "Content-Type": "application/json"}
+
         # Use User's suggested size or fallback to aspect ratio mapping
         size = cfg.aspect_ratio
         if size == "16:9":
@@ -176,16 +173,16 @@ class BananaPptService:
         elif size == "1:1":
             size = "1024x1024"
         # If the user enters a specific string like "2K", "512x512", use it directly.
-            
+
         payload = {
             "model": cfg.model,
             "prompt": prompt,
-            "response_format": "b64_json", # Prefer b64 for local caching
+            "response_format": "b64_json",  # Prefer b64 for local caching
             "size": size,
             "sequential_image_generation": "disabled",
-            "watermark": True
+            "watermark": True,
         }
-        
+
         try:
             resp = requests.post(url, json=payload, headers=headers, timeout=60)
             if resp.status_code != 200:
@@ -194,16 +191,18 @@ class BananaPptService:
                 payload["response_format"] = "url"
                 resp = requests.post(url, json=payload, headers=headers, timeout=60)
                 if resp.status_code != 200:
-                    logger.warning(f"Doubao image request failed (url): {resp.status_code} {resp.text}")
-                
+                    logger.warning(
+                        f"Doubao image request failed (url): {resp.status_code} {resp.text}"
+                    )
+
             resp.raise_for_status()
             data = resp.json()
-            
+
             items = data.get("data") or []
             if not items:
                 logger.warning(f"Doubao image response empty: {data}")
                 return None
-                
+
             item = items[0]
             if "b64_json" in item:
                 return f"data:image/png;base64,{item['b64_json']}"
@@ -214,7 +213,7 @@ class BananaPptService:
                 img_resp.raise_for_status()
                 b64 = base64.b64encode(img_resp.content).decode("utf-8")
                 return f"data:image/png;base64,{b64}"
-                
+
             logger.warning(f"Doubao image response missing recognized data: {item}")
             return None
         except Exception as exc:
@@ -245,11 +244,11 @@ class BananaPptService:
             image_prompt = slide.get("imagePrompt")
             if image_prompt is not None:
                 image_prompt = str(image_prompt).strip() or None
-            
+
             # If slide has imagePrompt but layout doesn't support images, upgrade it
             if image_prompt and layout == "TYPOGRAPHIC":
                 layout = "TYPOGRAPHIC_WITH_IMAGE"
-            
+
             slides.append(
                 {
                     "title": slide_title,
@@ -338,7 +337,7 @@ class BananaPptService:
         url = cfg.base_url.rstrip("/")
         url = f"{url}/models/{cfg.model}:generateContent"
         params = {"key": cfg.api_key} if cfg.api_key else None
-        
+
         # Add constraint to prevent garbled text in generated images
         # Also encourage abstract visual interpretation for data-related requests
         enhanced_prompt = (
@@ -352,7 +351,7 @@ class BananaPptService:
             f"4. Use professional, modern design aesthetics with smooth gradients and clean shapes. "
             f"5. The image should be purely visual and artistic."
         )
-        
+
         payload = {
             "contents": [{"parts": [{"text": enhanced_prompt}]}],
         }
@@ -366,7 +365,7 @@ class BananaPptService:
             data = resp.json()
         except Exception as exc:
             error_msg = f"Gemini image request failed: {exc}"
-            if 'resp' in locals():
+            if "resp" in locals():
                 try:
                     error_msg += f" | Response size: {len(resp.content)} bytes"
                 except:
@@ -378,7 +377,9 @@ class BananaPptService:
         if not image:
             # Log truncated response for debugging (first 500 chars)
             resp_preview = json.dumps(data)[:500]
-            logger.warning(f"Gemini image response missing inline data. Response preview: {resp_preview}...")
+            logger.warning(
+                f"Gemini image response missing inline data. Response preview: {resp_preview}..."
+            )
             return None
         mime, b64 = image
         logger.info(f"Gemini image extracted: mime={mime}, data_length={len(b64)} chars")

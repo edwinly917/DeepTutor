@@ -85,7 +85,9 @@ class PPTGenerator:
         if style_prompt:
             try:
                 spec = await self._generate_ppt_spec(
-                    markdown, style_prompt, max_slides,
+                    markdown,
+                    style_prompt,
+                    max_slides,
                     model_override=style_model,
                     api_key_override=style_api_key,
                     base_url_override=style_base_url,
@@ -168,9 +170,7 @@ class PPTGenerator:
         cleaned = cleaned.strip()
         return cleaned or "presentation"
 
-    def _split_markdown_into_sections(
-        self, markdown: str
-    ) -> Tuple[str, List[Tuple[str, str]]]:
+    def _split_markdown_into_sections(self, markdown: str) -> Tuple[str, List[Tuple[str, str]]]:
         """Split markdown into title and titled sections."""
         lines = markdown.splitlines()
         title = None
@@ -194,9 +194,7 @@ class PPTGenerator:
                 # Adjusting logic to capture H2 as main slide sections
                 if level <= 2:
                     if current_heading is not None:
-                        sections.append(
-                            (current_heading, "\n".join(current_lines).strip())
-                        )
+                        sections.append((current_heading, "\n".join(current_lines).strip()))
                     current_heading = heading
                     current_lines = []
                     continue
@@ -225,20 +223,20 @@ class PPTGenerator:
     ) -> Dict[str, Any]:
         """
         Call LLM to generate structure and theme.
-        
+
         Uses PPT-specific config with optional per-request overrides.
         """
         ppt_config = get_ppt_config()
-        
+
         # Apply overrides (request params > ppt config)
         effective_model = model_override or ppt_config.model
         effective_api_key = api_key_override or ppt_config.api_key
         effective_base_url = base_url_override or ppt_config.base_url
-        
+
         if not effective_model:
             logger.warning("No PPT model configured, skipping LLM spec generation")
             return {}
-        
+
         system_prompt = (
             "You are an expert presentation designer. "
             "Return ONLY valid JSON with keys: title, theme, slides. "
@@ -266,9 +264,9 @@ class PPTGenerator:
             binding=ppt_config.binding,
             temperature=ppt_config.temperature,
             max_tokens=ppt_config.max_tokens,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
         )
-        
+
         return self._extract_json(raw) or {}
 
     def _extract_json(self, text: str) -> Optional[Dict[str, Any]]:
@@ -277,7 +275,7 @@ class PPTGenerator:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
-            
+
         # Try extracting code block
         m = re.search(r"```json\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE)
         if m:
@@ -285,7 +283,7 @@ class PPTGenerator:
                 return json.loads(m.group(1).strip())
             except:
                 pass
-        
+
         # Try finding braces
         start = text.find("{")
         end = text.rfind("}")
@@ -306,11 +304,11 @@ class PPTGenerator:
         apply_theme: bool,
     ):
         """Builds the PPT slides based on spec or fallback to sections."""
-        
+
         # 1. Determine Theme
         theme = spec.get("theme", {}) if spec else {}
         theme_config = self._parse_theme(theme) if apply_theme else None
-        
+
         # 2. Title Slide
         self._add_title_slide(prs, title, theme_config, apply_theme)
 
@@ -323,11 +321,10 @@ class PPTGenerator:
         if spec and isinstance(spec.get("slides"), list):
             for s in spec["slides"]:
                 if isinstance(s, dict) and s.get("title") and isinstance(s.get("bullets"), list):
-                    slides_to_create.append({
-                        "title": s["title"],
-                        "bullets": [str(b) for b in s["bullets"] if b]
-                    })
-        
+                    slides_to_create.append(
+                        {"title": s["title"], "bullets": [str(b) for b in s["bullets"] if b]}
+                    )
+
         # If no spec slides, fallback to parsing sections
         if not slides_to_create:
             for sec_title, sec_body in sections:
@@ -336,7 +333,7 @@ class PPTGenerator:
                     bullets = [sec_body.strip()] if sec_body.strip() else []
                 if not bullets:
                     continue
-                
+
                 # Chunk large sections
                 chunk_size = 7
                 chunks = [bullets[i : i + chunk_size] for i in range(0, len(bullets), chunk_size)]
@@ -348,30 +345,35 @@ class PPTGenerator:
         for slide_data in slides_to_create:
             if slide_budget <= 0:
                 break
-            
+
             slide = prs.slides.add_slide(bullet_layout)
             self._apply_slide_style(slide, prs, theme_config, apply_theme)
-            
+
             # Set Title
             if slide.shapes.title:
                 slide.shapes.title.text = slide_data["title"]
-                self._style_text(slide.shapes.title.text_frame, theme_config, apply_theme, is_title=True)
-            
+                self._style_text(
+                    slide.shapes.title.text_frame, theme_config, apply_theme, is_title=True
+                )
+
             # Set Body
             body_shape = self._find_body_placeholder(slide)
             if body_shape:
-                 self._set_bullets(body_shape, slide_data["bullets"], theme_config, apply_theme)
-            
+                self._set_bullets(body_shape, slide_data["bullets"], theme_config, apply_theme)
+
             slide_budget -= 1
 
     def _parse_theme(self, theme: Dict[str, Any]) -> Dict[str, Any]:
         """Parse theme colors and font."""
         return {
-            "background": self._parse_hex_color(str(theme.get("background", "#FFFFFF"))) or (255, 255, 255),
+            "background": self._parse_hex_color(str(theme.get("background", "#FFFFFF")))
+            or (255, 255, 255),
             "accent": self._parse_hex_color(str(theme.get("accent", "#4F46E5"))) or (79, 70, 229),
-            "title_color": self._parse_hex_color(str(theme.get("title_color", "#111827"))) or (17, 24, 39),
-            "body_color": self._parse_hex_color(str(theme.get("body_color", "#111827"))) or (17, 24, 39),
-            "font": str(theme.get("font", "")).strip() or "Arial", # Default to safe font
+            "title_color": self._parse_hex_color(str(theme.get("title_color", "#111827")))
+            or (17, 24, 39),
+            "body_color": self._parse_hex_color(str(theme.get("body_color", "#111827")))
+            or (17, 24, 39),
+            "font": str(theme.get("font", "")).strip() or "Arial",  # Default to safe font
         }
 
     def _parse_hex_color(self, value: str) -> Optional[Tuple[int, int, int]]:
@@ -381,23 +383,25 @@ class PPTGenerator:
         if len(s) != 6:
             return None
         try:
-            return tuple(int(s[i:i+2], 16) for i in (0, 2, 4))
+            return tuple(int(s[i : i + 2], 16) for i in (0, 2, 4))
         except:
             return None
 
     def _add_title_slide(self, prs, title: str, theme: Optional[Dict[str, Any]], apply_theme: bool):
         layout = prs.slide_layouts[0]
         slide = prs.slides.add_slide(layout)
-        
+
         # Background
         if apply_theme and theme:
             slide.background.fill.solid()
             slide.background.fill.fore_color.rgb = RGBColor(*theme["background"])
-        
+
         if slide.shapes.title:
             slide.shapes.title.text = title
-            self._style_text(slide.shapes.title.text_frame, theme, apply_theme, is_title=True, font_size=44)
-            
+            self._style_text(
+                slide.shapes.title.text_frame, theme, apply_theme, is_title=True, font_size=44
+            )
+
         # Clear subtitle if exists
         if len(slide.placeholders) > 1:
             subtitle = slide.placeholders[1]
@@ -410,11 +414,10 @@ class PPTGenerator:
 
         slide.background.fill.solid()
         slide.background.fill.fore_color.rgb = RGBColor(*theme["background"])
-        
+
         # Add accent bar
         bar = slide.shapes.add_shape(
-            MSO_AUTO_SHAPE_TYPE.RECTANGLE,
-            0, 0, prs.slide_width, int(prs.slide_height * 0.05)
+            MSO_AUTO_SHAPE_TYPE.RECTANGLE, 0, 0, prs.slide_width, int(prs.slide_height * 0.05)
         )
         bar.fill.solid()
         bar.fill.fore_color.rgb = RGBColor(*theme["accent"])
@@ -432,13 +435,13 @@ class PPTGenerator:
             return
         if not apply_theme or not theme:
             return
-            
+
         # If font_size not provided, set defaults
         if font_size is None:
             font_size = 32 if is_title else 20
-            
+
         color = theme["title_color"] if is_title else theme["body_color"]
-        
+
         # Style existing paragraphs or first one
         for p in text_frame.paragraphs:
             p.font.name = theme["font"]
@@ -456,12 +459,12 @@ class PPTGenerator:
             return
         tf = body_shape.text_frame
         tf.clear()
-        
+
         for i, item in enumerate(bullets):
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
             p.text = item
             p.level = 0
-            
+
             if apply_theme and theme:
                 p.font.name = theme["font"]
                 p.font.size = Pt(20)
@@ -469,7 +472,7 @@ class PPTGenerator:
 
     def _find_body_placeholder(self, slide):
         for shape in slide.placeholders:
-            if shape.is_placeholder and shape.placeholder_format.type == 2: # Body
+            if shape.is_placeholder and shape.placeholder_format.type == 2:  # Body
                 return shape
         # Fallback to index 1
         if len(slide.placeholders) > 1:
@@ -480,18 +483,18 @@ class PPTGenerator:
         """Simple bullet extractor."""
         if not text:
             return []
-        
+
         bullets = []
         for line in text.splitlines():
             line = line.strip()
-            if not line: 
+            if not line:
                 continue
             # Match bullet markers
             if re.match(r"^[-*+]\s+", line) or re.match(r"^\d+\.\s+", line):
                 clean = re.sub(r"^([-*+]|\d+\.)\s+", "", line)
                 bullets.append(clean)
             else:
-                 # If line is short enough, treat as bullet; otherwise maybe paragraph
-                 if len(line.split()) < 30:
-                     bullets.append(line)
+                # If line is short enough, treat as bullet; otherwise maybe paragraph
+                if len(line.split()) < 30:
+                    bullets.append(line)
         return bullets

@@ -3841,7 +3841,14 @@ export default function NotebookDetailPage() {
             const imageRes = await fetch(apiUrl("/api/v1/research/ppt_image"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ prompt: current.slide.imagePrompt }),
+              body: JSON.stringify({
+                prompt: current.slide.imagePrompt,
+                slide_title: current.slide.title,
+                slide_points: current.slide.points,
+                layout: current.slide.layout,
+                deck_title: outline.title,
+                style_prompt: stylePrompt || undefined,
+              }),
             });
             if (imageRes.ok) {
               const imageData = await imageRes.json();

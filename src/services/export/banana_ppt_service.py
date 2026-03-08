@@ -50,40 +50,68 @@ class BananaPptService:
         style_prompt = (style_prompt or "").strip()
 
         system_prompt = (
-            "You are a world-class presentation designer and consultant. "
-            "Return ONLY valid JSON with keys: title, subtitle, themeColor, accentColor, slides. "
-            "slides must be an array of objects with keys: title, points, layout, imagePrompt. "
-            "Do not include markdown or commentary."
+            "You are an elite presentation information architect.\n\n"
+            "Return ONLY valid JSON with this schema:\n"
+            "{\n"
+            '  "title": string,\n'
+            '  "subtitle": string,\n'
+            '  "themeColor": string,\n'
+            '  "accentColor": string,\n'
+            '  "slides": [\n'
+            "    {\n"
+            '      "title": string,\n'
+            '      "points": [string],\n'
+            '      "layout": string,\n'
+            '      "imagePrompt": string\n'
+            "    }\n"
+            "  ]\n"
+            "}\n\n"
+            "Rules for output:\n"
+            "- Output ONLY JSON, with no markdown or commentary.\n"
+            '- themeColor and accentColor must be valid hex colors like "#3b82f6".\n'
+            '- subtitle should be concise; if unnecessary, return "".\n'
+            "- Use the requested language consistently."
         )
         user_prompt = (
-            f"Create a high-end, professional presentation from the content below.\n\n"
-            f"Constraints:\n"
-            f"- Maximum slides: {max_slides}\n"
-            f"- Generate 7-9 slides for comprehensive coverage\n"
-            f"- Keep bullets concise (<= 12 words each)\n"
-            f"- Provide themeColor (primary hex) and accentColor (secondary hex) that complement each other\n\n"
-            f"Use a VARIETY of creative slide layouts (do not repeat the same layout consecutively):\n"
-            f"- SECTION_HEADER: Impactful full-screen transition slide with bold title\n"
-            f"- OVERVIEW: Grid-based agenda or summary slide with 4 boxes\n"
-            f"- SPLIT_IMAGE_LEFT: Full-height image on left, text on right\n"
-            f"- SPLIT_IMAGE_RIGHT: Full-height image on right, text on left\n"
-            f"- TOP_IMAGE: Wide banner image at top, text below\n"
-            f"- TYPOGRAPHIC_WITH_IMAGE: Design-focused typography with a framed image element\n"
-            f"- QUOTE: Large centered impactful quote with decorative marks\n"
-            f"- TYPOGRAPHIC: Text-only with vertical accent bar (no image)\n\n"
-            f"CRITICAL rules for 'imagePrompt' (follow strictly):\n"
-            f"- imagePrompt must directly match the slide title and key points\n"
-            f"- Prefer concrete subject matter and realistic/conceptual scenes related to the topic\n"
-            f"- Include composition hints (main subject, setting, camera angle, lighting, mood)\n"
-            f"- Keep the image suitable for 16:9 presentation usage\n"
-            f"- Avoid logos, brand names, product names, and watermarks\n"
-            f"- Avoid readable text overlays, labels, and dense numbers to reduce rendering artifacts\n"
-            f"- If a slide mentions data/process, describe visual storytelling scenes instead of literal charts\n"
+            "Build a PPT outline from the report below.\n\n"
+            "Business goal:\n"
+            "- Audience: business / research readers\n"
+            "- Language: zh\n"
+            f"- Max slides: {max_slides}\n"
+            "- Preserve the report's real argument order\n"
+            "- Prefer synthesis over copying section headers\n"
+            "- Compress lower-priority details when needed to fit slide limits\n\n"
+            f"Visual planning brief:\n{style_prompt or 'default'}\n\n"
+            "Rules:\n"
+            "- Style affects only tone, density, pacing, palette, image treatment, and layout preference.\n"
+            "- Style must not distort the report's substance, priorities, or conclusions.\n"
+            "- Output must be presentation-ready, concise, and executive-readable.\n"
+            "- Create a balanced narrative arc: opening / core insights / implications / close.\n"
+            "- The first slide should introduce the topic, context, and stakes.\n"
+            "- The last slide should summarize implications, decisions, or takeaways.\n"
+            "- Each slide must communicate one clear message.\n"
+            "- Each slide title must be presentation-ready, not a raw report heading.\n"
+            "- Each slide must contain 3-5 concise points.\n"
+            "- Each point should be short, non-redundant, and insight-oriented.\n"
+            "- Avoid copying long phrases from the report unless necessary.\n"
+            f"- Ensure the total number of slides does not exceed {max_slides}.\n\n"
+            "Use only these layout values:\n"
+            '["SECTION_HEADER", "OVERVIEW", "SPLIT_IMAGE_LEFT", "SPLIT_IMAGE_RIGHT", '
+            '"TOP_IMAGE", "TYPOGRAPHIC_WITH_IMAGE", "QUOTE", "TYPOGRAPHIC", '
+            '"SPLIT_LEFT", "SPLIT_RIGHT"]\n\n'
+            "Layout guidance:\n"
+            "- Vary layouts naturally across the deck.\n"
+            "- Do not repeat the same layout more than twice in a row.\n"
+            "- Choose layout based on slide function, not decoration.\n\n"
+            "imagePrompt guidance:\n"
+            "- imagePrompt must directly support the slide's message.\n"
+            "- imagePrompt must describe one professional 16:9 presentation visual concept.\n"
+            "- Include subject, setting, composition, and mood.\n"
+            "- Prefer realistic, editorial, analytical, or conceptual business visuals.\n"
+            "- Avoid fantasy, cinematic spectacle, decorative-only imagery, logos, watermarks, readable text, UI screenshots, or literal chart screenshots.\n"
+            "- If the slide is data-heavy, describe a business/editorial visual metaphor instead of a chart screenshot.\n\n"
+            f"Report:\n{trimmed_content}"
         )
-        if style_prompt:
-            user_prompt += f"- Style guidance: {style_prompt}\n"
-
-        user_prompt += f"\nContent:\n{trimmed_content}"
 
         outline_cfg = self.config.outline
         llm_cfg = get_llm_config()

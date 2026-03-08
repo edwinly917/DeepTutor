@@ -23,6 +23,14 @@ import "katex/dist/katex.min.css";
 import { Mermaid } from "@/components/Mermaid";
 import { useGlobal } from "@/context/GlobalContext";
 import { apiUrl, wsUrl } from "@/lib/api";
+import {
+  createPptProject,
+  exportPptProjectPptx,
+  fetchPptTask,
+  generatePptDescriptions,
+  generatePptImages,
+  generatePptOutline,
+} from "@/lib/pptApi";
 import AddToNotebookModal from "@/components/AddToNotebookModal";
 import { exportToPdf, preprocessMarkdownForPdf } from "@/lib/pdfExport";
 import { useResearchReducer } from "@/hooks/useResearchReducer";
@@ -97,9 +105,6 @@ export default function ResearchPage() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingPptx, setIsExportingPptx] = useState(false);
   const [pptStylePrompt, setPptStylePrompt] = useState<string>("");
-  const [pptStyleModel, setPptStyleModel] = useState<string>("");
-  const [pptApiKey, setPptApiKey] = useState<string>("");
-  const [pptBaseUrl, setPptBaseUrl] = useState<string>("");
   // Ref for report content (hidden rendered report for PDF)
   const reportContentRef = useRef<HTMLDivElement>(null);
 
@@ -764,34 +769,42 @@ export default function ResearchPage() {
 
     setIsExportingPptx(true);
     try {
-      const res = await fetch(apiUrl("/api/v1/research/export_pptx"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          markdown: state.reporting.generatedReport,
-          title: state.planning.originalTopic || undefined,
-          style_prompt: pptStylePrompt || undefined,
-          style_model: pptStyleModel || undefined,
-          style_api_key: pptApiKey || undefined,
-          style_base_url: pptBaseUrl || undefined,
-        }),
+      const project = await createPptProject({
+        creation_type: "descriptions",
+        description_text: state.reporting.generatedReport,
+        source_content: state.reporting.generatedReport,
+        template_style: pptStylePrompt || undefined,
+        image_aspect_ratio: "16:9",
+        language: "zh",
       });
 
-      if (!res.ok) {
-        throw new Error(await res.text());
+      await generatePptOutline(project.id, pptStylePrompt || undefined);
+
+      const descriptionsTask = await generatePptDescriptions(project.id);
+      while (true) {
+        const task = await fetchPptTask(project.id, descriptionsTask.id);
+        if (task.status === "COMPLETED") break;
+        if (task.status === "FAILED" || task.status === "CANCELED") {
+          throw new Error(task.error_message || "PPT 描述生成失败");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
 
-      const data = await res.json();
-      const downloadUrl =
-        typeof data?.download_url === "string" ? data.download_url : "";
-      if (!downloadUrl) return;
+      const imagesTask = await generatePptImages(project.id);
+      while (true) {
+        const task = await fetchPptTask(project.id, imagesTask.id);
+        if (task.status === "COMPLETED") break;
+        if (task.status === "FAILED" || task.status === "CANCELED") {
+          throw new Error(task.error_message || "PPT 图片生成失败");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
 
-      const href = downloadUrl.startsWith("http")
-        ? downloadUrl
-        : apiUrl(downloadUrl);
+      const data = await exportPptProjectPptx(project.id);
+      if (!data.download_url) return;
 
       const a = document.createElement("a");
-      a.href = href;
+      a.href = apiUrl(data.download_url);
       a.download =
         typeof data?.filename === "string" && data.filename
           ? data.filename
@@ -994,47 +1007,6 @@ export default function ResearchPage() {
                 rows={3}
                 className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500/20 resize-none"
               />
-            </div>
-
-            {/* PPT Model Configuration */}
-            <div className="border border-slate-200 dark:border-slate-600 rounded-lg p-3 space-y-3">
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                PPT 调用模型配置（可选）
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">
-                  模型名称
-                </label>
-                <input
-                  value={pptStyleModel}
-                  onChange={(e) => setPptStyleModel(e.target.value)}
-                  placeholder='例如："nano-banana"'
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">
-                  API Key
-                </label>
-                <input
-                  type="password"
-                  value={pptApiKey}
-                  onChange={(e) => setPptApiKey(e.target.value)}
-                  placeholder="留空则使用默认配置"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">
-                  Base URL
-                </label>
-                <input
-                  value={pptBaseUrl}
-                  onChange={(e) => setPptBaseUrl(e.target.value)}
-                  placeholder='例如："https://api.example.com/v1"'
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
             </div>
           </div>
         </div>

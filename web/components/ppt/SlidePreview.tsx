@@ -11,6 +11,7 @@ interface SlidePreviewProps {
   accentColor?: string;
   isGenerating?: boolean;
   onUpdateSlide: (index: number, updatedSlide: SlideContent) => void;
+  onRegenerateSlide?: (index: number, slide: SlideContent) => void;
 }
 
 const SlidePreview: React.FC<SlidePreviewProps> = ({
@@ -20,6 +21,7 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({
   accentColor = "#f59e0b",
   isGenerating,
   onUpdateSlide,
+  onRegenerateSlide,
 }) => {
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onUpdateSlide(index, { ...slide, title: e.target.value });
@@ -33,7 +35,7 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({
 
   const layout = slide.layout;
 
-  const TextSection = ({
+  const renderTextSection = ({
     className = "",
     centered = false,
     dark = false,
@@ -95,7 +97,7 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({
     </div>
   );
 
-  const ImageSection = ({ className = "" }: { className?: string }) => (
+  const renderImageSection = ({ className = "" }: { className?: string }) => (
     <div className={`relative bg-gray-50 flex-shrink-0 ${className}`}>
       {isGenerating ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-50/80">
@@ -157,7 +159,7 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({
           >
             “
           </span>
-          <TextSection centered className="w-full" />
+          {renderTextSection({ centered: true, className: "w-full" })}
           <span
             className="absolute bottom-4 right-4 text-4xl font-serif opacity-30"
             style={{ color: accentColor }}
@@ -205,8 +207,8 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({
     case "SPLIT_IMAGE_RIGHT":
       content = (
         <>
-          <TextSection className="w-3/5" />
-          <ImageSection className="w-2/5 border-l" />
+          {renderTextSection({ className: "w-3/5" })}
+          {renderImageSection({ className: "w-2/5 border-l" })}
         </>
       );
       break;
@@ -214,29 +216,31 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({
     case "SPLIT_IMAGE_LEFT":
       content = (
         <>
-          <ImageSection className="w-2/5 border-r" />
-          <TextSection className="w-3/5" />
+          {renderImageSection({ className: "w-2/5 border-r" })}
+          {renderTextSection({ className: "w-3/5" })}
         </>
       );
       break;
     case "TOP_IMAGE":
       content = (
         <div className="flex flex-col w-full">
-          <ImageSection className="h-2/5 w-full border-b" />
-          <TextSection className="h-3/5 w-full" />
+          {renderImageSection({ className: "h-2/5 w-full border-b" })}
+          {renderTextSection({ className: "h-3/5 w-full" })}
         </div>
       );
       break;
     case "TYPOGRAPHIC_WITH_IMAGE":
       content = (
         <div className="w-full h-full p-4 flex gap-4">
-          <TextSection className="flex-1" />
+          {renderTextSection({ className: "flex-1" })}
           <div className="w-1/3 relative flex items-center justify-center">
             <div
               className="absolute inset-0 border-2"
               style={{ borderColor: accentColor, margin: "10%" }}
             />
-            <ImageSection className="w-4/5 h-4/5 shadow-md relative z-10" />
+            {renderImageSection({
+              className: "w-4/5 h-4/5 shadow-md relative z-10",
+            })}
           </div>
         </div>
       );
@@ -248,13 +252,23 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({
             className="w-2 h-full shrink-0"
             style={{ backgroundColor: themeColor }}
           />
-          <TextSection className="flex-1" />
+          {renderTextSection({ className: "flex-1" })}
         </div>
       );
   }
 
   return (
     <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden flex flex-col aspect-[16/9] transition-all hover:shadow-xl group relative">
+      {onRegenerateSlide && slide.pageId && (
+        <button
+          type="button"
+          onClick={() => onRegenerateSlide(index, slide)}
+          disabled={Boolean(isGenerating)}
+          className="absolute top-2 left-2 z-20 rounded bg-white/90 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-700 shadow-sm transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Repaint
+        </button>
+      )}
       <div className="absolute top-2 right-2 z-20">
         <span className="text-[7px] bg-slate-800/80 text-white px-1.5 py-0.5 rounded backdrop-blur-sm opacity-60 group-hover:opacity-100 transition-opacity uppercase font-bold">
           {layout.replace(/_/g, " ")}

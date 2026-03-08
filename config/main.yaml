@@ -173,6 +173,13 @@ export:
       binding: gemini
       aspect_ratio: '16:9'
     style_templates: []
+  ppt_v2:
+    enabled: true
+    max_slides: 15
+    task:
+      description_workers: 4
+      image_workers: 3
+      polling_hint_ms: 1500
 agents:
   chat_agent:
     max_history_tokens: 32000

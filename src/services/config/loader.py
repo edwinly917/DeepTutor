@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
+from dotenv import load_dotenv
 import yaml
 
 # PROJECT_ROOT points to the actual project root directory (DeepTutor/)
@@ -22,6 +23,8 @@ import yaml
 # .parent.parent.parent = src/
 # .parent.parent.parent.parent = DeepTutor/ (project root)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+load_dotenv(PROJECT_ROOT / "DeepTutor.env", override=False)
+load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

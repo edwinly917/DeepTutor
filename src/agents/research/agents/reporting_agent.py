@@ -319,6 +319,10 @@ class ReportingAgent(BaseAgent):
         queue: DynamicTopicQueue,
         topic: str,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        resume_outline: dict[str, Any] | None = None,
+        resume_sections: dict[str, str] | None = None,
+        persist_outline_callback: Callable[[dict[str, Any]], None] | None = None,
+        persist_section_callback: Callable[[str, str], None] | None = None,
     ) -> dict[str, Any]:
         """
         Generate final report
@@ -362,19 +366,38 @@ class ReportingAgent(BaseAgent):
             self._notify_progress(progress_callback, "writing_completed")
         else:
             # 2) Outline
-            print("\n📋 Step 2: Generating outline...")
-            outline = await self._generate_outline(topic, cleaned_blocks)
-            print("✓ Outline generation completed")
-            self._notify_progress(
-                progress_callback, "outline_completed", sections=len(outline.get("sections", []))
-            )
+            if resume_outline is not None:
+                outline = resume_outline
+                print("\n📋 Step 2: Reusing outline from checkpoint...")
+                self._notify_progress(
+                    progress_callback,
+                    "outline_resumed",
+                    sections=len(outline.get("sections", [])),
+                )
+            else:
+                print("\n📋 Step 2: Generating outline...")
+                outline = await self._generate_outline(topic, cleaned_blocks)
+                print("✓ Outline generation completed")
+                self._notify_progress(
+                    progress_callback,
+                    "outline_completed",
+                    sections=len(outline.get("sections", [])),
+                )
+                if persist_outline_callback:
+                    persist_outline_callback(outline)
 
             # Save outline for later use
             self._current_outline = outline
 
             # 3) Writing
             print("\n✍️  Step 3: Writing report...")
-            report_markdown = await self._write_report(topic, cleaned_blocks, outline)
+            report_markdown = await self._write_report(
+                topic,
+                cleaned_blocks,
+                outline,
+                resume_sections=resume_sections,
+                persist_section_callback=persist_section_callback,
+            )
             print("✓ Report writing completed")
             self._notify_progress(progress_callback, "writing_completed")
 
@@ -1349,10 +1372,17 @@ class ReportingAgent(BaseAgent):
         return text, validation_result
 
     async def _write_report(
-        self, topic: str, blocks: list[TopicBlock], outline: dict[str, Any]
+        self,
+        topic: str,
+        blocks: list[TopicBlock],
+        outline: dict[str, Any],
+        *,
+        resume_sections: dict[str, str] | None = None,
+        persist_section_callback: Callable[[str, str], None] | None = None,
     ) -> str:
         """Write complete report using step-by-step method with three-level heading support"""
         parts = []
+        resume_sections = resume_sections or {}
 
         # Build citation number map before writing (for consistent ref_number in traces)
         if self.enable_inline_citations:
@@ -1376,14 +1406,20 @@ class ReportingAgent(BaseAgent):
             section_index=0,
             total_sections=len(outline.get("sections", [])) + 2,  # +2 for intro and conclusion
         )
-        introduction = await self._write_introduction(topic, blocks, outline)
-        # Get introduction title from outline, or use default if not available
-        intro_title = outline.get("introduction", "## Introduction")
-        if not intro_title.startswith("##"):
-            intro_title = f"## {intro_title}"
-        parts.append(f"{intro_title}\n\n")
-        parts.append(introduction)
-        parts.append("\n\n")
+        introduction_key = "introduction"
+        if introduction_key in resume_sections:
+            parts.append(resume_sections[introduction_key])
+            parts.append("\n\n")
+        else:
+            introduction = await self._write_introduction(topic, blocks, outline)
+            intro_title = outline.get("introduction", "## Introduction")
+            if not intro_title.startswith("##"):
+                intro_title = f"## {intro_title}"
+            intro_markdown = f"{intro_title}\n\n{introduction}"
+            parts.append(intro_markdown)
+            parts.append("\n\n")
+            if persist_section_callback:
+                persist_section_callback(introduction_key, intro_markdown)
 
         # 3. Write each section with subsection support
         sections = outline.get("sections", [])
@@ -1407,6 +1443,12 @@ class ReportingAgent(BaseAgent):
                 section_index=i,  # 1-based, after introduction
                 total_sections=len(sections) + 2,  # +2 for intro and conclusion
             )
+            section_key = f"section:{block_id}"
+
+            if section_key in resume_sections:
+                parts.append(resume_sections[section_key])
+                parts.append("\n\n")
+                continue
 
             # Check if section has subsections defined in outline
             subsections = section.get("subsections", [])
@@ -1423,6 +1465,8 @@ class ReportingAgent(BaseAgent):
             # Section content already includes ## level title, append directly
             parts.append(section_content)
             parts.append("\n\n")
+            if persist_section_callback:
+                persist_section_callback(section_key, section_content)
 
         # 4. Write conclusion
         print("  📝 Writing conclusion...")
@@ -1434,19 +1478,30 @@ class ReportingAgent(BaseAgent):
             section_index=total_sections - 1,  # Last section
             total_sections=total_sections,
         )
-        conclusion = await self._write_conclusion(topic, blocks, outline)
-        # Get conclusion title from outline, or use default if not available
-        conclusion_title = outline.get("conclusion", "## Conclusion")
-        if not conclusion_title.startswith("##"):
-            conclusion_title = f"## {conclusion_title}"
-        parts.append(f"{conclusion_title}\n\n")
-        parts.append(conclusion)
-        parts.append("\n\n")
+        conclusion_key = "conclusion"
+        if conclusion_key in resume_sections:
+            parts.append(resume_sections[conclusion_key])
+            parts.append("\n\n")
+        else:
+            conclusion = await self._write_conclusion(topic, blocks, outline)
+            conclusion_title = outline.get("conclusion", "## Conclusion")
+            if not conclusion_title.startswith("##"):
+                conclusion_title = f"## {conclusion_title}"
+            conclusion_markdown = f"{conclusion_title}\n\n{conclusion}"
+            parts.append(conclusion_markdown)
+            parts.append("\n\n")
+            if persist_section_callback:
+                persist_section_callback(conclusion_key, conclusion_markdown)
 
         # 5. Generate References based on configuration
         if self.enable_citation_list:
             print("  📝 Generating citation list...")
-            references = self._generate_references(blocks)
+            references_key = "references"
+            references = resume_sections.get(references_key)
+            if references is None:
+                references = self._generate_references(blocks)
+                if persist_section_callback:
+                    persist_section_callback(references_key, references)
             parts.append(references)
         else:
             print("  ℹ️  Citation list disabled, skipping generation")

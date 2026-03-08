@@ -105,6 +105,45 @@ ppt_tasks = Table(
     Column("finished_at", DateTime(timezone=True), nullable=True),
 )
 
+research_runs = Table(
+    "research_runs",
+    _metadata,
+    Column("id", String, primary_key=True),
+    Column("research_id", String, nullable=False, index=True),
+    Column("notebook_id", String, nullable=True),
+    Column("session_id", String, nullable=True),
+    Column("dedupe_key", String, nullable=False, index=True),
+    Column("topic", Text, nullable=False),
+    Column("kb_name", String, nullable=True),
+    Column("plan_mode", String, nullable=False),
+    Column("enabled_tools", JSON, nullable=False),
+    Column("config_snapshot", JSON, nullable=False),
+    Column("status", String, nullable=False, index=True),
+    Column("phase", String, nullable=False, index=True),
+    Column("progress", JSON, nullable=True),
+    Column("checkpoint", JSON, nullable=True),
+    Column("report_path", String, nullable=True),
+    Column("metadata_path", String, nullable=True),
+    Column("error_message", Text, nullable=True),
+    Column("last_heartbeat_at", DateTime(timezone=True), nullable=True),
+    Column("lease_owner", String, nullable=True, index=True),
+    Column("lease_expires_at", DateTime(timezone=True), nullable=True, index=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("finished_at", DateTime(timezone=True), nullable=True),
+)
+
+research_run_events = Table(
+    "research_run_events",
+    _metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("run_id", String, ForeignKey("research_runs.id"), nullable=False, index=True),
+    Column("event_type", String, nullable=False, index=True),
+    Column("stage", String, nullable=True, index=True),
+    Column("payload", JSON, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
 
 def get_database_url() -> str:
     url = os.getenv("DATABASE_URL")

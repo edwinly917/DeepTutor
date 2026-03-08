@@ -113,6 +113,68 @@ services:
     networks:
       - deeptutor-network
 
+  research-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        - BACKEND_PORT=${BACKEND_PORT:-8001}
+    container_name: deeptutor-research-worker
+    restart: unless-stopped
+    entrypoint: ["python", "-m", "src.api.run_research_worker"]
+
+    env_file:
+      - .env
+
+    environment:
+      - LLM_BINDING=${LLM_BINDING:-openai}
+      - LLM_MODEL=${LLM_MODEL}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_HOST=${LLM_HOST}
+      - DISABLE_SSL_VERIFY=${DISABLE_SSL_VERIFY:-false}
+      - EMBEDDING_BINDING=${EMBEDDING_BINDING:-openai}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-large}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY}
+      - EMBEDDING_HOST=${EMBEDDING_HOST}
+      - EMBEDDING_DIM=${EMBEDDING_DIM:-3072}
+      - EMBEDDING_MAX_TOKENS=${EMBEDDING_MAX_TOKENS:-8192}
+      - TTS_MODEL=${TTS_MODEL:-}
+      - TTS_API_KEY=${TTS_API_KEY:-}
+      - TTS_URL=${TTS_URL:-}
+      - TTS_VOICE=${TTS_VOICE:-alloy}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
+      - RAG_TOOL_MODULE_LOG_LEVEL=${RAG_TOOL_MODULE_LOG_LEVEL:-INFO}
+      - BACKEND_PORT=${BACKEND_PORT:-8001}
+      - FRONTEND_PORT=${FRONTEND_PORT:-3782}
+      - NEXT_PUBLIC_API_BASE_EXTERNAL=${NEXT_PUBLIC_API_BASE_EXTERNAL:-}
+      - NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE:-}
+      - POSTGRES_HOST=pg
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-deeptutor}
+      - POSTGRES_USER=${POSTGRES_USER:-deeptutor}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-deeptutor}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-deeptutor}:${POSTGRES_PASSWORD:-deeptutor}@pg:5432/${POSTGRES_DB:-deeptutor}
+      - REDIS_URL=redis://redis:6379/0
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-deeptutor}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-deeptutor}
+      - MINIO_BUCKET=${MINIO_BUCKET:-deeptutor}
+      - MINIO_SECURE=false
+
+    depends_on:
+      - pg
+      - redis
+      - minio
+
+    volumes:
+      - ./config:/app/config:ro
+      - ./data/user:/app/data/user
+      - ./data/knowledge_bases:/app/data/knowledge_bases
+
+    networks:
+      - deeptutor-network
+
   pg:
     image: postgres:16-alpine
     container_name: deeptutor-pg

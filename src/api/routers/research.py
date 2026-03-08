@@ -7,17 +7,12 @@ import sys
 import time
 import traceback
 from typing import Any, Literal
-import uuid
 
 from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile, WebSocket
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from src.agents.research.agents import RephraseAgent
-from src.agents.research.research_pipeline import ResearchPipeline
-from src.api.utils.history import ActivityType, history_manager
-from src.api.utils.notebook_manager import notebook_manager
-from src.api.utils.task_id_manager import TaskIDManager
 from src.logging import get_logger
 from src.services.config import load_config_with_main
 from src.services.export.pdf_generator import PDFGenerator
@@ -27,6 +22,8 @@ from src.services.export.ppt_generator import PPTGenerator
 from src.services.export.ppt_project_service import get_ppt_project_service
 from src.services.export.source_report import SourceReportGenerator
 from src.services.llm import get_llm_config
+from src.services.research import get_research_run_service
+from src.services.research.run_config import build_research_paths
 from src.services.storage.file_store import get_file_record
 from src.services.storage.object_store import get_object_stream
 
@@ -35,8 +32,6 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
 
 router = APIRouter()
-_ACTIVE_RESEARCH_RUNS: dict[str, dict[str, str]] = {}
-_ACTIVE_RESEARCH_RUNS_LOCK = asyncio.Lock()
 _DEPRECATED_PPT_HEADER = "X-DeepTutor-Deprecated"
 
 
@@ -52,6 +47,10 @@ def _project_root() -> Path:
 
 def _ppt_service():
     return get_ppt_project_service(_project_root())
+
+
+def _research_service():
+    return get_research_run_service(_project_root())
 
 
 def _mark_ppt_deprecated(response: Response) -> None:
@@ -109,120 +108,67 @@ def _get_latest_event(progress: dict | None) -> dict | None:
     return events[-1]
 
 
-def _build_research_run_key(
-    notebook_id: str | None, session_id: str | None, kb_name: str, topic: str
-) -> str:
-    normalized_topic = " ".join((topic or "").lower().split())
-    topic_hash = hashlib.sha1(normalized_topic.encode("utf-8")).hexdigest()[:16]
-    if notebook_id and session_id:
-        return f"nb:{notebook_id}:session:{session_id}"
-    if notebook_id:
-        return f"nb:{notebook_id}:topic:{topic_hash}"
-    return f"kb:{kb_name}:topic:{topic_hash}"
-
-
-def _persist_research_session(
-    notebook_id: str | None,
-    session_id: str | None,
-    report_content: str,
-    topic: str,
-    metadata: dict | None = None,
-) -> None:
-    if not notebook_id or not session_id:
-        return
+def _output_url_for_path(path_value: str | None) -> str | None:
+    if not path_value:
+        return None
+    path = Path(path_value)
+    if not path.exists():
+        return None
+    project_root = _project_root()
+    user_root = project_root / "data" / "user"
     try:
-        sessions = notebook_manager.list_sessions(notebook_id)
-        existing = next((s for s in sessions if s.get("session_id") == session_id), None)
-        if not existing:
-            return
-        updated = dict(existing)
-        updated["research_report"] = report_content
-        updated["research_state"] = None
-        updated["updated_at"] = time.time()
-        sources = list(updated.get("sources", []) or [])
+        relative = path.relative_to(user_root)
+    except ValueError:
+        return None
+    return f"/api/outputs/{relative.as_posix()}"
 
-        def source_key(item: dict) -> str:
-            return (
-                f"{item.get('type')}-{item.get('url') or item.get('title') or item.get('id') or ''}"
-            )
 
-        existing_keys = {source_key(s) for s in sources}
+def _metadata_from_path(path_value: str | None) -> dict | None:
+    if not path_value:
+        return None
+    path = Path(path_value)
+    return _read_json_file(path)
 
-        def add_source(item: dict) -> None:
-            key = source_key(item)
-            if key in existing_keys:
-                return
-            existing_keys.add(key)
-            sources.append(item)
 
-        if report_content:
-            title = f"深度研究报告 - {topic}" if topic else "深度研究报告"
-            sources = [s for s in sources if s.get("type") != "report"]
-            existing_keys = {source_key(s) for s in sources}
-            add_source(
-                {
-                    "id": f"report-{int(time.time() * 1000)}",
-                    "type": "report",
-                    "title": title,
-                    "selected": True,
-                    "content": report_content,
-                }
-            )
+def _status_payload_from_run(run: dict[str, Any]) -> dict[str, Any]:
+    report_url = _output_url_for_path(run.get("report_path"))
+    metadata = _metadata_from_path(run.get("metadata_path"))
+    has_report = bool(report_url)
+    status = run.get("status") or "PENDING"
+    phase = (run.get("phase") or "PLANNING").lower()
+    if status == "COMPLETED":
+        stage = "completed"
+    elif status in {"FAILED", "CANCELLED"}:
+        stage = "failed"
+    else:
+        stage = phase
+    return {
+        "research_id": run["research_id"],
+        "run_id": run["id"],
+        "task_status": status,
+        "stage": stage,
+        "has_report": has_report,
+        "report_url": report_url,
+        "metadata": metadata,
+        "report_metadata_url": _output_url_for_path(run.get("metadata_path")),
+        "progress": run.get("progress") or {},
+        "checkpoint": run.get("checkpoint") or {},
+        "error_message": run.get("error_message"),
+    }
 
-        if metadata:
-            web_sources = metadata.get("web_sources") or []
-            for idx, source in enumerate(web_sources):
-                add_source(
-                    {
-                        "id": f"research-web-{int(time.time() * 1000)}-{idx}",
-                        "type": "web",
-                        "title": source.get("title") or source.get("url") or f"网络来源 {idx + 1}",
-                        "url": source.get("url") or "",
-                        "content": source.get("content") or source.get("snippet") or "",
-                        "selected": True,
-                        "source_key": source.get("source_key"),
-                        "ref_number": source.get("ref_number"),
-                    }
-                )
 
-            rag_sources = metadata.get("rag_sources") or []
-            for idx, source in enumerate(rag_sources):
-                add_source(
-                    {
-                        "id": f"research-rag-{int(time.time() * 1000)}-{idx}",
-                        "type": "kb",
-                        "title": source.get("title")
-                        or source.get("source")
-                        or source.get("source_file")
-                        or source.get("kb_name")
-                        or f"知识库来源 {idx + 1}",
-                        "url": source.get("url") or "",
-                        "content": source.get("content") or source.get("content_preview") or "",
-                        "selected": True,
-                        "source_key": source.get("source_key"),
-                        "ref_number": source.get("ref_number"),
-                    }
-                )
-
-            misc_sources = metadata.get("sources") or []
-            for idx, source in enumerate(misc_sources):
-                add_source(
-                    {
-                        "id": source.get("id") or f"research-src-{int(time.time() * 1000)}-{idx}",
-                        "type": source.get("type") or "web",
-                        "title": source.get("title") or source.get("url") or f"来源 {idx + 1}",
-                        "url": source.get("url") or "",
-                        "content": source.get("content") or source.get("snippet") or "",
-                        "selected": True,
-                        "source_key": source.get("source_key"),
-                        "ref_number": source.get("ref_number"),
-                    }
-                )
-
-        updated["sources"] = sources
-        notebook_manager.upsert_session(notebook_id, updated)
-    except Exception as exc:
-        logger.warning(f"Failed to persist research session: {exc}")
+def _legacy_status_is_stale(progress: dict | None, *, stale_seconds: int = 120) -> bool:
+    event = _get_latest_event(progress)
+    if not event:
+        return False
+    timestamp = event.get("timestamp")
+    if not timestamp:
+        return False
+    try:
+        last_update = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return False
+    return time.time() - last_update > stale_seconds
 
 
 # Initialize logger with config
@@ -236,6 +182,18 @@ class OptimizeRequest(BaseModel):
     iteration: int = 0
     previous_result: dict[str, Any] | None = None
     kb_name: str | None = "ai_textbook"
+
+
+class CreateResearchRunRequest(BaseModel):
+    topic: str
+    kb_name: str | None = "ai_textbook"
+    notebook_id: str | None = None
+    session_id: str | None = None
+    plan_mode: Literal["quick", "medium", "deep", "auto"] = "medium"
+    enabled_tools: list[str] | None = None
+    skip_rephrase: bool = False
+    preset: str | None = None
+    research_mode: str | None = None
 
 
 class ExportPptxRequest(BaseModel):
@@ -582,9 +540,82 @@ async def optimize_topic(request: OptimizeRequest):
         return {"error": str(e)}
 
 
+@router.post("/runs")
+async def create_research_run(request: CreateResearchRunRequest):
+    if not request.topic.strip():
+        raise HTTPException(status_code=400, detail="Topic is required")
+    run, attached = _research_service().create_or_attach_run(
+        notebook_id=request.notebook_id,
+        session_id=request.session_id,
+        topic=request.topic.strip(),
+        kb_name=request.kb_name,
+        plan_mode=request.plan_mode,
+        enabled_tools=request.enabled_tools,
+        skip_rephrase=request.skip_rephrase,
+        preset=request.preset,
+        research_mode=request.research_mode,
+    )
+    return {"run": run, "task_id": run["id"], "attached_existing": attached}
+
+
+@router.get("/runs/{run_id}")
+async def get_research_run(run_id: str):
+    run = _research_service().get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Research run not found")
+    return _status_payload_from_run(run)
+
+
+@router.get("/runs/{run_id}/events")
+async def get_research_run_events(run_id: str, after_id: int = Query(0, ge=0)):
+    run = _research_service().get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Research run not found")
+    events = _research_service().list_events(run_id, after_id=after_id)
+    return {"run_id": run_id, "events": events}
+
+
+@router.post("/runs/{run_id}/cancel")
+async def cancel_research_run(run_id: str):
+    run = _research_service().cancel_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Research run not found")
+    return {"run": run}
+
+
+@router.get("/runs/by-research-id/{research_id}")
+async def get_research_run_by_research_id(research_id: str):
+    run = _research_service().get_run_by_research_id(research_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Research run not found")
+    return {"run": run}
+
+
 @router.get("/status/{research_id}")
 async def research_status(research_id: str):
-    project_root = Path(__file__).parent.parent.parent.parent
+    run = _research_service().get_run_by_research_id(research_id)
+    if run:
+        payload = _status_payload_from_run(run)
+        paths = build_research_paths(_project_root(), research_id)
+        progress = {
+            "planning": _read_json_file(paths["planning_progress_file"]),
+            "researching": _read_json_file(paths["researching_progress_file"]),
+            "reporting": _read_json_file(paths["reporting_progress_file"]),
+        }
+        payload.update(
+            {
+                "progress": progress,
+                "latest_event": {
+                    "planning": _get_latest_event(progress["planning"]),
+                    "researching": _get_latest_event(progress["researching"]),
+                    "reporting": _get_latest_event(progress["reporting"]),
+                },
+                "queue": _read_json_file(paths["queue_file"]),
+            }
+        )
+        return payload
+
+    project_root = _project_root()
     base_dir = project_root / "data" / "user" / "research"
     cache_dir = base_dir / "cache" / research_id
     reports_dir = base_dir / "reports"
@@ -622,14 +653,21 @@ async def research_status(research_id: str):
     )
 
     stage = "idle"
+    error_message = None
     if has_report:
         stage = "completed"
     elif reporting and reporting.get("events"):
-        stage = "reporting"
+        stage = "failed" if _legacy_status_is_stale(reporting) else "reporting"
+        if stage == "failed":
+            error_message = "stale_legacy_run"
     elif researching and researching.get("events"):
-        stage = "researching"
+        stage = "failed" if _legacy_status_is_stale(researching) else "researching"
+        if stage == "failed":
+            error_message = "stale_legacy_run"
     elif planning and planning.get("events"):
-        stage = "planning"
+        stage = "failed" if _legacy_status_is_stale(planning) else "planning"
+        if stage == "failed":
+            error_message = "stale_legacy_run"
 
     return {
         "research_id": research_id,
@@ -652,6 +690,7 @@ async def research_status(research_id: str):
             "reporting": _get_latest_event(reporting),
         },
         "queue": queue,
+        "error_message": error_message,
     }
 
 
@@ -712,429 +751,132 @@ async def latest_research(topic: str | None = Query(default=None)):
 @router.websocket("/run")
 async def websocket_research_run(websocket: WebSocket):
     await websocket.accept()
+    ws_connected = True
+    service = _research_service()
+    run_id: str | None = None
+    last_event_id = 0
 
-    # Get task ID manager
-    task_manager = TaskIDManager.get_instance()
-
-    pusher_task = None
-    progress_pusher_task = None
-    heartbeat_task = None
-    ws_connected = True  # Track WebSocket connection state
-    original_stdout = sys.stdout  # Save original stdout at the start
-    config = None
-    task_id = None
-    run_key = None
-    run_token = None
-
-    # Safe send helper - checks connection before sending
-    async def safe_send(data: dict) -> bool:
+    async def safe_send(data: dict[str, Any]) -> bool:
         nonlocal ws_connected
         if not ws_connected:
             return False
         try:
             await websocket.send_json(data)
             return True
-        except Exception as e:
-            logger.warning(f"WebSocket send failed ({type(e).__name__}): {e!r}")
+        except Exception as exc:
+            logger.warning(f"Research websocket send failed ({type(exc).__name__}): {exc!r}")
             ws_connected = False
             return False
 
     try:
-        # 1. Wait for config
-        data = await websocket.receive_json()
-        topic = data.get("topic")
-        kb_name = data.get("kb_name", "ai_textbook")
-        notebook_id = data.get("notebook_id")
-        session_id = data.get("session_id")
-        # New unified parameters
-        plan_mode = data.get("plan_mode", "medium")  # quick, medium, deep, auto
-        enabled_tools = data.get("enabled_tools", ["RAG"])  # RAG, Paper, Web
-        if "Web" not in enabled_tools:
-            enabled_tools = ["Web", *enabled_tools]
-        enabled_tools = list(dict.fromkeys(enabled_tools))
-        skip_rephrase = data.get("skip_rephrase", False)
-        # Legacy support
-        preset = data.get("preset")  # For backward compatibility
-        research_mode = data.get("research_mode")
+        payload = await websocket.receive_json()
+        requested_run_id = str(payload.get("run_id") or "").strip() or None
+        last_event_id = max(0, int(payload.get("last_event_id") or 0))
+        topic = str(payload.get("topic") or "").strip()
+        attached_existing = False
 
-        if not topic:
-            await safe_send({"type": "error", "content": "Topic is required"})
-            return
+        if requested_run_id:
+            run = service.get_run(requested_run_id)
+            if not run:
+                await safe_send({"type": "error", "content": "Research run not found"})
+                return
+            attached_existing = True
+        else:
+            if not topic:
+                await safe_send({"type": "error", "content": "Topic is required"})
+                return
+            kb_name = payload.get("kb_name", "ai_textbook")
+            notebook_id = payload.get("notebook_id")
+            session_id = payload.get("session_id")
+            plan_mode = payload.get("plan_mode", "medium")
+            enabled_tools = payload.get("enabled_tools", ["RAG"])
+            skip_rephrase = bool(payload.get("skip_rephrase", False))
+            preset = payload.get("preset")
+            research_mode = payload.get("research_mode")
+            run, attached_existing = service.create_or_attach_run(
+                notebook_id=notebook_id,
+                session_id=session_id,
+                topic=topic,
+                kb_name=kb_name,
+                plan_mode=plan_mode,
+                enabled_tools=enabled_tools,
+                skip_rephrase=skip_rephrase,
+                preset=preset,
+                research_mode=research_mode,
+            )
 
-        run_key = _build_research_run_key(notebook_id, session_id, kb_name, topic)
-        run_token = uuid.uuid4().hex
-        async with _ACTIVE_RESEARCH_RUNS_LOCK:
-            existing_run = _ACTIVE_RESEARCH_RUNS.get(run_key)
-            if existing_run:
-                duplicate_running = True
-                existing_task_id = existing_run.get("task_id")
-                existing_research_id = existing_run.get("research_id")
-            else:
-                duplicate_running = False
-                _ACTIVE_RESEARCH_RUNS[run_key] = {
-                    "token": run_token,
-                    "task_id": "",
-                    "research_id": "",
-                }
-                existing_task_id = ""
-                existing_research_id = ""
-        if duplicate_running:
-            if existing_task_id:
-                await safe_send({"type": "task_id", "task_id": existing_task_id})
+        run_id = run["id"]
+        await safe_send(
+            {
+                "type": "task_id",
+                "task_id": run["id"],
+                "run_id": run["id"],
+                "research_id": run["research_id"],
+            }
+        )
+        if attached_existing:
             await safe_send(
                 {
                     "type": "status",
                     "content": "already_running",
-                    "research_id": existing_research_id or None,
+                    "run_id": run["id"],
+                    "research_id": run["research_id"],
                 }
             )
-            return
 
-        # Generate task ID
-        task_key = f"research_{kb_name}_{hash(str(topic))}"
-        task_id = task_manager.generate_task_id("research", task_key)
-        async with _ACTIVE_RESEARCH_RUNS_LOCK:
-            run_state = _ACTIVE_RESEARCH_RUNS.get(run_key)
-            if run_state and run_state.get("token") == run_token:
-                run_state["task_id"] = task_id
+        next_ping_at = time.time() + 30
+        terminal_statuses = {"COMPLETED", "FAILED", "CANCELLED"}
 
-        # Send task ID to frontend
-        await safe_send({"type": "task_id", "task_id": task_id})
-
-        # Use unified logger
-        config = load_config()
-        try:
-            # Get log_dir from config
-            log_dir = config.get("paths", {}).get("user_log_dir") or config.get("logging", {}).get(
-                "log_dir"
-            )
-            research_logger = get_logger("Research", log_dir=log_dir)
-            research_logger.info(f"[{task_id}] Starting research flow: {topic[:50]}...")
-        except Exception as e:
-            logger.warning(f"Failed to initialize research logger: {e}")
-
-        # 2. Initialize Pipeline
-        # Initialize nested config structures from research.* (main.yaml structure)
-        # This ensures all research module configs are properly inherited from main.yaml
-        research_config = config.get("research", {})
-
-        # Initialize planning config from research.planning
-        if "planning" not in config:
-            config["planning"] = research_config.get("planning", {}).copy()
-        else:
-            # Merge with research.planning defaults
-            default_planning = research_config.get("planning", {})
-            for key, value in default_planning.items():
-                if key not in config["planning"]:
-                    config["planning"][key] = value if not isinstance(value, dict) else value.copy()
-                elif isinstance(value, dict) and isinstance(config["planning"][key], dict):
-                    # Deep merge for nested dicts like decompose, rephrase
-                    for k, v in value.items():
-                        if k not in config["planning"][key]:
-                            config["planning"][key][k] = v
-
-        # Ensure decompose and rephrase exist
-        if "decompose" not in config["planning"]:
-            config["planning"]["decompose"] = {}
-        if "rephrase" not in config["planning"]:
-            config["planning"]["rephrase"] = {}
-
-        # Initialize researching config from research.researching
-        # This ensures execution_mode, max_parallel_topics etc. are properly inherited
-        if "researching" not in config:
-            config["researching"] = research_config.get("researching", {}).copy()
-        else:
-            # Merge with research.researching defaults (research.researching has lower priority)
-            default_researching = research_config.get("researching", {})
-            for key, value in default_researching.items():
-                if key not in config["researching"]:
-                    config["researching"][key] = value
-
-        # Initialize reporting config from research.reporting
-        # This ensures enable_citation_list, enable_inline_citations etc. are properly inherited
-        if "reporting" not in config:
-            config["reporting"] = research_config.get("reporting", {}).copy()
-        else:
-            # Merge with research.reporting defaults
-            default_reporting = research_config.get("reporting", {})
-            for key, value in default_reporting.items():
-                if key not in config["reporting"]:
-                    config["reporting"][key] = value
-
-        # Apply plan_mode configuration (unified approach affecting both planning and researching)
-        # Each mode defines:
-        # - Planning: tree depth (subtopics count) and mode (manual/auto)
-        # - Researching: max iterations per topic and iteration_mode (fixed/flexible)
-        plan_mode_config = {
-            "quick": {
-                "planning": {"decompose": {"initial_subtopics": 2, "mode": "manual"}},
-                "researching": {"max_iterations": 2, "iteration_mode": "fixed"},
-                "reporting": {"report_type": "summary"},
-            },
-            "medium": {
-                "planning": {"decompose": {"initial_subtopics": 5, "mode": "manual"}},
-                "researching": {"max_iterations": 4, "iteration_mode": "fixed"},
-            },
-            "deep": {
-                "planning": {"decompose": {"initial_subtopics": 8, "mode": "manual"}},
-                "researching": {"max_iterations": 7, "iteration_mode": "fixed"},
-            },
-            "auto": {
-                "planning": {"decompose": {"mode": "auto", "auto_max_subtopics": 8}},
-                "researching": {"max_iterations": 6, "iteration_mode": "flexible"},
-            },
-        }
-        if plan_mode in plan_mode_config:
-            mode_cfg = plan_mode_config[plan_mode]
-            # Apply planning configuration
-            if "planning" in mode_cfg:
-                for key, value in mode_cfg["planning"].items():
-                    if key not in config["planning"]:
-                        config["planning"][key] = {}
-                    config["planning"][key].update(value)
-            # Apply researching configuration
-            if "researching" in mode_cfg:
-                config["researching"].update(mode_cfg["researching"])
-
-        # Legacy preset support (for backward compatibility)
-        if preset and "presets" in config and preset in config["presets"]:
-            preset_config = config["presets"][preset]
-            for key, value in preset_config.items():
-                if key in config and isinstance(value, dict):
-                    config[key].update(value)
-
-        # Apply enabled_tools configuration
-        # RAG includes: rag_naive, rag_hybrid, query_item
-        # Paper includes: paper_search
-        # Web includes: web_search
-        # run_code is always enabled
-        config["researching"]["enable_rag_naive"] = "RAG" in enabled_tools
-        config["researching"]["enable_rag_hybrid"] = "RAG" in enabled_tools
-        config["researching"]["enable_query_item"] = "RAG" in enabled_tools
-        config["researching"]["enable_paper_search"] = "Paper" in enabled_tools
-        config["researching"]["enable_web_search"] = "Web" in enabled_tools
-        config["researching"]["enable_run_code"] = True  # Always enabled
-
-        # Store enabled_tools for prompt generation
-        config["researching"]["enabled_tools"] = enabled_tools
-
-        # Legacy research_mode support
-        if research_mode:
-            config["researching"]["research_mode"] = research_mode
-
-        # If skip_rephrase is True, disable the internal rephrase step
-        if skip_rephrase:
-            config["planning"]["rephrase"]["enabled"] = False
-
-        # Define unified output directory
-        # Use project root directory user/research as unified output directory
-        root_dir = Path(__file__).parent.parent.parent.parent
-        output_base = root_dir / "data" / "user" / "research"
-
-        # Update config with unified output paths
-        if "system" not in config:
-            config["system"] = {}
-
-        config["system"]["output_base_dir"] = str(output_base / "cache")
-        config["system"]["reports_dir"] = str(output_base / "reports")
-
-        # Inject API keys from env if not in config
-        try:
-            llm_config = get_llm_config()
-            api_key = llm_config.api_key
-            base_url = llm_config.base_url
-        except ValueError as e:
-            await websocket.send_json({"error": f"LLM configuration error: {e!s}"})
-            await websocket.close()
-            return
-
-        # 3. Setup Queues for log and progress
-        log_queue = asyncio.Queue()
-        progress_queue = asyncio.Queue()
-
-        # Progress callback function
-        def progress_callback(event: dict[str, Any]):
-            """Progress callback function, puts progress events into queue"""
-            try:
-                asyncio.get_event_loop().call_soon_threadsafe(progress_queue.put_nowait, event)
-            except Exception as e:
-                logger.error(f"Progress callback error: {e}")
-
-        pipeline = ResearchPipeline(
-            config=config,
-            api_key=api_key,
-            base_url=base_url,
-            kb_name=kb_name,
-            progress_callback=progress_callback,
-        )
-        async with _ACTIVE_RESEARCH_RUNS_LOCK:
-            run_state = _ACTIVE_RESEARCH_RUNS.get(run_key)
-            if run_state and run_state.get("token") == run_token:
-                run_state["research_id"] = pipeline.research_id
-
-        # 4. Background log pusher
-        async def log_pusher():
-            while True:
-                try:
-                    log = await log_queue.get()
-                    if log is None:
-                        break
-                    await safe_send({"type": "log", "content": log})
-                    log_queue.task_done()
-                except Exception as e:
-                    logger.error(f"Log pusher error: {e}")
+        while ws_connected:
+            events = service.list_events(run_id, after_id=last_event_id)
+            for event in events:
+                event_payload = dict(event.get("payload") or {})
+                event_payload.setdefault("run_id", run_id)
+                event_payload.setdefault("research_id", run["research_id"])
+                event_payload["event_id"] = event["id"]
+                if not await safe_send(event_payload):
                     break
+                last_event_id = max(last_event_id, int(event["id"]))
 
-        # 5. Background progress pusher
-        async def progress_pusher():
-            while True:
-                try:
-                    event = await progress_queue.get()
-                    if event is None:
+            if not ws_connected:
+                break
+
+            latest_run = service.get_run(run_id)
+            if not latest_run:
+                await safe_send({"type": "error", "content": "Research run no longer exists"})
+                break
+            run = latest_run
+
+            if run["status"] in terminal_statuses:
+                pending_events = service.list_events(run_id, after_id=last_event_id)
+                for event in pending_events:
+                    event_payload = dict(event.get("payload") or {})
+                    event_payload.setdefault("run_id", run_id)
+                    event_payload.setdefault("research_id", run["research_id"])
+                    event_payload["event_id"] = event["id"]
+                    if not await safe_send(event_payload):
                         break
-                    await safe_send(event)
-                    progress_queue.task_done()
-                except Exception as e:
-                    logger.error(f"Progress pusher error: {e}")
-                    break
+                    last_event_id = max(last_event_id, int(event["id"]))
+                break
 
-        pusher_task = asyncio.create_task(log_pusher())
-        progress_pusher_task = asyncio.create_task(progress_pusher())
-
-        # 6. Background heartbeat to keep WebSocket alive
-        async def heartbeat():
-            """Send periodic ping to prevent connection timeout"""
-            while True:
-                try:
-                    await asyncio.sleep(30)  # Send heartbeat every 30 seconds
-                    await safe_send({"type": "ping", "timestamp": datetime.now().isoformat()})
-                except Exception:
-                    break  # Stop if connection is closed
-
-        heartbeat_task = asyncio.create_task(heartbeat())
-
-        # 7. Run Pipeline with stdout interception
-        class ResearchStdoutInterceptor:
-            def __init__(self, queue):
-                self.queue = queue
-                self.original_stdout = sys.stdout
-
-            def write(self, message):
-                # Write to terminal first to ensure terminal output is not blocked
-                self.original_stdout.write(message)
-                # Then try to send to frontend (non-blocking, failure doesn't affect terminal output)
-                if message.strip():
-                    try:
-                        # Use call_soon_threadsafe for thread safety
-                        loop = asyncio.get_event_loop()
-                        loop.call_soon_threadsafe(self.queue.put_nowait, message)
-                    except (asyncio.QueueFull, RuntimeError, AttributeError):
-                        # Queue full, event loop closed, or no event loop, ignore error, doesn't affect terminal output
-                        pass
-
-            def flush(self):
-                self.original_stdout.flush()
-
-        sys.stdout = ResearchStdoutInterceptor(log_queue)
-
-        try:
-            await safe_send(
-                {"type": "status", "content": "started", "research_id": pipeline.research_id}
-            )
-
-            # 8. Execute Research directly
-            # Note: We removed the concurrent WebSocket listener pattern because
-            # cancelling a pending websocket.receive_json() corrupts the connection,
-            # preventing subsequent sends from working.
-            result = await pipeline.run(topic)
-
-            # 9. Handle Result
-            if result:
-                report_content = result.get("report", "")
-                final_report_path = result.get("final_report_path", "")
-                if not report_content and final_report_path:
-                    try:
-                        report_path = Path(final_report_path)
-                        if report_path.exists():
-                            report_content = report_path.read_text(encoding="utf-8")
-                    except Exception as exc:
-                        logger.warning(f"Failed to read report from {final_report_path}: {exc}")
-
-                # Send completion message
-                # For backward compatibility with simpler client
-                await safe_send({"type": "report_path", "path": str(final_report_path)})
-
-                # Save to history
-                history_manager.add_entry(
-                    activity_type=ActivityType.RESEARCH,
-                    title=topic,
-                    content={"topic": topic, "report": report_content, "kb_name": kb_name},
-                    summary=f"Research ID: {result['research_id']}",
-                    notebook_id=notebook_id,
-                )
-
-                if await safe_send(
+            now = time.time()
+            if now >= next_ping_at:
+                if not await safe_send(
                     {
-                        "type": "result",
-                        "report": report_content,
-                        "metadata": result["metadata"],
-                        "research_id": result["research_id"],
+                        "type": "ping",
+                        "timestamp": datetime.now().isoformat(),
+                        "run_id": run_id,
+                        "research_id": run["research_id"],
                     }
                 ):
-                    # Rate limiting / buffer flush assurance
-                    await asyncio.sleep(1.0)
-                else:
-                    research_logger.error(f"[{task_id}] Failed to send result message")
-                _persist_research_session(
-                    notebook_id,
-                    session_id,
-                    report_content,
-                    topic,
-                    metadata=result.get("metadata"),
-                )
+                    break
+                next_ping_at = now + 30
 
-            # Update task status to completed
-            try:
-                log_dir = config.get("paths", {}).get("user_log_dir") or config.get(
-                    "logging", {}
-                ).get("log_dir")
-                research_logger = get_logger("Research", log_dir=log_dir)
-                research_logger.success(f"[{task_id}] Research flow completed: {topic[:50]}...")
-                task_manager.update_task_status(task_id, "completed")
-            except Exception as e:
-                logger.warning(f"Failed to log completion: {e}")
+            await asyncio.sleep(1.0)
 
-        finally:
-            sys.stdout = original_stdout  # Safely restore using saved reference
-
-    except Exception as e:
-        await safe_send({"type": "error", "content": str(e)})
-        logger.error(f"Research error: {e}", exc_info=True)
-
-        # Update task status to error
-        try:
-            if config is not None:
-                log_dir = config.get("paths", {}).get("user_log_dir") or config.get(
-                    "logging", {}
-                ).get("log_dir")
-                research_logger = get_logger("Research", log_dir=log_dir)
-                research_logger.error(f"[{task_id}] Research flow failed: {e}")
-            if task_id is not None:
-                task_manager.update_task_status(task_id, "error", error=str(e))
-        except Exception as log_err:
-            logger.warning(f"Failed to log error: {log_err}")
-    finally:
-        if run_key and run_token:
-            async with _ACTIVE_RESEARCH_RUNS_LOCK:
-                run_state = _ACTIVE_RESEARCH_RUNS.get(run_key)
-                if run_state and run_state.get("token") == run_token:
-                    _ACTIVE_RESEARCH_RUNS.pop(run_key, None)
-        if pusher_task:
-            pusher_task.cancel()
-        if progress_pusher_task:
-            progress_pusher_task.cancel()
-        if heartbeat_task:
-            heartbeat_task.cancel()
+    except Exception as exc:
+        await safe_send({"type": "error", "content": str(exc)})
+        logger.error(f"Research websocket attach failed: {exc}", exc_info=True)
 
 
 class ExportMindmapRequest(BaseModel):

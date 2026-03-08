@@ -92,6 +92,13 @@ research:
     fallback_mode: naive
   queue:
     max_length: 5
+  worker:
+    enabled: true
+    max_concurrency: 1
+    poll_interval_ms: 1000
+    lease_ttl_seconds: 90
+    heartbeat_interval_seconds: 15
+    stale_session_clear_seconds: 120
   presets:
     quick:
       description: Quick mode - fast research with minimal depth

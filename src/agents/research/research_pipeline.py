@@ -1168,7 +1168,15 @@ class ResearchPipeline:
 
         return iteration_callback
 
-    async def _phase3_reporting(self, topic: str) -> dict[str, Any]:
+    async def _phase3_reporting(
+        self,
+        topic: str,
+        *,
+        resume_outline: dict[str, Any] | None = None,
+        resume_sections: dict[str, str] | None = None,
+        persist_outline_callback: Callable[[dict[str, Any]], None] | None = None,
+        persist_section_callback: Callable[[str, str], None] | None = None,
+    ) -> dict[str, Any]:
         """
         Phase 3: Report Generation
 
@@ -1185,7 +1193,13 @@ class ResearchPipeline:
 
         # Generate report
         report_result = await reporting.process(
-            self.queue, topic, progress_callback=self._report_progress_callback
+            self.queue,
+            topic,
+            progress_callback=self._report_progress_callback,
+            resume_outline=resume_outline,
+            resume_sections=resume_sections,
+            persist_outline_callback=persist_outline_callback,
+            persist_section_callback=persist_section_callback,
         )
 
         self.logger.success("\nPhase 3 Completed:")

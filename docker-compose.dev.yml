@@ -52,3 +52,22 @@ services:
 
     networks:
       - deeptutor-network
+
+  research-worker:
+    build:
+      target: development
+
+    volumes:
+      - ./src:/app/src:ro
+      - ./config:/app/config:ro
+      - ./scripts:/app/scripts:ro
+      - ./data/user:/app/data/user
+      - ./data/knowledge_bases:/app/data/knowledge_bases
+
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_BASE=http://localhost:${BACKEND_PORT:-8001}
+      - RAG_TOOL_MODULE_LOG_LEVEL=${RAG_TOOL_MODULE_LOG_LEVEL:-DEBUG}
+
+    networks:
+      - deeptutor-network

@@ -174,6 +174,9 @@ interface ResearchState {
   estimatedTimeRemaining?: string;
   planMode?: "quick" | "medium" | "deep" | "auto";
   researchId?: string;
+  runId?: string;
+  taskStatus?: string;
+  lastEventId?: number;
 }
 
 type StudioMode =
@@ -608,6 +611,8 @@ export default function NotebookDetailPage() {
     setCurrentSubTopic("");
     setResearchStartTime(null);
     setEstimatedTimeRemaining("");
+    setResearchTaskStatus("IDLE");
+    setLastResearchEventId(0);
     if (clearQuery) {
       setSearchQuery("");
       setResearchTopic("");
@@ -640,6 +645,9 @@ export default function NotebookDetailPage() {
       estimatedTimeRemaining: estimatedTimeRemaining || undefined,
       planMode,
       researchId: activeResearchId || undefined,
+      runId: activeResearchRunId || undefined,
+      taskStatus: researchTaskStatus || undefined,
+      lastEventId: lastResearchEventId || undefined,
     };
   };
 
@@ -789,10 +797,16 @@ export default function NotebookDetailPage() {
       setResearchStartTime(state.startedAt || null);
       setEstimatedTimeRemaining(state.estimatedTimeRemaining || "");
       setActiveResearchId(state.researchId || null);
+      setActiveResearchRunId(state.runId || null);
+      setResearchTaskStatus(state.taskStatus || "RUNNING");
+      setLastResearchEventId(state.lastEventId || 0);
       setPendingResearchRecovery(true);
       return;
     }
     setActiveResearchId(null);
+    setActiveResearchRunId(null);
+    setResearchTaskStatus("IDLE");
+    setLastResearchEventId(0);
     setPendingResearchRecovery(false);
     resetResearchUiState(true);
   };
@@ -900,6 +914,7 @@ export default function NotebookDetailPage() {
     if (researchId) {
       setActiveResearchId(researchId);
     }
+    setResearchTaskStatus("COMPLETED");
     setResearchReport(reportContent);
     if (reportContent) {
       const reportTitle = topic ? `深度研究报告 - ${topic}` : "深度研究报告";
@@ -928,6 +943,8 @@ export default function NotebookDetailPage() {
     setSearchQuery("");
     setResearchTopic("");
     setPendingResearchRecovery(false);
+    setActiveResearchRunId(null);
+    setLastResearchEventId(0);
 
     if (reportContent) {
       setChatMessages((prev) => {
@@ -1125,7 +1142,11 @@ export default function NotebookDetailPage() {
     setPendingResearchRecovery(false);
     setResearchRunning(false);
     setResearchPhase("idle");
+    setResearchTaskStatus("FAILED");
     setIsChatting(false);
+    setActiveResearchId(null);
+    setActiveResearchRunId(null);
+    setLastResearchEventId(0);
     setChatMessages((prev) =>
       prev.map((msg) =>
         msg.isStreaming
@@ -1142,43 +1163,506 @@ export default function NotebookDetailPage() {
     console.warn(`Stopped stale research recovery (${reason})`);
   };
 
+  const ensureResearchStreamingMessage = (content: string) => {
+    setChatMessages((prev) => {
+      const hasStreaming = prev.some((msg) => msg.isStreaming);
+      if (hasStreaming) {
+        return prev.map((msg) => (msg.isStreaming ? { ...msg, content } : msg));
+      }
+      return [
+        ...prev,
+        {
+          id: makeClientId("research-stream"),
+          role: "assistant" as const,
+          content,
+          isStreaming: true,
+        },
+      ];
+    });
+  };
+
+  const isResearchSocketActive = () => {
+    const ws = wsRef.current;
+    return (
+      !!ws &&
+      (ws.readyState === WebSocket.CONNECTING ||
+        ws.readyState === WebSocket.OPEN)
+    );
+  };
+
+  const applyResearchRunSnapshot = (
+    snapshot: {
+      run_id?: string;
+      research_id?: string;
+      task_status?: string;
+      stage?: string;
+      progress?: { current?: number; total?: number; message?: string };
+    },
+    fallbackTopic: string,
+  ) => {
+    if (snapshot.run_id) {
+      setActiveResearchRunId(snapshot.run_id);
+    }
+    if (snapshot.research_id) {
+      setActiveResearchId(snapshot.research_id);
+    }
+    if (snapshot.task_status) {
+      setResearchTaskStatus(snapshot.task_status);
+    }
+    const stage = snapshot.stage;
+    if (
+      stage === "planning" ||
+      stage === "researching" ||
+      stage === "reporting"
+    ) {
+      setResearchPhase(stage);
+    }
+    if (snapshot.progress) {
+      setResearchProgress({
+        current: Number(snapshot.progress.current || 0),
+        total: Number(snapshot.progress.total || 0),
+      });
+      if (stage === "researching" || stage === "reporting") {
+        setCurrentSubTopic(snapshot.progress.message || "");
+      }
+    }
+    if (fallbackTopic) {
+      setResearchTopic(fallbackTopic);
+      setSearchQuery(fallbackTopic);
+    }
+  };
+
+  const connectResearchWebSocket = ({
+    topic,
+    sessionId,
+    runId,
+    lastEventId = 0,
+  }: {
+    topic: string;
+    sessionId: string;
+    runId?: string | null;
+    lastEventId?: number;
+  }) => {
+    if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+      manualResearchWsCloseRef.current = true;
+      wsRef.current.close();
+    }
+
+    const url = wsUrl("/api/v1/research/run");
+    console.log("Deep Research connecting to:", url);
+
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+    let duplicateRunDetected = Boolean(runId);
+
+    const updateStreamingMessage = (content: string) => {
+      ensureResearchStreamingMessage(content);
+    };
+
+    const connectionTimeout = setTimeout(() => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        ws.close();
+        setResearchError("连接超时，请检查后端服务是否正常运行");
+        setResearchRunning(false);
+        setIsChatting(false);
+      }
+    }, 15000);
+
+    const researchTimeout = setTimeout(() => {
+      if (wsRef.current === ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+        setResearchError("研究连接超时，任务仍在后台继续执行，正在尝试恢复");
+        setResearchRunning(false);
+        setIsChatting(false);
+      }
+    }, 5400000);
+
+    ws.onopen = () => {
+      clearTimeout(connectionTimeout);
+      setResearchRunning(true);
+      setPendingResearchRecovery(true);
+      setIsChatting(true);
+      const baseTools = ragEnabled
+        ? enabledTools
+        : enabledTools.filter((tool) => tool !== "RAG");
+      const toolsToUse = Array.from(new Set(["Web", ...baseTools]));
+      const message: Record<string, unknown> = {
+        notebook_id: notebookId,
+        session_id: sessionId,
+        topic,
+        run_id: runId || undefined,
+        last_event_id: lastEventId,
+      };
+      if (!runId) {
+        message.kb_name = ragEnabled ? activeKbName : undefined;
+        message.plan_mode = planMode;
+        message.enabled_tools = toolsToUse;
+        message.skip_rephrase = !enableOptimization;
+      }
+      ws.send(JSON.stringify(message));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (typeof data.event_id === "number") {
+          setLastResearchEventId((prev) => Math.max(prev, data.event_id));
+        }
+        if (data.run_id) {
+          setActiveResearchRunId(data.run_id);
+        }
+        if (data.research_id) {
+          setActiveResearchId(data.research_id);
+        }
+
+        if (data.type === "task_id") {
+          if (data.run_id || data.task_id) {
+            setActiveResearchRunId(data.run_id || data.task_id);
+          }
+          if (data.research_id) {
+            setActiveResearchId(data.research_id);
+          }
+          setResearchTaskStatus("RUNNING");
+          return;
+        }
+
+        if (data.type === "result") {
+          clearTimeout(researchTimeout);
+          setResearchTaskStatus("COMPLETED");
+          applyResearchResult(
+            data.report || "",
+            data.metadata,
+            topic,
+            data.research_id,
+          );
+          return;
+        }
+
+        if (data.type === "report_path") {
+          const path = typeof data.path === "string" ? data.path : "";
+          const filename = path.split(/[\\\\/]/).pop();
+          if (filename) {
+            const reportUrl = `/api/outputs/research/reports/${filename}`;
+            void (async () => {
+              const reportText = await fetchReportText(reportUrl);
+              if (reportText) {
+                applyResearchResult(
+                  reportText,
+                  null,
+                  topic,
+                  activeResearchIdRef.current || data.research_id || undefined,
+                );
+              }
+            })();
+          }
+          return;
+        }
+
+        if (data.type === "error") {
+          clearTimeout(researchTimeout);
+          const errorMessage =
+            data.content || data.message || "研究过程中发生错误";
+          const cancelled = String(errorMessage).includes("取消");
+          setResearchError(errorMessage);
+          setResearchTaskStatus(cancelled ? "CANCELLED" : "FAILED");
+          setResearchRunning(false);
+          setIsChatting(false);
+          setResearchPhase("idle");
+          setPendingResearchRecovery(false);
+          setActiveResearchRunId(null);
+          setLastResearchEventId(0);
+          setChatMessages((prev) =>
+            prev.map((msg) =>
+              msg.isStreaming
+                ? {
+                    ...msg,
+                    content: `${cancelled ? "⏹️" : "❌"} ${
+                      cancelled ? "研究已取消" : `研究失败: ${errorMessage}`
+                    }`,
+                    isStreaming: false,
+                  }
+                : msg,
+            ),
+          );
+          scheduleSessionSave(true);
+          return;
+        }
+
+        if (data.type === "progress") {
+          const stage = data.stage as "planning" | "researching" | "reporting";
+          if (stage) {
+            setResearchPhase(stage);
+          }
+          setResearchTaskStatus("RUNNING");
+
+          const status = data.status as string;
+
+          if (status === "planning_started") {
+            setResearchPhase("planning");
+            setGlobalProgress({ completed: 0, total: 3 + 0 + 3 });
+            updateStreamingMessage("📋 正在分析研究主题...");
+          } else if (
+            status === "rephrase_completed" ||
+            status === "rephrase_skipped"
+          ) {
+            setGlobalProgress((prev) => ({
+              ...prev,
+              completed: prev.completed + 1,
+            }));
+          } else if (status === "decompose_completed") {
+            const totalBlocks =
+              data.generated_subtopics || data.total_blocks || 0;
+            setResearchProgress({ current: 0, total: totalBlocks });
+            setGlobalProgress((prev) => ({
+              completed: prev.completed + 1,
+              total: 3 + totalBlocks + 3,
+            }));
+            updateStreamingMessage(`📋 已分解为 ${totalBlocks} 个子主题`);
+          } else if (status === "planning_completed") {
+            setGlobalProgress((prev) => ({
+              ...prev,
+              completed: prev.completed + 1,
+            }));
+          } else if (status === "researching_started") {
+            setResearchPhase("researching");
+            const totalBlocks = data.total_blocks || researchProgress.total;
+            setResearchProgress((prev) => ({ ...prev, total: totalBlocks }));
+            updateStreamingMessage(
+              `🔬 开始深度研究 (${totalBlocks} 个子主题)...`,
+            );
+          } else if (status === "block_started") {
+            const currentBlock =
+              data.current_block || researchProgress.current + 1;
+            const totalBlocks = data.total_blocks || researchProgress.total;
+            setResearchProgress({ current: currentBlock, total: totalBlocks });
+            setCurrentSubTopic(data.sub_topic || "");
+            updateStreamingMessage(
+              `🔬 正在研究 (${currentBlock}/${totalBlocks}): ${data.sub_topic || ""}`,
+            );
+
+            if (researchStartTime && currentBlock > 0 && totalBlocks > 0) {
+              const progressPercentage = (currentBlock / totalBlocks) * 100;
+              const elapsed = Date.now() - researchStartTime;
+              const estimatedTotal = elapsed / (progressPercentage / 100);
+              const remaining = estimatedTotal - elapsed;
+              if (remaining > 0) {
+                const minutes = Math.floor(remaining / 60000);
+                const seconds = Math.floor((remaining % 60000) / 1000);
+                setEstimatedTimeRemaining(`${minutes}分${seconds}秒`);
+              }
+            }
+          } else if (status === "block_completed") {
+            const currentBlock = data.current_block || researchProgress.current;
+            const totalBlocks = data.total_blocks || researchProgress.total;
+            setResearchProgress({ current: currentBlock, total: totalBlocks });
+            setGlobalProgress((prev) => ({
+              ...prev,
+              completed: prev.completed + 1,
+            }));
+          } else if (status === "rag_degraded") {
+            const degradedTopic =
+              data.sub_topic || currentSubTopic || "当前子主题";
+            updateStreamingMessage(
+              `⚠️ ${degradedTopic} 在知识库中命中不足，已切换到联网检索`,
+            );
+          } else if (status === "reporting_started") {
+            setResearchPhase("reporting");
+            setCurrentSubTopic("");
+            updateStreamingMessage("📝 正在生成研究报告...");
+          } else if (status === "deduplicate_completed") {
+            setGlobalProgress((prev) => ({
+              ...prev,
+              completed: prev.completed + 1,
+            }));
+          } else if (status === "outline_completed") {
+            const totalSections = data.sections || 0;
+            setGlobalProgress((prev) => {
+              const planningSteps = 3;
+              const researchingSteps = prev.total - planningSteps - 3;
+              const newReportingSteps = 2 + totalSections + 1;
+              return {
+                completed: prev.completed + 1,
+                total: planningSteps + researchingSteps + newReportingSteps,
+              };
+            });
+          } else if (status === "writing_section") {
+            const section = data.section_title || data.section || "";
+            setGlobalProgress((prev) => ({
+              ...prev,
+              completed: prev.completed + 1,
+            }));
+            updateStreamingMessage(`📝 正在撰写: ${section}`);
+          } else if (status === "writing_completed") {
+            setGlobalProgress((prev) => ({
+              ...prev,
+              completed: prev.completed + 1,
+            }));
+          } else if (status === "reporting_completed") {
+            setGlobalProgress((prev) => ({ ...prev, completed: prev.total }));
+          }
+          return;
+        }
+
+        if (data.type === "status") {
+          if (data.content === "started") {
+            setResearchTaskStatus("RUNNING");
+            setResearchPhase("planning");
+            updateStreamingMessage("🚀 深度研究已启动...");
+          } else if (data.content === "already_running") {
+            duplicateRunDetected = true;
+            setResearchTaskStatus("RUNNING");
+            updateStreamingMessage(
+              "🔄 检测到已有深度研究任务，正在同步后台状态...",
+            );
+          } else if (data.content === "cancel_requested") {
+            setResearchTaskStatus("CANCEL_REQUESTED");
+            updateStreamingMessage("⏹️ 已请求取消，等待后台任务收尾...");
+          }
+        }
+      } catch (e) {
+        console.error("Deep research parse error:", e);
+      }
+    };
+
+    ws.onerror = () => {
+      clearTimeout(connectionTimeout);
+      clearTimeout(researchTimeout);
+      setResearchError("WebSocket 连接失败，正在尝试恢复后台任务");
+      setResearchRunning(false);
+      setIsChatting(false);
+    };
+
+    ws.onclose = () => {
+      clearTimeout(connectionTimeout);
+      clearTimeout(researchTimeout);
+
+      const wasManualClose = manualResearchWsCloseRef.current;
+      manualResearchWsCloseRef.current = false;
+      if (wsRef.current === ws) {
+        wsRef.current = null;
+      }
+      if (wasManualClose) {
+        return;
+      }
+
+      setResearchRunning(false);
+      setIsChatting(false);
+
+      if (pendingRecoveryRef.current) {
+        ensureResearchStreamingMessage(
+          duplicateRunDetected
+            ? "🔄 已检测到后台仍有深度研究任务，正在恢复状态..."
+            : "🔄 研究连接已断开，正在恢复后台任务状态...",
+        );
+        scheduleSessionSave(true, sessionId);
+        setTimeout(() => {
+          void recoverResearchIfNeeded("ws-close");
+        }, 1500);
+        return;
+      }
+
+      setChatMessages((prev) =>
+        prev.map((msg) =>
+          msg.isStreaming
+            ? {
+                ...msg,
+                content: `${msg.content}\n\n[连接断开，未收到完整报告。请尝试刷新页面。]`,
+                isStreaming: false,
+              }
+            : msg,
+        ),
+      );
+      scheduleSessionSave(true, sessionId);
+    };
+  };
+
   const recoverResearchIfNeeded = async (reason: string) => {
     if (!pendingRecoveryRef.current) return;
     if (researchReportRef.current) {
       setPendingResearchRecovery(false);
       return;
     }
-    const researchId = activeResearchIdRef.current;
-    if (researchId) {
-      try {
-        const res = await fetch(
-          apiUrl(`/api/v1/research/status/${researchId}`),
+    const fallbackTopic = researchTopic || searchQuery || "";
+    try {
+      let runSnapshot: any = null;
+      const existingRunId = activeResearchRunIdRef.current;
+      if (existingRunId) {
+        const runRes = await fetch(
+          apiUrl(`/api/v1/research/runs/${existingRunId}`),
         );
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.report_url) {
-            const reportText = await fetchReportText(data.report_url);
-            if (reportText) {
-              const topic =
-                data?.metadata?.topic || researchTopic || searchQuery || "";
-              applyResearchResult(reportText, data.metadata, topic, researchId);
-              return;
+        if (runRes.ok) {
+          runSnapshot = await runRes.json();
+        }
+      } else if (activeResearchIdRef.current) {
+        const lookupRes = await fetch(
+          apiUrl(
+            `/api/v1/research/runs/by-research-id/${activeResearchIdRef.current}`,
+          ),
+        );
+        if (lookupRes.ok) {
+          const lookupData = await lookupRes.json();
+          if (lookupData?.run?.id) {
+            setActiveResearchRunId(lookupData.run.id);
+            setResearchTaskStatus(lookupData.run.status || "RUNNING");
+            const runRes = await fetch(
+              apiUrl(`/api/v1/research/runs/${lookupData.run.id}`),
+            );
+            if (runRes.ok) {
+              runSnapshot = await runRes.json();
             }
           }
         }
-      } catch (err) {
-        console.error(
-          `Failed to recover research from status (${reason}):`,
-          err,
-        );
       }
+
+      if (runSnapshot) {
+        applyResearchRunSnapshot(runSnapshot, fallbackTopic);
+        if (runSnapshot.report_url) {
+          const reportText = await fetchReportText(runSnapshot.report_url);
+          if (reportText) {
+            applyResearchResult(
+              reportText,
+              runSnapshot.metadata,
+              runSnapshot.metadata?.topic || fallbackTopic,
+              runSnapshot.research_id,
+            );
+            return;
+          }
+        }
+
+        const taskStatus = String(runSnapshot.task_status || "");
+        if (["FAILED", "CANCELLED"].includes(taskStatus)) {
+          markResearchAsUnrecoverable(
+            runSnapshot.error_message || taskStatus.toLowerCase(),
+          );
+          return;
+        }
+
+        if (
+          ["PENDING", "RUNNING", "CANCEL_REQUESTED"].includes(taskStatus) &&
+          !isResearchSocketActive()
+        ) {
+          ensureResearchStreamingMessage("🔄 正在恢复深度研究状态...");
+          connectResearchWebSocket({
+            topic: fallbackTopic,
+            sessionId: currentSessionIdRef.current || ensureActiveSession(),
+            runId: runSnapshot.run_id || existingRunId || undefined,
+            lastEventId: lastResearchEventIdRef.current || 0,
+          });
+          return;
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to recover research run (${reason}):`, err);
     }
+
     await syncSessionsFromServer(reason);
     if (researchReportRef.current) {
       setPendingResearchRecovery(false);
       return;
     }
-    const hasResearchHandle = Boolean(activeResearchIdRef.current);
+    const hasResearchHandle = Boolean(
+      activeResearchIdRef.current || activeResearchRunIdRef.current,
+    );
     const startedAt = researchStartTime || 0;
     const staleWithoutHandle =
       !hasResearchHandle && (!startedAt || Date.now() - startedAt > 120000);
@@ -1334,6 +1818,9 @@ export default function NotebookDetailPage() {
     setResearchReport("");
     setResearchError(null);
     setActiveResearchId(null);
+    setActiveResearchRunId(null);
+    setResearchTaskStatus("IDLE");
+    setLastResearchEventId(0);
     setPendingResearchRecovery(false);
     resetResearchUiState(true);
     resetStudioState();
@@ -1372,16 +1859,24 @@ export default function NotebookDetailPage() {
   });
   const [currentSubTopic, setCurrentSubTopic] = useState("");
   const [activeResearchId, setActiveResearchId] = useState<string | null>(null);
+  const [activeResearchRunId, setActiveResearchRunId] = useState<string | null>(
+    null,
+  );
+  const [researchTaskStatus, setResearchTaskStatus] = useState("IDLE");
+  const [lastResearchEventId, setLastResearchEventId] = useState(0);
   const [pendingResearchRecovery, setPendingResearchRecovery] = useState(false);
   const pendingRecoveryRef = useRef(false);
   const sessionSyncInFlightRef = useRef(false);
   const activeResearchIdRef = useRef<string | null>(null);
+  const activeResearchRunIdRef = useRef<string | null>(null);
+  const lastResearchEventIdRef = useRef(0);
   const currentSessionIdRef = useRef<string | null>(null);
   const recoveringPptKeyRef = useRef<string | null>(null);
 
   // WebSocket refs
   const wsRef = useRef<WebSocket | null>(null);
   const chatWsRef = useRef<WebSocket | null>(null);
+  const manualResearchWsCloseRef = useRef(false);
   const pptReferenceImageInputRef = useRef<HTMLInputElement>(null);
 
   const aggregatedSources = useMemo(() => {
@@ -1643,6 +2138,14 @@ export default function NotebookDetailPage() {
   useEffect(() => {
     activeResearchIdRef.current = activeResearchId;
   }, [activeResearchId]);
+
+  useEffect(() => {
+    activeResearchRunIdRef.current = activeResearchRunId;
+  }, [activeResearchRunId]);
+
+  useEffect(() => {
+    lastResearchEventIdRef.current = lastResearchEventId;
+  }, [lastResearchEventId]);
 
   useEffect(() => {
     currentSessionIdRef.current = currentSessionId;
@@ -3197,340 +3700,23 @@ export default function NotebookDetailPage() {
     };
     setChatMessages((prev) => [...prev, userMessage]);
 
-    if (wsRef.current) wsRef.current.close();
-
-    const url = wsUrl("/api/v1/research/run");
-    console.log("Deep Research connecting to:", url);
-
     setResearchRunning(true);
     setResearchStartTime(Date.now());
     setEstimatedTimeRemaining("");
     setResearchReport("");
     setResearchError(null);
-    setIsChatting(true); // Show loading state in chat if triggered from there
+    setIsChatting(true);
     setActiveResearchId(null);
+    setActiveResearchRunId(null);
+    setResearchTaskStatus("PENDING");
+    setLastResearchEventId(0);
     setPendingResearchRecovery(true);
-
-    // Generate a unique ID for this research session's streaming message
-    const streamingMsgId = makeClientId("research-stream");
-
-    // Always create a streaming message when starting research
-    setChatMessages((prev) => {
-      // Check if there's already a streaming message (from handleSendChat)
-      const hasStreaming = prev.some((msg) => msg.isStreaming);
-      if (hasStreaming) {
-        return prev;
-      }
-      // Add a new streaming message
-      return [
-        ...prev,
-        {
-          id: streamingMsgId,
-          role: "assistant" as const,
-          content: "🚀 正在启动深度研究...",
-          isStreaming: true,
-        },
-      ];
+    ensureResearchStreamingMessage("🚀 正在启动深度研究...");
+    connectResearchWebSocket({
+      topic: researchTopicToUse,
+      sessionId: activeSessionId,
+      lastEventId: 0,
     });
-
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-    let duplicateRunDetected = false;
-
-    // Connection timeout (15 seconds)
-    const connectionTimeout = setTimeout(() => {
-      if (ws.readyState !== WebSocket.OPEN) {
-        ws.close();
-        setResearchError("连接超时，请检查后端服务是否正常运行");
-        alert(`Deep Research 连接超时: ${url}`);
-        setResearchRunning(false);
-        setIsChatting(false);
-      }
-    }, 15000);
-
-    // Research timeout (90 minutes max for complex topics)
-    const researchTimeout = setTimeout(() => {
-      if (wsRef.current === ws && ws.readyState === WebSocket.OPEN) {
-        ws.close();
-        setResearchError("研究超时 - 请尝试使用更简单的主题或较少的研究深度");
-        alert("Deep Research 研究超时");
-        setResearchRunning(false);
-        setIsChatting(false);
-      }
-    }, 5400000);
-
-    ws.onopen = () => {
-      clearTimeout(connectionTimeout);
-      console.log("Deep Research WS Connected");
-      const baseTools = ragEnabled
-        ? enabledTools
-        : enabledTools.filter((tool) => tool !== "RAG");
-      const toolsToUse = Array.from(new Set(["Web", ...baseTools]));
-      ws.send(
-        JSON.stringify({
-          topic: researchTopicToUse,
-          kb_name: ragEnabled ? activeKbName : undefined,
-          plan_mode: planMode,
-          enabled_tools: toolsToUse,
-          skip_rephrase: !enableOptimization,
-          notebook_id: notebookId,
-          session_id: activeSessionId,
-        }),
-      );
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === "result") {
-          clearTimeout(researchTimeout);
-          const report = data.report || "";
-          applyResearchResult(
-            report,
-            data.metadata,
-            researchTopicToUse,
-            data.research_id,
-          );
-        } else if (data.type === "report_path") {
-          const path = typeof data.path === "string" ? data.path : "";
-          const filename = path.split(/[\\\\/]/).pop();
-          if (filename) {
-            const reportUrl = `/api/outputs/research/reports/${filename}`;
-            void (async () => {
-              const reportText = await fetchReportText(reportUrl);
-              if (reportText) {
-                const topic =
-                  researchTopicToUse || researchTopic || searchQuery || "";
-                applyResearchResult(
-                  reportText,
-                  null,
-                  topic,
-                  activeResearchIdRef.current || undefined,
-                );
-              }
-            })();
-          }
-        } else if (data.type === "error") {
-          clearTimeout(researchTimeout);
-          console.error("Deep Research Error:", data);
-          setResearchError(
-            data.content || data.message || "研究过程中发生错误",
-          );
-          setResearchRunning(false);
-          setIsChatting(false);
-          setResearchPhase("idle");
-          setPendingResearchRecovery(false);
-          // Update chat with error
-          setChatMessages((prev) =>
-            prev.map((msg) =>
-              msg.isStreaming
-                ? {
-                    ...msg,
-                    content: `❌ 研究失败: ${data.content || data.message}`,
-                    isStreaming: false,
-                  }
-                : msg,
-            ),
-          );
-          scheduleSessionSave(true);
-        } else if (data.type === "progress") {
-          // Handle progress events from backend
-          const stage = data.stage as "planning" | "researching" | "reporting";
-          if (stage) {
-            setResearchPhase(stage);
-          }
-
-          // Update progress based on status
-          const status = data.status as string;
-
-          if (status === "planning_started") {
-            setResearchPhase("planning");
-            // total = 3 (planning) + 0 (N unknown) + 3 (reporting estimate)
-            setGlobalProgress({ completed: 0, total: 3 + 0 + 3 });
-            updateStreamingMessage("📋 正在分析研究主题...");
-          } else if (
-            status === "rephrase_completed" ||
-            status === "rephrase_skipped"
-          ) {
-            setGlobalProgress((prev) => ({
-              ...prev,
-              completed: prev.completed + 1,
-            }));
-          } else if (status === "decompose_completed") {
-            const totalBlocks =
-              data.generated_subtopics || data.total_blocks || 0;
-            setResearchProgress({ current: 0, total: totalBlocks });
-            // N is now known, update total = 3 (planning) + N (researching) + 3 (reporting estimate)
-            setGlobalProgress((prev) => ({
-              completed: prev.completed + 1,
-              total: 3 + totalBlocks + 3,
-            }));
-            updateStreamingMessage(`📋 已分解为 ${totalBlocks} 个子主题`);
-          } else if (status === "planning_completed") {
-            setGlobalProgress((prev) => ({
-              ...prev,
-              completed: prev.completed + 1,
-            }));
-          } else if (status === "researching_started") {
-            setResearchPhase("researching");
-            const totalBlocks = data.total_blocks || researchProgress.total;
-            setResearchProgress((prev) => ({ ...prev, total: totalBlocks }));
-            updateStreamingMessage(
-              `🔬 开始深度研究 (${totalBlocks} 个子主题)...`,
-            );
-          } else if (status === "block_started") {
-            const currentBlock =
-              data.current_block || researchProgress.current + 1;
-            const totalBlocks = data.total_blocks || researchProgress.total;
-            setResearchProgress({ current: currentBlock, total: totalBlocks });
-            setCurrentSubTopic(data.sub_topic || "");
-            updateStreamingMessage(
-              `🔬 正在研究 (${currentBlock}/${totalBlocks}): ${data.sub_topic || ""}`,
-            );
-
-            // Calculate ETA
-            if (researchStartTime && currentBlock > 0 && totalBlocks > 0) {
-              const progressPercentage = (currentBlock / totalBlocks) * 100;
-              const elapsed = Date.now() - researchStartTime;
-              const estimatedTotal = elapsed / (progressPercentage / 100);
-              const remaining = estimatedTotal - elapsed;
-              if (remaining > 0) {
-                const minutes = Math.floor(remaining / 60000);
-                const seconds = Math.floor((remaining % 60000) / 1000);
-                setEstimatedTimeRemaining(`${minutes}分${seconds}秒`);
-              }
-            }
-          } else if (status === "block_completed") {
-            const currentBlock = data.current_block || researchProgress.current;
-            const totalBlocks = data.total_blocks || researchProgress.total;
-            setResearchProgress({ current: currentBlock, total: totalBlocks });
-            setGlobalProgress((prev) => ({
-              ...prev,
-              completed: prev.completed + 1,
-            }));
-          } else if (status === "rag_degraded") {
-            const degradedTopic =
-              data.sub_topic || currentSubTopic || "当前子主题";
-            updateStreamingMessage(
-              `⚠️ ${degradedTopic} 在知识库中命中不足，已切换到联网检索`,
-            );
-          } else if (status === "researching_completed") {
-            // No extra action needed, total already set
-          } else if (status === "reporting_started") {
-            setResearchPhase("reporting");
-            setCurrentSubTopic("");
-            updateStreamingMessage("📝 正在生成研究报告...");
-          } else if (status === "deduplicate_completed") {
-            setGlobalProgress((prev) => ({
-              ...prev,
-              completed: prev.completed + 1,
-            }));
-          } else if (status === "outline_completed") {
-            const totalSections = data.sections || 0;
-            // M is now known, update total = 3 (planning) + N (researching) + 2 + M + 1 (reporting)
-            setGlobalProgress((prev) => {
-              const planningSteps = 3;
-              const researchingSteps = prev.total - planningSteps - 3; // subtract old reporting estimate
-              const newReportingSteps = 2 + totalSections + 1;
-              return {
-                completed: prev.completed + 1,
-                total: planningSteps + researchingSteps + newReportingSteps,
-              };
-            });
-          } else if (status === "writing_section") {
-            const section = data.section_title || data.section || "";
-            setGlobalProgress((prev) => ({
-              ...prev,
-              completed: prev.completed + 1,
-            }));
-            updateStreamingMessage(`📝 正在撰写: ${section}`);
-          } else if (status === "writing_completed") {
-            setGlobalProgress((prev) => ({
-              ...prev,
-              completed: prev.completed + 1,
-            }));
-          } else if (status === "reporting_completed") {
-            // Ensure 100%
-            setGlobalProgress((prev) => ({ ...prev, completed: prev.total }));
-          }
-        } else if (data.type === "status") {
-          // Handle status updates
-          if (data.research_id) {
-            setActiveResearchId(data.research_id);
-          }
-          if (data.content === "started") {
-            setResearchPhase("planning");
-            updateStreamingMessage("🚀 深度研究已启动...");
-          } else if (data.content === "already_running") {
-            duplicateRunDetected = true;
-            updateStreamingMessage(
-              "🔄 检测到已有深度研究任务，正在恢复状态...",
-            );
-            void recoverResearchIfNeeded("already-running");
-          }
-        }
-        // Silently ignore "log" and "ping" types
-      } catch (e) {
-        console.error("Deep research parse error:", e);
-      }
-    };
-
-    // Helper function to update the streaming message
-    const updateStreamingMessage = (content: string) => {
-      setChatMessages((prev) =>
-        prev.map((msg) => (msg.isStreaming ? { ...msg, content } : msg)),
-      );
-    };
-
-    ws.onerror = (e) => {
-      clearTimeout(connectionTimeout);
-      clearTimeout(researchTimeout);
-      console.error("Deep Research WS Error:", e);
-      setResearchError("WebSocket 连接失败，请检查网络或后端服务");
-      alert(`Deep Research WebSocket 错误: 连接失败 ${url}`);
-      setResearchRunning(false);
-      setIsChatting(false);
-      setChatMessages((prev) =>
-        prev.map((msg) =>
-          msg.isStreaming
-            ? { ...msg, content: "❌ 研究连接失败", isStreaming: false }
-            : msg,
-        ),
-      );
-    };
-
-    ws.onclose = () => {
-      clearTimeout(connectionTimeout);
-      clearTimeout(researchTimeout);
-      setResearchRunning(false);
-      setIsChatting(false);
-
-      // If connection closes while still streaming (no result received), mark as failed
-      setChatMessages((prev) => {
-        const hasStreaming = prev.some((msg) => msg.isStreaming);
-        if (hasStreaming) {
-          return prev.map((msg) =>
-            msg.isStreaming
-              ? {
-                  ...msg,
-                  content: duplicateRunDetected
-                    ? "🔄 已检测到同会话进行中的深度研究，正在尝试恢复结果..."
-                    : msg.content +
-                      "\n\n[连接断开，未收到完整报告。请尝试刷新页面。]",
-                  isStreaming: false,
-                }
-              : msg,
-          );
-        }
-        return prev;
-      });
-      scheduleSessionSave(true, activeSessionId);
-      if (pendingRecoveryRef.current) {
-        setTimeout(() => {
-          void recoverResearchIfNeeded("ws-close");
-        }, 1500);
-      }
-    };
   };
 
   // Export functions

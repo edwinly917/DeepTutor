@@ -1,7 +1,19 @@
 from datetime import datetime, timezone
 import os
 
-from sqlalchemy import JSON, Column, DateTime, MetaData, String, Table, create_engine
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    Text,
+    create_engine,
+)
 
 _engine = None
 _metadata = MetaData()
@@ -25,6 +37,72 @@ generated_files = Table(
     Column("object_key", String, nullable=False),
     Column("content_type", String, nullable=False),
     Column("metadata", JSON, nullable=True),
+)
+
+ppt_projects = Table(
+    "ppt_projects",
+    _metadata,
+    Column("id", String, primary_key=True),
+    Column("notebook_id", String, nullable=True),
+    Column("session_id", String, nullable=True),
+    Column("creation_type", String, nullable=False),
+    Column("idea_prompt", Text, nullable=True),
+    Column("outline_text", Text, nullable=True),
+    Column("description_text", Text, nullable=True),
+    Column("source_content", Text, nullable=True),
+    Column("template_style", Text, nullable=True),
+    Column("template_image_path", String, nullable=True),
+    Column("reference_style_prompt", Text, nullable=True),
+    Column("image_aspect_ratio", String, nullable=False),
+    Column("language", String, nullable=False),
+    Column("reference_sources", JSON, nullable=True),
+    Column("status", String, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+ppt_pages = Table(
+    "ppt_pages",
+    _metadata,
+    Column("id", String, primary_key=True),
+    Column("project_id", String, ForeignKey("ppt_projects.id"), nullable=False, index=True),
+    Column("order_index", Integer, nullable=False, index=True),
+    Column("part", String, nullable=True),
+    Column("outline_content", JSON, nullable=False),
+    Column("description_content", JSON, nullable=True),
+    Column("image_prompt", Text, nullable=True),
+    Column("generated_image_path", String, nullable=True),
+    Column("cached_image_path", String, nullable=True),
+    Column("status", String, nullable=False, index=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+ppt_page_image_versions = Table(
+    "ppt_page_image_versions",
+    _metadata,
+    Column("id", String, primary_key=True),
+    Column("page_id", String, ForeignKey("ppt_pages.id"), nullable=False, index=True),
+    Column("version_number", Integer, nullable=False),
+    Column("image_path", String, nullable=False),
+    Column("cached_image_path", String, nullable=True),
+    Column("prompt_used", Text, nullable=True),
+    Column("is_current", Boolean, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+ppt_tasks = Table(
+    "ppt_tasks",
+    _metadata,
+    Column("id", String, primary_key=True),
+    Column("project_id", String, ForeignKey("ppt_projects.id"), nullable=False, index=True),
+    Column("task_type", String, nullable=False, index=True),
+    Column("status", String, nullable=False, index=True),
+    Column("progress", JSON, nullable=True),
+    Column("error_message", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("finished_at", DateTime(timezone=True), nullable=True),
 )
 
 

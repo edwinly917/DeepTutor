@@ -53,10 +53,29 @@ import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { processLatexContent } from "@/lib/latex";
 import { apiUrl, wsUrl } from "@/lib/api";
+import {
+  createPptProject,
+  deriveIdea,
+  deriveOutline,
+  exportPptProjectPptx,
+  fetchPptConfig,
+  fetchPptProject,
+  fetchPptTask,
+  generatePptDescriptions,
+  generatePptImages,
+  generatePptOutline,
+  previewPptStyle,
+  regeneratePptPageImage,
+  uploadPptReferenceImage,
+  updatePptPage,
+} from "@/lib/pptApi";
 import { Mermaid } from "@/components/Mermaid";
 import PptPreviewModal from "@/components/ppt/PptPreviewModal";
-import { exportToPptx } from "@/lib/pptGenerator";
-import { PresentationOutline, SlideContent } from "@/types/ppt";
+import {
+  PptCreationMode,
+  PresentationOutline,
+  SlideContent,
+} from "@/types/ppt";
 
 interface NotebookRecord {
   id: string;
@@ -98,11 +117,13 @@ interface PptStyleTemplate {
   prompt: string;
 }
 
-interface PptTemplateInfo {
-  name: string;
-  size: number;
-  modified_at: string;
-  download_url: string;
+interface PptStylePlan {
+  previewPrompt: string;
+  outlinePlanningPrompt: string;
+  templateStylePrompt: string;
+  referenceStylePrompt: string;
+  presetBasePrompt: string;
+  userOverridePrompt: string;
 }
 
 interface ChatMessage {
@@ -166,18 +187,26 @@ type StudioMode =
 
 type ExportContentSource = "research" | "sources";
 
-type PptStyleMode = "default" | "preset" | "template" | "sources";
-
-type PptTemplatePromptSource = "preset" | "sources";
+type PptStyleMode = "default" | "preset" | "reference_image" | "sources";
 
 type AudioResult = { audioUrl?: string; audioId?: string };
 
 interface PptStudioState {
-  styleMode?: PptStyleMode;
+  creationMode?: PptCreationMode;
+  ideaPrompt?: string;
+  outlineText?: string;
+  descriptionText?: string;
+  projectId?: string;
+  activeTaskId?: string;
+  taskPhase?: string;
+  styleMode?: PptStyleMode | "template";
   selectedStyleId?: string;
+  stylePromptText?: string;
+  referenceImagePath?: string;
+  referenceImageUrl?: string;
+  referenceImageName?: string;
+  referenceStylePrompt?: string;
   selectedTemplate?: string;
-  templateUseLlm?: boolean;
-  templatePromptSource?: PptTemplatePromptSource;
   stylePreviewSvg?: string;
   outline?: PresentationOutline | null;
   previewOpen?: boolean;
@@ -480,22 +509,29 @@ export default function NotebookDetailPage() {
   const [enableOptimization, setEnableOptimization] = useState(true);
   const [exportContentSource, setExportContentSource] =
     useState<ExportContentSource>("research");
+  const [pptCreationMode, setPptCreationMode] =
+    useState<PptCreationMode>("auto");
+  const [pptIdeaPrompt, setPptIdeaPrompt] = useState("");
+  const [pptOutlineText, setPptOutlineText] = useState("");
+  const [pptDescriptionText, setPptDescriptionText] = useState("");
+  const [pptProjectId, setPptProjectId] = useState("");
+  const [pptActiveTaskId, setPptActiveTaskId] = useState("");
   const [pptStyleMode, setPptStyleMode] = useState<PptStyleMode>("default");
   const [pptStyleTemplates, setPptStyleTemplates] = useState<
     PptStyleTemplate[]
   >([]);
   const [selectedPptStyleId, setSelectedPptStyleId] = useState("");
-  const [pptTemplates, setPptTemplates] = useState<PptTemplateInfo[]>([]);
-  const [selectedPptTemplate, setSelectedPptTemplate] = useState("");
-  const [pptTemplateUploading, setPptTemplateUploading] = useState(false);
+  const [pptStylePromptText, setPptStylePromptText] = useState("");
+  const [pptReferenceImagePath, setPptReferenceImagePath] = useState("");
+  const [pptReferenceImageUrl, setPptReferenceImageUrl] = useState("");
+  const [pptReferenceImageName, setPptReferenceImageName] = useState("");
+  const [pptReferenceStylePrompt, setPptReferenceStylePrompt] = useState("");
+  const [pptReferenceUploading, setPptReferenceUploading] = useState(false);
   const [researchStartTime, setResearchStartTime] = useState<number | null>(
     null,
   );
   const [estimatedTimeRemaining, setEstimatedTimeRemaining] =
     useState<string>("");
-  const [pptTemplateUseLlm, setPptTemplateUseLlm] = useState(false);
-  const [pptTemplatePromptSource, setPptTemplatePromptSource] =
-    useState<PptTemplatePromptSource>("preset");
   const [pptStylePreviewSvg, setPptStylePreviewSvg] = useState("");
   const [pptStylePreviewLoading, setPptStylePreviewLoading] = useState(false);
   const [pptStylePreviewError, setPptStylePreviewError] = useState("");
@@ -627,11 +663,19 @@ export default function NotebookDetailPage() {
       studioMode === "ppt" || studioMode === "podcast" ? studioMode : "idle",
     exportContentSource,
     ppt: {
+      creationMode: pptCreationMode,
+      ideaPrompt: pptIdeaPrompt,
+      outlineText: pptOutlineText,
+      descriptionText: pptDescriptionText,
+      projectId: pptProjectId,
+      activeTaskId: pptActiveTaskId,
       styleMode: pptStyleMode,
       selectedStyleId: selectedPptStyleId,
-      selectedTemplate: selectedPptTemplate,
-      templateUseLlm: pptTemplateUseLlm,
-      templatePromptSource: pptTemplatePromptSource,
+      stylePromptText: pptStylePromptText,
+      referenceImagePath: pptReferenceImagePath,
+      referenceImageUrl: pptReferenceImageUrl,
+      referenceImageName: pptReferenceImageName,
+      referenceStylePrompt: pptReferenceStylePrompt,
       stylePreviewSvg: pptStylePreviewSvg || "",
       outline: pptOutline,
       previewOpen: pptPreviewOpen,
@@ -649,10 +693,11 @@ export default function NotebookDetailPage() {
     const ppt = state.ppt;
     if (ppt?.outline) return true;
     if (ppt?.previewOpen) return true;
+    if (ppt?.projectId) return true;
+    if (ppt?.creationMode && ppt.creationMode !== "auto") return true;
     if (ppt?.styleMode && ppt.styleMode !== "default") return true;
-    if (ppt?.templateUseLlm) return true;
-    if (ppt?.templatePromptSource && ppt.templatePromptSource !== "preset")
-      return true;
+    if (ppt?.stylePromptText) return true;
+    if (ppt?.referenceImagePath || ppt?.referenceStylePrompt) return true;
     const audio = state.podcast?.audioResult;
     if (audio?.audioUrl || audio?.audioId) return true;
     return false;
@@ -663,11 +708,19 @@ export default function NotebookDetailPage() {
     [
       studioMode,
       exportContentSource,
+      pptCreationMode,
+      pptIdeaPrompt,
+      pptOutlineText,
+      pptDescriptionText,
+      pptProjectId,
+      pptActiveTaskId,
       pptStyleMode,
       selectedPptStyleId,
-      selectedPptTemplate,
-      pptTemplateUseLlm,
-      pptTemplatePromptSource,
+      pptStylePromptText,
+      pptReferenceImagePath,
+      pptReferenceImageUrl,
+      pptReferenceImageName,
+      pptReferenceStylePrompt,
       pptStylePreviewSvg,
       pptOutline,
       pptPreviewOpen,
@@ -747,11 +800,20 @@ export default function NotebookDetailPage() {
   const resetStudioState = () => {
     setStudioMode("idle");
     setExportContentSource("research");
+    setPptCreationMode("auto");
+    setPptIdeaPrompt("");
+    setPptOutlineText("");
+    setPptDescriptionText("");
+    setPptProjectId("");
+    setPptActiveTaskId("");
     setPptStyleMode("default");
     setSelectedPptStyleId("");
-    setSelectedPptTemplate("");
-    setPptTemplateUseLlm(false);
-    setPptTemplatePromptSource("preset");
+    setPptStylePromptText("");
+    setPptReferenceImagePath("");
+    setPptReferenceImageUrl("");
+    setPptReferenceImageName("");
+    setPptReferenceStylePrompt("");
+    setPptReferenceUploading(false);
     setPptStylePreviewSvg("");
     setPptStylePreviewLoading(false);
     setPptStylePreviewError("");
@@ -785,13 +847,21 @@ export default function NotebookDetailPage() {
             : "idle";
     setStudioMode(resolvedMode);
     setExportContentSource(next.exportContentSource || "research");
-    setPptStyleMode(ppt.styleMode || "default");
-    setSelectedPptStyleId(ppt.selectedStyleId || "");
-    setSelectedPptTemplate(ppt.selectedTemplate || "");
-    setPptTemplateUseLlm(
-      typeof ppt.templateUseLlm === "boolean" ? ppt.templateUseLlm : false,
+    setPptCreationMode(ppt.creationMode || "auto");
+    setPptIdeaPrompt(ppt.ideaPrompt || "");
+    setPptOutlineText(ppt.outlineText || "");
+    setPptDescriptionText(ppt.descriptionText || "");
+    setPptProjectId(ppt.projectId || "");
+    setPptActiveTaskId(ppt.activeTaskId || "");
+    setPptStyleMode(
+      ppt.styleMode === "template" ? "default" : ppt.styleMode || "default",
     );
-    setPptTemplatePromptSource(ppt.templatePromptSource || "preset");
+    setSelectedPptStyleId(ppt.selectedStyleId || "");
+    setPptStylePromptText(ppt.stylePromptText || "");
+    setPptReferenceImagePath(ppt.referenceImagePath || "");
+    setPptReferenceImageUrl(ppt.referenceImageUrl || "");
+    setPptReferenceImageName(ppt.referenceImageName || "");
+    setPptReferenceStylePrompt(ppt.referenceStylePrompt || "");
     setPptStylePreviewSvg(ppt.stylePreviewSvg || "");
     setPptStylePreviewLoading(false);
     setPptStylePreviewError("");
@@ -1307,11 +1377,12 @@ export default function NotebookDetailPage() {
   const sessionSyncInFlightRef = useRef(false);
   const activeResearchIdRef = useRef<string | null>(null);
   const currentSessionIdRef = useRef<string | null>(null);
+  const recoveringPptKeyRef = useRef<string | null>(null);
 
   // WebSocket refs
   const wsRef = useRef<WebSocket | null>(null);
   const chatWsRef = useRef<WebSocket | null>(null);
-  const pptTemplateInputRef = useRef<HTMLInputElement>(null);
+  const pptReferenceImageInputRef = useRef<HTMLInputElement>(null);
 
   const aggregatedSources = useMemo(() => {
     const result: Source[] = [];
@@ -1332,6 +1403,18 @@ export default function NotebookDetailPage() {
     () => aggregatedSources.filter((source) => source.selected),
     [aggregatedSources],
   );
+
+  const pptAutoSignalText = useMemo(() => {
+    if (exportContentSource === "research") {
+      return researchReport;
+    }
+    return selectedSourcesList
+      .map((source) =>
+        [source.title, source.content].filter(Boolean).join("\n").trim(),
+      )
+      .filter(Boolean)
+      .join("\n\n");
+  }, [exportContentSource, researchReport, selectedSourcesList]);
 
   const registerCitationKey = useCallback(
     (sourceKey: string, preferredRef?: number) => {
@@ -1575,31 +1658,32 @@ export default function NotebookDetailPage() {
 
   const canExport =
     exportContentSource === "research" ? !!researchReport : hasSelectedSources;
-  const canExportPptContent = !!researchReport;
+  const canExportPptContent = canExport;
   const hasPptPresets = pptStyleTemplates.length > 0 && !!selectedPptStyleId;
-  const needsSourceForStyle =
-    pptStyleMode === "sources" ||
-    (pptStyleMode === "template" &&
-      pptTemplateUseLlm &&
-      pptTemplatePromptSource === "sources");
+  const needsSourceForStyle = pptStyleMode === "sources";
   const canUseSourceStyle = !needsSourceForStyle || hasSelectedSources;
-  const needsPresetForStyle =
-    pptStyleMode === "preset" ||
-    (pptStyleMode === "template" &&
-      pptTemplateUseLlm &&
-      pptTemplatePromptSource === "preset");
+  const needsPresetForStyle = pptStyleMode === "preset";
   const canUsePresetStyle = !needsPresetForStyle || hasPptPresets;
-  const canUseTemplateStyle =
-    pptStyleMode !== "template" || !!selectedPptTemplate;
+  const canUseReferenceImageStyle =
+    pptStyleMode !== "reference_image" || !!pptReferenceImagePath;
   const isPptBusy = isPptGenerating || isPptExporting;
-  const templateBlocked = pptStyleMode === "template";
   const canExportPpt =
     bananaPptEnabled &&
     canExportPptContent &&
     canUseSourceStyle &&
     canUsePresetStyle &&
-    canUseTemplateStyle &&
-    !templateBlocked;
+    canUseReferenceImageStyle;
+  const pptAutoResolution =
+    pptCreationMode === "auto" ? getPptAutoResolution(pptAutoSignalText) : null;
+  const pptContentSourceLabel =
+    exportContentSource === "research" ? "深度研究" : "已选来源";
+  const pptTaskStatusLabel = isPptGenerating
+    ? `生成中 ${pptImageProgress.current}/${pptImageProgress.total || "?"}`
+    : pptActiveTaskId
+      ? "可恢复"
+      : pptProjectId
+        ? "已生成项目"
+        : "待生成";
 
   useEffect(() => {
     setEnabledTools((prev) => {
@@ -1928,8 +2012,6 @@ export default function NotebookDetailPage() {
   }, [pendingResearchRecovery, notebookId]);
 
   useEffect(() => {
-    fetchPptStyleTemplates();
-    fetchPptTemplates();
     fetchBananaPptConfig();
     // Fetch available podcast speakers
     (async () => {
@@ -1953,7 +2035,12 @@ export default function NotebookDetailPage() {
     if (studioHydrationRef.current) return;
     setPptStylePreviewSvg("");
     setPptStylePreviewError("");
-  }, [pptStyleMode, selectedPptStyleId, pptTemplatePromptSource]);
+  }, [
+    pptStyleMode,
+    selectedPptStyleId,
+    pptReferenceStylePrompt,
+    pptStylePromptText,
+  ]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -2057,51 +2144,9 @@ export default function NotebookDetailPage() {
     }
   };
 
-  const fetchPptStyleTemplates = async () => {
-    try {
-      const res = await fetch(apiUrl("/api/v1/research/ppt_style_templates"));
-      if (!res.ok) return;
-      const data = await res.json();
-      const templates = data.templates || [];
-      setPptStyleTemplates(templates);
-      if (templates.length > 0) {
-        const ids = templates.map((template: PptStyleTemplate) => template.id);
-        if (!selectedPptStyleId || !ids.includes(selectedPptStyleId)) {
-          setSelectedPptStyleId(templates[0].id);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to fetch PPT style templates:", err);
-    }
-  };
-
-  const fetchPptTemplates = async () => {
-    try {
-      const res = await fetch(apiUrl("/api/v1/research/ppt_templates"));
-      if (!res.ok) return;
-      const data = await res.json();
-      setPptTemplates(data.templates || []);
-      if (data.templates?.length > 0) {
-        const templateNames = data.templates.map(
-          (template: PptTemplateInfo) => template.name,
-        );
-        if (
-          !selectedPptTemplate ||
-          !templateNames.includes(selectedPptTemplate)
-        ) {
-          setSelectedPptTemplate(data.templates[0].name);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to fetch PPT templates:", err);
-    }
-  };
-
   const fetchBananaPptConfig = async () => {
     try {
-      const res = await fetch(apiUrl("/api/v1/research/ppt_config"));
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await fetchPptConfig();
       setBananaPptEnabled(Boolean(data.enabled));
       if (typeof data.max_slides === "number") {
         setBananaPptMaxSlides(data.max_slides);
@@ -2123,27 +2168,32 @@ export default function NotebookDetailPage() {
     }
   };
 
-  const handleUploadPptTemplate = async (e: ChangeEvent<HTMLInputElement>) => {
+  const handleUploadPptReferenceImage = async (
+    e: ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setPptTemplateUploading(true);
+    setPptReferenceUploading(true);
+    setPptStylePreviewError("");
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch(apiUrl("/api/v1/research/ppt_templates/upload"), {
-        method: "POST",
-        body: formData,
-      });
-      if (!res.ok) throw new Error("Upload failed");
-      await fetchPptTemplates();
-      if (pptTemplateInputRef.current) {
-        pptTemplateInputRef.current.value = "";
+      const data = await uploadPptReferenceImage(file);
+      setPptStyleMode("reference_image");
+      setPptReferenceImagePath(data.image_path || "");
+      setPptReferenceImageUrl(data.image_url || "");
+      setPptReferenceImageName(data.image_name || file.name);
+      setPptReferenceStylePrompt(data.derived_style_prompt || "");
+      setPptStylePreviewSvg("");
+      if (pptReferenceImageInputRef.current) {
+        pptReferenceImageInputRef.current.value = "";
       }
     } catch (err) {
-      console.error("PPT template upload failed:", err);
+      console.error("PPT reference image upload failed:", err);
+      setPptStylePreviewError(
+        err instanceof Error ? err.message : "参考图上传失败",
+      );
     } finally {
-      setPptTemplateUploading(false);
+      setPptReferenceUploading(false);
     }
   };
 
@@ -3648,46 +3698,282 @@ export default function NotebookDetailPage() {
     return getSourcesStylePrompt();
   };
 
-  const getPptStylePrompt = async () => {
+  const buildStyleBlock = (label: string, value: string) =>
+    value.trim() ? `${label}:\n${value.trim()}` : "";
+
+  const getPptStylePlan = async (): Promise<PptStylePlan> => {
+    const presetBasePrompt = getSelectedPptStylePrompt().trim();
+    const userOverridePrompt = pptStylePromptText.trim();
+
     if (pptStyleMode === "preset") {
-      return getPromptForSource("preset");
+      const previewPrompt = (await getPromptForSource("preset")).trim();
+      return {
+        previewPrompt,
+        outlinePlanningPrompt: previewPrompt,
+        templateStylePrompt: buildStyleBlock("Preset base", previewPrompt),
+        referenceStylePrompt: "",
+        presetBasePrompt: previewPrompt,
+        userOverridePrompt: "",
+      };
     }
 
     if (pptStyleMode === "sources") {
-      return getPromptForSource("sources");
+      const previewPrompt = (await getPromptForSource("sources")).trim();
+      return {
+        previewPrompt,
+        outlinePlanningPrompt: previewPrompt,
+        templateStylePrompt: buildStyleBlock(
+          "Source-derived guidance",
+          previewPrompt,
+        ),
+        referenceStylePrompt: "",
+        presetBasePrompt: previewPrompt,
+        userOverridePrompt: "",
+      };
     }
 
-    return "";
+    if (pptStyleMode === "reference_image") {
+      const referenceStylePrompt = pptReferenceStylePrompt.trim();
+      const previewPrompt = [
+        presetBasePrompt,
+        referenceStylePrompt,
+        userOverridePrompt,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      const outlinePlanningPrompt =
+        [
+          buildStyleBlock("Preset base", presetBasePrompt),
+          buildStyleBlock("Reference-image summary", referenceStylePrompt),
+          buildStyleBlock("User override", userOverridePrompt),
+        ]
+          .filter(Boolean)
+          .join("\n\n") || previewPrompt;
+      const templateStylePrompt = [
+        buildStyleBlock("Preset base", presetBasePrompt),
+        buildStyleBlock("User override", userOverridePrompt),
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+      return {
+        previewPrompt,
+        outlinePlanningPrompt,
+        templateStylePrompt,
+        referenceStylePrompt,
+        presetBasePrompt,
+        userOverridePrompt,
+      };
+    }
+
+    return {
+      previewPrompt: "",
+      outlinePlanningPrompt: "",
+      templateStylePrompt: "",
+      referenceStylePrompt: "",
+      presetBasePrompt: "",
+      userOverridePrompt: "",
+    };
+  };
+
+  const syncPptProjectState = async (
+    projectId: string,
+    options?: { openPreview?: boolean },
+  ) => {
+    const project = await fetchPptProject(projectId);
+    setPptProjectId(project.id);
+    setPptOutline(project.presentation_outline);
+    if (options?.openPreview ?? true) {
+      setPptPreviewOpen(true);
+    }
+    const generatingIndices = (project.presentation_outline.slides || [])
+      .map((slide, index) =>
+        slide.status === "IMAGE_QUEUED" || slide.status === "IMAGE_GENERATING"
+          ? index
+          : -1,
+      )
+      .filter((index) => index >= 0);
+    setPptGeneratingIndices(generatingIndices);
+    return project;
+  };
+
+  const waitForPptTask = async (projectId: string, taskId: string) => {
+    const pollingInterval = 1500;
+    while (true) {
+      const [task, project] = await Promise.all([
+        fetchPptTask(projectId, taskId),
+        fetchPptProject(projectId),
+      ]);
+      setPptActiveTaskId(task.id);
+      setPptOutline(project.presentation_outline);
+      const total = task.progress?.total || project.pages.length || 0;
+      const current = task.progress?.current || 0;
+      setPptImageProgress({ current, total });
+      const generatingIndices = (project.presentation_outline.slides || [])
+        .map((slide, index) =>
+          slide.status === "IMAGE_QUEUED" ||
+          slide.status === "IMAGE_GENERATING" ||
+          slide.status === "DESCRIPTION_QUEUED" ||
+          slide.status === "DESCRIPTION_GENERATING"
+            ? index
+            : -1,
+        )
+        .filter((index) => index >= 0);
+      setPptGeneratingIndices(generatingIndices);
+
+      if (task.status === "COMPLETED") {
+        return { task, project };
+      }
+      if (task.status === "FAILED" || task.status === "CANCELED") {
+        throw new Error(task.error_message || "PPT 任务执行失败");
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollingInterval));
+    }
+  };
+
+  function looksLikeOutlineText(value: string) {
+    const text = value.trim();
+    if (!text) return false;
+    return (
+      /^##\s+/m.test(text) || /^#\s+/m.test(text) || /^\d+[.)]\s+/m.test(text)
+    );
+  }
+
+  function getPptAutoResolution(markdown: string): {
+    mode: Exclude<PptCreationMode, "auto">;
+    reason: string;
+  } {
+    if (pptDescriptionText.trim()) {
+      return {
+        mode: "descriptions",
+        reason: "已填写逐页描述，将直接按页面说明生成内容与图片。",
+      };
+    }
+    if (pptOutlineText.trim()) {
+      return {
+        mode: "outline",
+        reason: "已提供结构化大纲，将先标准化大纲再补齐逐页描述。",
+      };
+    }
+    if (pptIdeaPrompt.trim()) {
+      return {
+        mode: "idea",
+        reason: "当前输入更像演示主题，将先生成演示方向再展开页面。",
+      };
+    }
+    if (researchReport.trim()) {
+      return {
+        mode: "outline",
+        reason: "检测到深度研究报告，将按 报告 -> 大纲 -> 逐页描述 生成。",
+      };
+    }
+    if (looksLikeOutlineText(markdown)) {
+      return {
+        mode: "outline",
+        reason: "检测到结构化标题和要点，优先按大纲创建。",
+      };
+    }
+    if (markdown.trim().length >= 1200 || /^#{1,3}\s+/m.test(markdown)) {
+      return {
+        mode: "outline",
+        reason: "检测到长文本或多级标题，先抽取大纲再展开页面。",
+      };
+    }
+    return {
+      mode: "idea",
+      reason: "当前更像主题想法，先生成演示方向再扩展页面。",
+    };
+  }
+
+  const resolvePptCreationMode = (markdown: string): PptCreationMode => {
+    if (pptCreationMode !== "auto") return pptCreationMode;
+    return getPptAutoResolution(markdown).mode;
+  };
+
+  const buildPptCreatePayload = async (
+    markdown: string,
+    stylePlan: PptStylePlan,
+  ) => {
+    const resolvedMode = resolvePptCreationMode(markdown);
+    let ideaPrompt = pptIdeaPrompt.trim();
+    let outlineText = pptOutlineText.trim();
+    const descriptionText = pptDescriptionText.trim();
+
+    if (resolvedMode === "idea" && !ideaPrompt) {
+      ideaPrompt = await deriveIdea(markdown);
+      setPptIdeaPrompt(ideaPrompt);
+    }
+
+    if (resolvedMode === "outline" && !outlineText) {
+      const derived = await deriveOutline(
+        markdown,
+        stylePlan.outlinePlanningPrompt || undefined,
+        bananaPptMaxSlides,
+      );
+      outlineText = derived.outline_text || "";
+      setPptOutlineText(outlineText);
+    }
+
+    return {
+      notebook_id: notebookId,
+      session_id: currentSessionId || undefined,
+      creation_type: resolvedMode,
+      idea_prompt: ideaPrompt || undefined,
+      outline_text: outlineText || undefined,
+      description_text: descriptionText || undefined,
+      source_content: markdown,
+      template_style: stylePlan.templateStylePrompt || undefined,
+      template_image_path: pptReferenceImagePath || undefined,
+      reference_style_prompt: stylePlan.referenceStylePrompt || undefined,
+      image_aspect_ratio: "16:9",
+      language: "zh",
+      reference_sources: selectedSourcesList.map((source) => ({
+        type: source.type,
+        title: source.title,
+        url: source.url,
+      })),
+    };
+  };
+
+  const handleDerivePptIdea = async () => {
+    const markdown = await getExportMarkdown();
+    if (!markdown) return;
+    const nextIdeaPrompt = await deriveIdea(markdown);
+    setPptCreationMode("idea");
+    setPptIdeaPrompt(nextIdeaPrompt);
+  };
+
+  const handleDerivePptOutline = async () => {
+    const markdown = await getExportMarkdown();
+    if (!markdown) return;
+    const stylePlan = await getPptStylePlan();
+    const derived = await deriveOutline(
+      markdown,
+      stylePlan.outlinePlanningPrompt || undefined,
+      bananaPptMaxSlides,
+    );
+    setPptCreationMode("outline");
+    setPptOutlineText(derived.outline_text || "");
   };
 
   const handlePreviewPptStyle = async () => {
-    if (pptStyleMode === "template") {
-      setPptStylePreviewError("模板模式暂不支持风格预览");
-      return;
-    }
-
     setPptStylePreviewLoading(true);
     setPptStylePreviewError("");
     try {
-      const stylePrompt = await getPptStylePrompt();
-      if (pptStyleMode === "preset" && !stylePrompt) {
+      const stylePlan = await getPptStylePlan();
+      if (pptStyleMode === "preset" && !stylePlan.previewPrompt) {
         alert("请选择风格模板");
         return;
       }
-      if (pptStyleMode === "sources" && !stylePrompt) {
+      if (pptStyleMode === "sources" && !stylePlan.previewPrompt) {
+        return;
+      }
+      if (pptStyleMode === "reference_image" && !pptReferenceImagePath) {
+        alert("请先上传参考图");
         return;
       }
 
-      const res = await fetch(apiUrl("/api/v1/research/ppt_style_preview"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          style_prompt: stylePrompt || undefined,
-        }),
-      });
-
-      if (!res.ok) throw new Error("预览失败");
-      const data = await res.json();
+      const data = await previewPptStyle(stylePlan.previewPrompt || undefined);
       setPptStylePreviewSvg(data.preview_svg || "");
     } catch (err) {
       console.error("PPT style preview failed:", err);
@@ -3711,13 +3997,29 @@ export default function NotebookDetailPage() {
       nextSlides[index] = updatedSlide;
       return { ...prev, slides: nextSlides };
     });
+    if (pptProjectId && updatedSlide.pageId) {
+      void updatePptPage(pptProjectId, updatedSlide.pageId, {
+        title: updatedSlide.title,
+        points: updatedSlide.points,
+        description_text: updatedSlide.descriptionText || undefined,
+        image_prompt: updatedSlide.imagePrompt,
+      }).catch((err) => {
+        console.error("PPT page update failed:", err);
+      });
+    }
   };
 
   const handleDownloadPptx = async () => {
-    if (!pptOutline) return;
+    if (!pptProjectId) return;
     setIsPptExporting(true);
     try {
-      await exportToPptx(pptOutline);
+      const data = await exportPptProjectPptx(pptProjectId);
+      if (data.download_url) {
+        const a = document.createElement("a");
+        a.href = apiUrl(data.download_url);
+        a.download = data.filename || "presentation.pptx";
+        a.click();
+      }
     } catch (err) {
       console.error("PPTX export failed:", err);
     } finally {
@@ -3764,8 +4066,8 @@ export default function NotebookDetailPage() {
       alert("PPT 功能未启用");
       return;
     }
-    if (pptStyleMode === "template") {
-      alert("模板模式暂不支持 Banana PPT");
+    if (pptStyleMode === "reference_image" && !pptReferenceImagePath) {
+      alert("请先上传参考图");
       return;
     }
 
@@ -3777,114 +4079,69 @@ export default function NotebookDetailPage() {
       const markdown = await getExportMarkdown();
       if (!markdown) return;
 
-      const stylePrompt = await getPptStylePrompt();
-      if (pptStyleMode === "preset" && !stylePrompt) {
+      const stylePlan = await getPptStylePlan();
+      if (pptStyleMode === "preset" && !stylePlan.previewPrompt) {
         alert("请选择风格模板");
         return;
       }
-      if (pptStyleMode === "sources" && !stylePrompt) {
+      if (pptStyleMode === "sources" && !stylePlan.previewPrompt) {
         return;
       }
+      const createPayload = await buildPptCreatePayload(markdown, stylePlan);
+      const project = await createPptProject(createPayload);
+      setPptProjectId(project.id);
+      setPptActiveTaskId("");
+      setPptOutline(project.presentation_outline);
 
-      const res = await fetch(apiUrl("/api/v1/research/ppt_outline"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source_content: markdown,
-          style_prompt: stylePrompt || undefined,
-          max_slides: bananaPptMaxSlides,
-        }),
-      });
-
-      if (!res.ok) throw new Error("生成失败");
-
-      const outline = (await res.json()) as PresentationOutline;
-      setPptOutline(outline);
+      const outlinedProject = await generatePptOutline(
+        project.id,
+        undefined,
+        bananaPptMaxSlides,
+      );
+      setPptOutline(outlinedProject.presentation_outline);
       setPptPreviewOpen(true);
 
-      const slides = outline.slides || [];
-      const slidesWithImages = slides
-        .map((slide, index) => ({ slide, index }))
-        .filter((item) => item.slide.imagePrompt);
-      const totalImages = slidesWithImages.length;
-      setPptImageProgress({ current: 0, total: totalImages });
+      const descriptionsTask = await generatePptDescriptions(project.id);
+      setPptActiveTaskId(descriptionsTask.id);
+      await waitForPptTask(project.id, descriptionsTask.id);
 
-      if (!totalImages) {
-        setPptGeneratingIndices([]);
-        return;
-      }
-
-      const updatedSlides = [...slides];
-      let generatedCount = 0;
-
-      const concurrency = Math.min(3, slidesWithImages.length);
-      let cursor = 0;
-
-      const startSlide = (index: number) => {
-        setPptGeneratingIndices((prev) =>
-          prev.includes(index) ? prev : [...prev, index],
-        );
-      };
-
-      const finishSlide = (index: number) => {
-        setPptGeneratingIndices((prev) => prev.filter((i) => i !== index));
-      };
-
-      const runWorker = async () => {
-        while (cursor < slidesWithImages.length) {
-          const current = slidesWithImages[cursor];
-          cursor += 1;
-          const slideIndex = current.index;
-
-          startSlide(slideIndex);
-          try {
-            const imageRes = await fetch(apiUrl("/api/v1/research/ppt_image"), {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                prompt: current.slide.imagePrompt,
-                slide_title: current.slide.title,
-                slide_points: current.slide.points,
-                layout: current.slide.layout,
-                deck_title: outline.title,
-                style_prompt: stylePrompt || undefined,
-              }),
-            });
-            if (imageRes.ok) {
-              const imageData = await imageRes.json();
-              if (imageData.image_data_url) {
-                // Use the latest slide data from updatedSlides, not the stale closure reference
-                updatedSlides[slideIndex] = {
-                  ...updatedSlides[slideIndex],
-                  generatedImageUrl: imageData.image_data_url,
-                };
-                console.log(
-                  `[PPT] Image loaded for slide ${slideIndex}, data length: ${imageData.image_data_url.length}`,
-                );
-              }
-            }
-          } catch (err) {
-            console.error("PPT image generation failed:", err);
-          } finally {
-            finishSlide(slideIndex);
-            generatedCount += 1;
-            setPptImageProgress({
-              current: generatedCount,
-              total: totalImages,
-            });
-            setPptOutline((prev) =>
-              prev ? { ...prev, slides: [...updatedSlides] } : prev,
-            );
-          }
-        }
-      };
-
-      await Promise.all(Array.from({ length: concurrency }, () => runWorker()));
+      const imagesTask = await generatePptImages(project.id);
+      setPptActiveTaskId(imagesTask.id);
+      const { project: finishedProject } = await waitForPptTask(
+        project.id,
+        imagesTask.id,
+      );
+      setPptOutline(finishedProject.presentation_outline);
+      setPptActiveTaskId("");
+      setPptGeneratingIndices([]);
     } catch (err) {
       console.error("PPT outline generation failed:", err);
       resetPptPreview();
     } finally {
       setPptGeneratingIndices([]);
+      setIsPptGenerating(false);
+    }
+  };
+
+  const handleRegeneratePptSlide = async (
+    index: number,
+    slide: SlideContent,
+  ) => {
+    if (!pptProjectId || !slide.pageId) return;
+    setIsPptGenerating(true);
+    setPptGeneratingIndices((prev) =>
+      prev.includes(index) ? prev : [...prev, index],
+    );
+    try {
+      const task = await regeneratePptPageImage(pptProjectId, slide.pageId);
+      setPptActiveTaskId(task.id);
+      const { project } = await waitForPptTask(pptProjectId, task.id);
+      setPptOutline(project.presentation_outline);
+      setPptActiveTaskId("");
+    } catch (err) {
+      console.error("PPT page image regeneration failed:", err);
+    } finally {
+      setPptGeneratingIndices((prev) => prev.filter((item) => item !== index));
       setIsPptGenerating(false);
     }
   };
@@ -4049,6 +4306,70 @@ export default function NotebookDetailPage() {
     scheduleSessionSave,
   ]);
 
+  useEffect(() => {
+    if (studioMode !== "ppt" || !pptProjectId) return;
+    if (!pptActiveTaskId && !pptPreviewOpen) return;
+
+    const recoveryKey = `${pptProjectId}:${pptActiveTaskId || "preview"}`;
+    if (recoveringPptKeyRef.current === recoveryKey) return;
+
+    let cancelled = false;
+    recoveringPptKeyRef.current = recoveryKey;
+
+    const resumePptProject = async () => {
+      try {
+        const project = await syncPptProjectState(pptProjectId, {
+          openPreview: pptPreviewOpen || Boolean(pptActiveTaskId),
+        });
+        if (cancelled) return;
+
+        if (!pptActiveTaskId) {
+          setPptImageProgress({ current: 0, total: project.pages.length || 0 });
+          return;
+        }
+
+        const task = await fetchPptTask(pptProjectId, pptActiveTaskId);
+        if (cancelled) return;
+
+        const isPendingTask =
+          task.status === "PENDING" || task.status === "RUNNING";
+        if (!isPendingTask) {
+          setPptImageProgress({
+            current: task.progress?.current || 0,
+            total: task.progress?.total || project.pages.length || 0,
+          });
+          setPptGeneratingIndices([]);
+          setPptActiveTaskId("");
+          return;
+        }
+
+        setIsPptGenerating(true);
+        const { project: recoveredProject } = await waitForPptTask(
+          pptProjectId,
+          pptActiveTaskId,
+        );
+        if (cancelled) return;
+        setPptOutline(recoveredProject.presentation_outline);
+        setPptGeneratingIndices([]);
+        setPptActiveTaskId("");
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Failed to resume PPT project:", err);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsPptGenerating(false);
+        }
+      }
+    };
+
+    void resumePptProject();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [studioMode, pptProjectId, pptActiveTaskId, pptPreviewOpen]);
+
   const renderExportSourceToggle = () => (
     <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
       <span>内容来源</span>
@@ -4078,166 +4399,407 @@ export default function NotebookDetailPage() {
   );
 
   const renderPptStylePanel = () => (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/60 p-4 text-left">
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-          PPT 风格
-        </div>
-      </div>
-      <div className="flex items-center gap-2 mb-3 text-xs text-slate-500">
-        <span>风格来源</span>
-        <div className="flex rounded-lg bg-white dark:bg-slate-800 p-1 shadow-sm border border-slate-200 dark:border-slate-700">
-          {[
-            { id: "default", label: "默认" },
-            { id: "preset", label: "预设" },
-            { id: "template", label: "模板" },
-            { id: "sources", label: "来源" },
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setPptStyleMode(item.id as typeof pptStyleMode)}
-              className={`px-2.5 py-1 rounded-md transition-colors ${
-                pptStyleMode === item.id
-                  ? "bg-slate-900 text-white"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {pptStyleMode === "default" && (
-        <p className="text-xs text-slate-500">使用系统默认风格与布局。</p>
-      )}
-
-      {pptStyleMode === "preset" && (
-        <div className="space-y-2">
-          <select
-            value={selectedPptStyleId}
-            onChange={(e) => setSelectedPptStyleId(e.target.value)}
-            className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-          >
-            {pptStyleTemplates.length === 0 && (
-              <option value="">暂无预设</option>
-            )}
-            {pptStyleTemplates.map((tmpl) => (
-              <option key={tmpl.id} value={tmpl.id}>
-                {tmpl.name}
-              </option>
-            ))}
-          </select>
-          <p className="text-[11px] text-slate-400 line-clamp-2">
-            {getSelectedPptStylePrompt() ||
-              "选择预设风格后，将使用对应的提示词优化演示风格。"}
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/60 p-4 text-left shadow-sm">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.18em]">
+            PPT 配置
+          </div>
+          <p className="mt-1 text-[11px] leading-5 text-slate-500">
+            先定义内容路径，再叠加视觉风格，最后统一走后端项目化生成与导出。
           </p>
         </div>
-      )}
+        <div className="rounded-full border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+          {bananaPptEnabled ? "PPT v2" : "未启用"}
+        </div>
+      </div>
 
-      {pptStyleMode === "template" && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => pptTemplateInputRef.current?.click()}
-              disabled={pptTemplateUploading}
-              className="px-3 py-2 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500 hover:bg-orange-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
-            >
-              {pptTemplateUploading ? "上传中..." : "上传模板"}
-            </button>
-            <input
-              ref={pptTemplateInputRef}
-              type="file"
-              accept=".pptx"
-              className="hidden"
-              onChange={handleUploadPptTemplate}
-            />
-            <span className="text-[11px] text-slate-400">支持 .pptx</span>
-          </div>
-          <select
-            value={selectedPptTemplate}
-            onChange={(e) => setSelectedPptTemplate(e.target.value)}
-            className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        {[
+          { label: "内容来源", value: pptContentSourceLabel },
+          {
+            label: "自动判定",
+            value:
+              pptCreationMode === "auto"
+                ? pptAutoResolution?.mode === "outline"
+                  ? "报告转大纲"
+                  : pptAutoResolution?.mode === "descriptions"
+                    ? "逐页描述"
+                    : "主题创意"
+                : pptCreationMode === "descriptions"
+                  ? "逐页描述"
+                  : pptCreationMode === "outline"
+                    ? "大纲"
+                    : pptCreationMode === "idea"
+                      ? "主题创意"
+                      : "自动",
+          },
+          { label: "页数上限", value: `${bananaPptMaxSlides} 页` },
+          { label: "任务状态", value: pptTaskStatusLabel },
+        ].map((item) => (
+          <div
+            key={item.label}
+            className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-slate-800/80 px-3 py-2.5"
           >
-            {pptTemplates.length === 0 && <option value="">暂无模板</option>}
-            {pptTemplates.map((tmpl) => (
-              <option key={tmpl.name} value={tmpl.name}>
-                {tmpl.name}
-              </option>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              {item.label}
+            </div>
+            <div className="mt-1 text-xs font-medium text-slate-700 dark:text-slate-200">
+              {item.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-slate-800/80 p-3">
+          <div className="text-xs font-semibold text-slate-600 dark:text-slate-200">
+            1. 内容路径
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {[
+              { id: "auto", label: "自动", hint: "报告 -> 大纲 -> 逐页描述" },
+              { id: "idea", label: "Idea", hint: "从一句主题发散演示" },
+              { id: "outline", label: "大纲", hint: "结构先行，手动可控" },
+              {
+                id: "descriptions",
+                label: "逐页描述",
+                hint: "直接提供页级说明",
+              },
+            ].map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setPptCreationMode(item.id as PptCreationMode)}
+                className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                  pptCreationMode === item.id
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 text-slate-600 dark:text-slate-300 hover:border-slate-300"
+                }`}
+              >
+                <div className="text-xs font-semibold">{item.label}</div>
+                <div
+                  className={`mt-1 text-[11px] leading-4 ${
+                    pptCreationMode === item.id
+                      ? "text-slate-200"
+                      : "text-slate-400"
+                  }`}
+                >
+                  {item.hint}
+                </div>
+              </button>
             ))}
-          </select>
-          <label className="flex items-center gap-2 text-xs text-slate-500">
-            <input
-              type="checkbox"
-              checked={pptTemplateUseLlm}
-              onChange={(e) => setPptTemplateUseLlm(e.target.checked)}
-              className="rounded border-slate-300 text-orange-600 focus:ring-orange-500"
-            />
-            使用 LLM 生成结构
-          </label>
-          {pptTemplateUseLlm && (
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <span>结构来源</span>
-              <div className="flex rounded-lg bg-white dark:bg-slate-800 p-1 shadow-sm border border-slate-200 dark:border-slate-700">
-                {[
-                  { id: "preset", label: "预设" },
-                  { id: "sources", label: "来源" },
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() =>
-                      setPptTemplatePromptSource(
-                        item.id as "preset" | "sources",
-                      )
-                    }
-                    className={`px-2 py-1 rounded-md transition-colors ${
-                      pptTemplatePromptSource === item.id
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-500 hover:text-slate-700"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
+          </div>
+
+          <div className="mt-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/50 px-3 py-2.5">
+            <div className="text-[11px] font-medium text-slate-600 dark:text-slate-200">
+              {pptCreationMode === "auto"
+                ? "自动策略"
+                : pptCreationMode === "idea"
+                  ? "Idea 输入"
+                  : pptCreationMode === "outline"
+                    ? "大纲输入"
+                    : "逐页描述输入"}
+            </div>
+            <p className="mt-1 text-[11px] leading-5 text-slate-500">
+              {pptCreationMode === "auto"
+                ? pptAutoResolution?.reason
+                : pptCreationMode === "idea"
+                  ? "适合一句主题或演示方向，系统会先生成更完整的 PPT 框架。"
+                  : pptCreationMode === "outline"
+                    ? "适合你已经明确章节结构和重点页面时使用。"
+                    : "仅当你已经准备好页级说明时使用；留空时只把当前内容当作补充证据，不会直接把全文塞进每页描述。"}
+            </p>
+          </div>
+
+          {pptCreationMode === "idea" && (
+            <div className="mt-3 space-y-2">
+              <textarea
+                value={pptIdeaPrompt}
+                onChange={(e) => setPptIdeaPrompt(e.target.value)}
+                rows={3}
+                placeholder="输入一句话演示主题，或从当前报告提炼"
+                className="w-full text-xs bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 resize-none"
+              />
+              <button
+                onClick={handleDerivePptIdea}
+                className="px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500"
+              >
+                从当前内容提炼 idea
+              </button>
+            </div>
+          )}
+
+          {pptCreationMode === "outline" && (
+            <div className="mt-3 space-y-2">
+              <textarea
+                value={pptOutlineText}
+                onChange={(e) => setPptOutlineText(e.target.value)}
+                rows={6}
+                placeholder="# 章节\n## 页面标题\n- 要点一"
+                className="w-full text-xs bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 resize-y"
+              />
+              <button
+                onClick={handleDerivePptOutline}
+                className="px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500"
+              >
+                从当前内容抽取大纲
+              </button>
+            </div>
+          )}
+
+          {pptCreationMode === "descriptions" && (
+            <div className="mt-3 space-y-2">
+              <textarea
+                value={pptDescriptionText}
+                onChange={(e) => setPptDescriptionText(e.target.value)}
+                rows={6}
+                placeholder="直接输入每页描述；留空时，系统只把当前研究内容当作补充证据，不会把全文直接写入 descriptions。"
+                className="w-full text-xs bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 resize-y"
+              />
             </div>
           )}
         </div>
-      )}
 
-      {pptStyleMode === "sources" && (
-        <div className="space-y-2">
-          <p className="text-xs text-slate-500">根据已选来源生成风格提示词。</p>
-          <div className="text-[11px] text-slate-400">
-            {hasSelectedSources
-              ? `已选来源 ${selectedSourcesCount} 个`
-              : "暂无已选来源"}
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-slate-800/80 p-3">
+          <div className="text-xs font-semibold text-slate-600 dark:text-slate-200">
+            2. 视觉风格
+          </div>
+          <div className="mt-2 flex rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 p-1">
+            {[
+              { id: "default", label: "默认" },
+              { id: "preset", label: "预设" },
+              { id: "reference_image", label: "参考图" },
+              { id: "sources", label: "来源" },
+            ].map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setPptStyleMode(item.id as typeof pptStyleMode)}
+                className={`flex-1 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${
+                  pptStyleMode === item.id
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/50 p-3">
+            {pptStyleMode === "default" && (
+              <p className="text-[11px] leading-5 text-slate-500">
+                使用系统默认风格。适合快速验证内容结构和生成链路。
+              </p>
+            )}
+
+            {pptStyleMode === "preset" && (
+              <div className="space-y-2">
+                <label className="block text-[11px] font-medium text-slate-500">
+                  预设风格
+                </label>
+                <select
+                  value={selectedPptStyleId}
+                  onChange={(e) => setSelectedPptStyleId(e.target.value)}
+                  className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                >
+                  {pptStyleTemplates.length === 0 && (
+                    <option value="">暂无预设</option>
+                  )}
+                  {pptStyleTemplates.map((tmpl) => (
+                    <option key={tmpl.id} value={tmpl.id}>
+                      {tmpl.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] leading-5 text-slate-400">
+                  {getSelectedPptStylePrompt() ||
+                    "选择预设后，会先定义配色倾向、布局节奏和整体语气。"}
+                </p>
+              </div>
+            )}
+
+            {pptStyleMode === "reference_image" && (
+              <div className="space-y-3">
+                {pptStyleTemplates.length > 0 && (
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-medium text-slate-500">
+                      预设基底（可选）
+                    </label>
+                    <select
+                      value={selectedPptStyleId}
+                      onChange={(e) => setSelectedPptStyleId(e.target.value)}
+                      className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                    >
+                      <option value="">不使用预设基底</option>
+                      {pptStyleTemplates.map((tmpl) => (
+                        <option key={tmpl.id} value={tmpl.id}>
+                          {tmpl.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] leading-5 text-slate-400">
+                      预设负责整体语气与版式节奏，参考图负责配色、构图和质感。
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => pptReferenceImageInputRef.current?.click()}
+                    disabled={pptReferenceUploading}
+                    className="px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500 hover:bg-orange-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+                  >
+                    {pptReferenceUploading ? "分析中..." : "上传参考图"}
+                  </button>
+                  <input
+                    ref={pptReferenceImageInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={handleUploadPptReferenceImage}
+                  />
+                  <span className="text-[11px] text-slate-400">
+                    支持 png / jpg / webp
+                  </span>
+                </div>
+
+                {pptReferenceImageUrl && (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 overflow-hidden">
+                    <img
+                      src={apiUrl(pptReferenceImageUrl)}
+                      alt={pptReferenceImageName || "reference"}
+                      className="w-full h-32 object-cover"
+                    />
+                    <div className="flex items-center justify-between gap-3 px-3 py-2 border-t border-slate-200 dark:border-slate-700">
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">
+                          {pptReferenceImageName || "参考图"}
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          已提炼视觉风格，可继续微调
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPptReferenceImagePath("");
+                          setPptReferenceImageUrl("");
+                          setPptReferenceImageName("");
+                          setPptReferenceStylePrompt("");
+                          setPptStylePreviewSvg("");
+                        }}
+                        className="px-2.5 py-1 text-[11px] rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                      >
+                        移除
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-medium text-slate-500">
+                    提炼摘要
+                  </label>
+                  <textarea
+                    value={pptReferenceStylePrompt}
+                    onChange={(e) => setPptReferenceStylePrompt(e.target.value)}
+                    rows={4}
+                    placeholder="参考图提炼出的视觉摘要"
+                    className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 resize-y"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-medium text-slate-500">
+                    补充要求
+                  </label>
+                  <textarea
+                    value={pptStylePromptText}
+                    onChange={(e) => setPptStylePromptText(e.target.value)}
+                    rows={3}
+                    placeholder="补充材质、光影、情绪或版式节奏；会作为最终覆盖条件。"
+                    className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 resize-y"
+                  />
+                </div>
+              </div>
+            )}
+
+            {pptStyleMode === "sources" && (
+              <div className="space-y-2">
+                <p className="text-[11px] leading-5 text-slate-500">
+                  根据已选来源提炼风格提示词，适合让 PPT
+                  视觉语言贴近素材来源的调性。
+                </p>
+                <div className="text-[11px] text-slate-400">
+                  {hasSelectedSources
+                    ? `已选来源 ${selectedSourcesCount} 个`
+                    : "暂无已选来源"}
+                </div>
+              </div>
+            )}
           </div>
         </div>
-      )}
 
-      {pptStyleMode !== "template" && (
-        <div className="mt-3">
-          <button
-            onClick={handlePreviewPptStyle}
-            disabled={pptStylePreviewLoading}
-            className="px-3 py-2 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500 hover:bg-orange-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
-          >
-            {pptStylePreviewLoading ? "生成预览..." : "预览风格"}
-          </button>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-slate-800/80 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold text-slate-600 dark:text-slate-200">
+                3. 生成操作
+              </div>
+              <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                先预览风格，再直接生成 PPT；项目和任务会自动保存在当前会话中。
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              onClick={handlePreviewPptStyle}
+              disabled={pptStylePreviewLoading}
+              className="px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500 transition-colors disabled:opacity-50"
+            >
+              {pptStylePreviewLoading ? "生成预览..." : "预览风格"}
+            </button>
+            <button
+              onClick={handleExportPptx}
+              disabled={!canExportPpt || isPptBusy}
+              className="px-3 py-2 text-xs rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors disabled:opacity-50"
+            >
+              {isPptBusy ? "生成中..." : "生成 PPT"}
+            </button>
+            {pptProjectId && (
+              <button
+                onClick={() => {
+                  setStudioMode("ppt");
+                  setPptPreviewOpen(true);
+                }}
+                className="px-3 py-2 text-xs rounded-xl bg-slate-100 dark:bg-slate-900/70 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-slate-300"
+              >
+                恢复任务
+              </button>
+            )}
+          </div>
+
           {pptStylePreviewError && (
-            <p className="text-[11px] text-rose-500 mt-2">
+            <p className="mt-2 text-[11px] text-rose-500">
               {pptStylePreviewError}
             </p>
           )}
-          {pptStylePreviewSvg && (
-            <div
-              className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-800"
-              dangerouslySetInnerHTML={{ __html: pptStylePreviewSvg }}
-            />
-          )}
+
+          <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 overflow-hidden">
+            {pptStylePreviewSvg ? (
+              <div
+                className="max-h-52 overflow-hidden"
+                dangerouslySetInnerHTML={{ __html: pptStylePreviewSvg }}
+              />
+            ) : (
+              <div className="px-3 py-4 text-[11px] leading-5 text-slate-400">
+                风格预览会根据当前预设、参考图和补充要求生成一张缩略示意图，不再占据整段右栏空间。
+              </div>
+            )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 
@@ -4499,7 +5061,8 @@ export default function NotebookDetailPage() {
             {/* Paper Search Hint */}
             {researchMode === "paper" && (
               <p className="text-[10px] text-slate-400 px-1">
-                💡 提示：使用英文关键词，如 "transformer attention mechanism"
+                💡 提示：使用英文关键词，如 &quot;transformer attention
+                mechanism&quot;
               </p>
             )}
 
@@ -5491,10 +6054,10 @@ export default function NotebookDetailPage() {
                   <p className="text-xs text-slate-400 mt-3">
                     {!bananaPptEnabled
                       ? "PPT 功能未启用"
-                      : templateBlocked
-                        ? "模板模式暂不支持 Banana PPT"
-                        : !canExportPptContent
-                          ? "完成深度研究后可导出"
+                      : !canExportPptContent
+                        ? "完成深度研究后可导出"
+                        : !canUseReferenceImageStyle
+                          ? "上传参考图后可继续"
                           : !canUsePresetStyle
                             ? "请选择预设风格"
                             : !canUseSourceStyle
@@ -5685,6 +6248,7 @@ export default function NotebookDetailPage() {
         onClose={resetPptPreview}
         onExport={handleDownloadPptx}
         onUpdateSlide={handleUpdatePptSlide}
+        onRegenerateSlide={handleRegeneratePptSlide}
       />
       {/* Selected Record Preview Modal */}
       {selectedRecord && (

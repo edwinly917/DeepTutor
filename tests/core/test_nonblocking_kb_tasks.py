@@ -186,6 +186,7 @@ def test_outline_prompt_no_longer_forces_abstract_images(monkeypatch, tmp_path):
 
     async def _fake_complete(**kwargs):
         captured["prompt"] = kwargs["prompt"]
+        captured["system_prompt"] = kwargs["system_prompt"]
         return (
             '{"title":"Demo","subtitle":"","themeColor":"#3b82f6","accentColor":"#f59e0b",'
             '"slides":[{"title":"Market Outlook","points":["Demand rises"],'
@@ -198,11 +199,17 @@ def test_outline_prompt_no_longer_forces_abstract_images(monkeypatch, tmp_path):
 
     result = asyncio.run(service.generate_outline("source content", style_prompt="clean corporate"))
     prompt = captured["prompt"]
+    system_prompt = captured["system_prompt"]
 
     assert result["slides"][0]["imagePrompt"] == "industrial park at sunrise"
     assert "ONLY abstract visual metaphors" not in prompt
     assert "abstract upward arrows symbolizing growth" not in prompt
-    assert "imagePrompt must directly match the slide title and key points" in prompt
+    assert "Generate 7-9 slides" not in prompt
+    assert "imagePrompt must directly support the slide's message." in prompt
+    assert "Style affects only tone, density, pacing, palette" in prompt
+    assert "Use only these layout values" in prompt
+    assert '"SECTION_HEADER", "OVERVIEW", "SPLIT_IMAGE_LEFT"' in prompt
+    assert "elite presentation information architect" in system_prompt
 
 
 def test_build_image_prompt_includes_slide_context(tmp_path):

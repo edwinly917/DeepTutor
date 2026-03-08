@@ -20,6 +20,7 @@ interface PptPreviewModalProps {
   onClose: () => void;
   onExport: () => void;
   onUpdateSlide: (index: number, updatedSlide: SlideContent) => void;
+  onRegenerateSlide?: (index: number, slide: SlideContent) => void;
 }
 
 export default function PptPreviewModal({
@@ -31,6 +32,7 @@ export default function PptPreviewModal({
   onClose,
   onExport,
   onUpdateSlide,
+  onRegenerateSlide,
 }: PptPreviewModalProps) {
   if (!isOpen) return null;
 
@@ -105,6 +107,7 @@ export default function PptPreviewModal({
                     accentColor={outline.accentColor}
                     isGenerating={generatingSlideIndices.includes(index)}
                     onUpdateSlide={onUpdateSlide}
+                    onRegenerateSlide={onRegenerateSlide}
                   />
                 ))}
               </div>

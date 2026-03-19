@@ -15,7 +15,10 @@ from pathlib import Path
 import sys
 from typing import Any
 
+import yaml
+
 from .agents import Message, QuestionGenerationAgent
+from .language import get_language_label, resolve_output_language
 from .validation_workflow import QuestionValidationWorkflow
 
 # Add project root for imports
@@ -113,15 +116,12 @@ class AgentCoordinator:
 
         # Get language setting from config (unified in config/main.yaml system.language)
         lang_config = self.config.get("system", {}).get("language", "zh")
-        self.language = parse_language(lang_config)
+        self.default_language = parse_language(lang_config)
+        self.language = self.default_language
         self.logger.info(f"Language setting: {self.language}")
 
         # Load coordinator prompts based on language
-        self._prompts = get_prompt_manager().load_prompts(
-            module_name="question",
-            agent_name="coordinator",
-            language=self.language,
-        )
+        self._prompts = self._get_coordinator_prompts(self.language)
 
         # Override max_rounds from config if available
         question_cfg = self.config.get("question", {})
@@ -182,6 +182,63 @@ class AgentCoordinator:
 
         # WebSocket callback for streaming updates
         self._ws_callback: Callable | None = None
+
+    def _get_coordinator_prompts(self, language: str | None = None) -> dict[str, Any]:
+        return get_prompt_manager().load_prompts(
+            module_name="question",
+            agent_name="coordinator",
+            language=parse_language(language or self.default_language),
+        )
+
+    def _parse_embedded_prompt(
+        self, section: str, language: str | None = None
+    ) -> tuple[str, str, dict[str, Any]]:
+        prompts = self._get_coordinator_prompts(language)
+        prompt_config = prompts.get(section, "")
+        if prompt_config and isinstance(prompt_config, str):
+            try:
+                parsed = yaml.safe_load(prompt_config) or {}
+                return parsed.get("system", ""), parsed.get("user_template", ""), parsed
+            except Exception:
+                return "", "", {}
+        return "", "", {}
+
+    def _resolve_requirement_language(
+        self,
+        requirement: dict[str, Any],
+        input_texts: list[str] | None = None,
+    ) -> str:
+        fallback_output_language = requirement.get("output_language")
+        texts = input_texts or [
+            requirement.get("knowledge_point", ""),
+            requirement.get("additional_requirements", ""),
+            requirement.get("reference_question", ""),
+        ]
+        resolved_language = resolve_output_language(
+            input_texts=texts,
+            fallback_output_language=fallback_output_language,
+            system_language=self.default_language,
+        )
+
+        if fallback_output_language:
+            requirement["output_language"] = parse_language(fallback_output_language)
+        else:
+            requirement["output_language"] = resolved_language
+        requirement["resolved_output_language"] = resolved_language
+
+        self.logger.info(
+            f"Resolved output language: {resolved_language} "
+            f"(fallback={requirement.get('output_language')})"
+        )
+        return resolved_language
+
+    def _set_runtime_language(self, language: str | None) -> str:
+        resolved_language = parse_language(language or self.default_language)
+        self.language = resolved_language
+        self._prompts = self._get_coordinator_prompts(resolved_language)
+        self.question_agent.set_language(resolved_language)
+        self.validation_workflow.set_language(resolved_language)
+        return resolved_language
 
     def set_ws_callback(self, callback: Callable):
         """Set WebSocket callback for streaming updates to frontend."""
@@ -383,47 +440,46 @@ class AgentCoordinator:
         return response_content
 
     async def _generate_search_queries(
-        self, base_requirement: dict[str, Any], num_queries: int
+        self, base_requirement: dict[str, Any], num_queries: int, language: str | None = None
     ) -> list[str]:
         """Backwards compatibility helper when a structured requirement already exists."""
         text = json.dumps(base_requirement, ensure_ascii=False, indent=2)
-        return await self._generate_search_queries_from_text(text, num_queries)
+        effective_language = language or base_requirement.get("resolved_output_language")
+        return await self._generate_search_queries_from_text(text, num_queries, effective_language)
 
     async def _generate_search_queries_from_text(
-        self, requirement_text: str, num_queries: int
+        self, requirement_text: str, num_queries: int, language: str | None = None
     ) -> list[str]:
         """Use LLM to produce semantic search queries directly from natural-language text."""
-        # Load prompts from YAML file based on language setting
-        prompt_config = self._prompts.get("generate_search_queries", "")
-        if prompt_config and isinstance(prompt_config, str):
-            # Parse the YAML-style prompt config
-            import yaml
-
-            try:
-                parsed = yaml.safe_load(prompt_config)
-                system_prompt = parsed.get("system", "")
-                user_template = parsed.get("user_template", "")
-            except Exception:
-                system_prompt = ""
-                user_template = ""
-        else:
-            system_prompt = ""
-            user_template = ""
+        effective_language = parse_language(language or self.default_language)
+        system_prompt, user_template, _ = self._parse_embedded_prompt(
+            "generate_search_queries", effective_language
+        )
 
         # Fallback if prompts not loaded
         if not system_prompt:
-            system_prompt = (
-                "【Role】You are a knowledge base retrieval assistant, preparing for question generation.\n"
-                "\n"
-                "【Current Task】Generate knowledge point retrieval queries to find theoretical explanations, definitions, and theorems in the knowledge base.\n"
-                "⚠️ Key: You are not generating questions now! You are looking for theoretical knowledge needed for question generation!\n"
-                "\n"
-                "【Output Rules】\n"
-                "1. Only output pure knowledge point names (theorem names, concept names, method names)\n"
-                "2. Each query should be 2-5 words\n"
-                "3. Do not include functions, numerical values, or calculation tasks\n"
-                "4. Do not use questions or task descriptions\n"
-            )
+            if effective_language == "zh":
+                system_prompt = (
+                    "【角色】你是一个知识库检索助手，为题目生成做准备。\n\n"
+                    "【当前任务】生成知识点检索查询，在知识库中查找理论解释、定义和定理。\n"
+                    "⚠️ 关键：你现在不是在生成题目！你是在寻找题目生成所需的理论知识！\n\n"
+                    "【输出规则】\n"
+                    "1. 只输出纯粹的知识点名称（定理名称、概念名称、方法名称）\n"
+                    "2. 每个查询应为2-5个词\n"
+                    "3. 不要包含函数、数值或计算任务\n"
+                    "4. 不要使用问题或任务描述\n"
+                )
+            else:
+                system_prompt = (
+                    "【Role】You are a knowledge base retrieval assistant, preparing for question generation.\n\n"
+                    "【Current Task】Generate knowledge point retrieval queries to find theoretical explanations, definitions, and theorems in the knowledge base.\n"
+                    "⚠️ Key: You are not generating questions now! You are looking for theoretical knowledge needed for question generation!\n\n"
+                    "【Output Rules】\n"
+                    "1. Only output pure knowledge point names (theorem names, concept names, method names)\n"
+                    "2. Each query should be 2-5 words\n"
+                    "3. Do not include functions, numerical values, or calculation tasks\n"
+                    "4. Do not use questions or task descriptions\n"
+                )
 
         if user_template:
             user_prompt = user_template.format(
@@ -431,22 +487,41 @@ class AgentCoordinator:
                 num_queries=num_queries,
             )
         else:
-            user_prompt = (
-                f"The user's question generation requirement is:\n{requirement_text}\n\n"
-                f"Please extract {num_queries} pure knowledge point names from it for knowledge base retrieval.\n\n"
-                "Correct examples:\n"
-                "✓ Taylor theorem\n"
-                "✓ Lagrange multipliers  \n"
-                "✓ critical points\n\n"
-                "Incorrect examples (do not generate):\n"
-                "✗ Apply Taylor's Theorem to approximate f(x,y)=... (This is a question)\n"
-                "✗ Find and classify critical points (This is a task)\n"
-                "✗ Use Lagrange multipliers to find maximum (This is an instruction)\n\n"
-                f'Return in JSON format: {{"queries": ["knowledge point 1", "knowledge point 2", ...]}}, containing exactly {num_queries} knowledge point names.'
-            )
+            if effective_language == "zh":
+                user_prompt = (
+                    f"用户的题目生成需求是：\n{requirement_text}\n\n"
+                    f"请从中提取{num_queries}个纯知识点名称用于知识库检索。\n\n"
+                    "正确示例：\n"
+                    "✓ 泰勒定理\n"
+                    "✓ 拉格朗日乘数法\n"
+                    "✓ 临界点\n\n"
+                    "错误示例（不要生成）：\n"
+                    "✗ 应用泰勒定理近似f(x,y)=...（这是一道题目）\n"
+                    "✗ 求临界点并分类（这是一个任务）\n"
+                    "✗ 用拉格朗日乘数法求最大值（这是一条指令）\n\n"
+                    f'以JSON格式返回：{{"queries": ["知识点1", "知识点2", ...]}}，恰好包含{num_queries}个知识点名称。'
+                )
+            else:
+                user_prompt = (
+                    f"The user's question generation requirement is:\n{requirement_text}\n\n"
+                    f"Please extract {num_queries} pure knowledge point names from it for knowledge base retrieval.\n\n"
+                    "Correct examples:\n"
+                    "✓ Taylor theorem\n"
+                    "✓ Lagrange multipliers\n"
+                    "✓ critical points\n\n"
+                    "Incorrect examples (do not generate):\n"
+                    "✗ Apply Taylor's Theorem to approximate f(x,y)=... (This is a question)\n"
+                    "✗ Find and classify critical points (This is a task)\n"
+                    "✗ Use Lagrange multipliers to find maximum (This is an instruction)\n\n"
+                    f'Return in JSON format: {{"queries": ["knowledge point 1", "knowledge point 2", ...]}}, containing exactly {num_queries} knowledge point names.'
+                )
 
         try:
-            content = await self._call_llm(system_prompt=system_prompt, user_prompt=user_prompt)
+            content = await self._call_llm(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                stage="generate_search_queries",
+            )
             data = json.loads(content)
 
             # Ensure queries is a list
@@ -614,31 +689,26 @@ class AgentCoordinator:
             return None
 
     async def _check_retrieval_relevance(
-        self, requirement_text: str, knowledge_summary: str
+        self, requirement_text: str, knowledge_summary: str, language: str | None = None
     ) -> bool:
         """Use LLM to determine whether retrieval results match the user's request."""
-        # Load prompts from YAML file based on language setting
-        prompt_config = self._prompts.get("check_retrieval_relevance", "")
-        if prompt_config and isinstance(prompt_config, str):
-            import yaml
-
-            try:
-                parsed = yaml.safe_load(prompt_config)
-                system_prompt = parsed.get("system", "")
-                user_template = parsed.get("user_template", "")
-            except Exception:
-                system_prompt = ""
-                user_template = ""
-        else:
-            system_prompt = ""
-            user_template = ""
+        effective_language = parse_language(language or self.default_language)
+        system_prompt, user_template, _ = self._parse_embedded_prompt(
+            "check_retrieval_relevance", effective_language
+        )
 
         # Fallback if prompts not loaded
         if not system_prompt:
-            system_prompt = (
-                "You evaluate whether retrieved knowledge is relevant to a user's request. "
-                'Respond in JSON with key "relevant" (true/false) and optional "reason".'
-            )
+            if effective_language == "zh":
+                system_prompt = (
+                    "你评估检索到的知识是否与用户请求相关。"
+                    '以JSON格式响应，包含键"relevant"（true/false）和可选的"reason"。'
+                )
+            else:
+                system_prompt = (
+                    "You evaluate whether retrieved knowledge is relevant to a user's request. "
+                    'Respond in JSON with key "relevant" (true/false) and optional "reason".'
+                )
 
         if user_template:
             user_prompt = user_template.format(
@@ -646,14 +716,25 @@ class AgentCoordinator:
                 knowledge_summary=knowledge_summary,
             )
         else:
-            user_prompt = (
-                f"User request:\n{requirement_text}\n\n"
-                f"Retrieved knowledge summary:\n{knowledge_summary}\n\n"
-                "Is the retrieved knowledge substantively relevant to the request?"
-            )
+            if effective_language == "zh":
+                user_prompt = (
+                    f"用户请求：\n{requirement_text}\n\n"
+                    f"检索到的知识摘要：\n{knowledge_summary}\n\n"
+                    "检索到的知识是否与请求实质相关？"
+                )
+            else:
+                user_prompt = (
+                    f"User request:\n{requirement_text}\n\n"
+                    f"Retrieved knowledge summary:\n{knowledge_summary}\n\n"
+                    "Is the retrieved knowledge substantively relevant to the request?"
+                )
 
         try:
-            content = await self._call_llm(system_prompt=system_prompt, user_prompt=user_prompt)
+            content = await self._call_llm(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                stage="check_retrieval_relevance",
+            )
             parsed = json.loads(content)
             return bool(parsed.get("relevant"))
         except Exception as e:
@@ -661,34 +742,38 @@ class AgentCoordinator:
             return False
 
     async def _generate_child_requirements(
-        self, base_requirement: dict[str, Any], knowledge_summary: str, num_questions: int
+        self,
+        base_requirement: dict[str, Any],
+        knowledge_summary: str,
+        num_questions: int,
+        language: str | None = None,
     ) -> list[dict[str, Any]]:
         """Ask LLM to break the base requirement into multiple sub-requirements."""
-        # Load prompts from YAML file based on language setting
-        prompt_config = self._prompts.get("generate_child_requirements", "")
-        if prompt_config and isinstance(prompt_config, str):
-            import yaml
-
-            try:
-                parsed = yaml.safe_load(prompt_config)
-                system_prompt = parsed.get("system", "")
-                user_template = parsed.get("user_template", "")
-            except Exception:
-                system_prompt = ""
-                user_template = ""
-        else:
-            system_prompt = ""
-            user_template = ""
+        effective_language = parse_language(
+            language or base_requirement.get("resolved_output_language") or self.default_language
+        )
+        system_prompt, user_template, _ = self._parse_embedded_prompt(
+            "generate_child_requirements", effective_language
+        )
 
         # Fallback if prompts not loaded
         if not system_prompt:
-            system_prompt = (
-                "You are a curriculum designer. Given a base requirement and knowledge summary, "
-                "create distinct sub-requirements that all test the SAME knowledge point. "
-                "Each sub-requirement must describe a unique scenario and reasoning flow. "
-                'Output JSON with key "requirements" (array of length requested) where each item has: '
-                '"title", "question_type", "difficulty", "additional_requirements".'
-            )
+            if effective_language == "zh":
+                system_prompt = (
+                    "你是一名课程设计师。给定一个基础需求和知识摘要，"
+                    "创建多个测试相同知识点的不同子需求。"
+                    "每个子需求都必须描述独特的场景和推理流程。"
+                    '输出JSON，键为"requirements"，其中每项包含：'
+                    '"title"、"question_type"、"difficulty"、"additional_requirements"。'
+                )
+            else:
+                system_prompt = (
+                    "You are a curriculum designer. Given a base requirement and knowledge summary, "
+                    "create distinct sub-requirements that all test the SAME knowledge point. "
+                    "Each sub-requirement must describe a unique scenario and reasoning flow. "
+                    'Output JSON with key "requirements" (array of length requested) where each item has: '
+                    '"title", "question_type", "difficulty", "additional_requirements".'
+                )
 
         if user_template:
             user_prompt = user_template.format(
@@ -697,14 +782,25 @@ class AgentCoordinator:
                 num_questions=num_questions,
             )
         else:
-            user_prompt = (
-                f"Base requirement:\n{json.dumps(base_requirement, ensure_ascii=False, indent=2)}\n\n"
-                f"Knowledge summary:\n{knowledge_summary}\n\n"
-                f"Generate exactly {num_questions} sub-requirements in JSON."
-            )
+            if effective_language == "zh":
+                user_prompt = (
+                    f"基础需求：\n{json.dumps(base_requirement, ensure_ascii=False, indent=2)}\n\n"
+                    f"知识摘要：\n{knowledge_summary}\n\n"
+                    f"以JSON格式生成恰好{num_questions}个子需求。"
+                )
+            else:
+                user_prompt = (
+                    f"Base requirement:\n{json.dumps(base_requirement, ensure_ascii=False, indent=2)}\n\n"
+                    f"Knowledge summary:\n{knowledge_summary}\n\n"
+                    f"Generate exactly {num_questions} sub-requirements in JSON."
+                )
 
         try:
-            content = await self._call_llm(system_prompt=system_prompt, user_prompt=user_prompt)
+            content = await self._call_llm(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                stage="generate_child_requirements",
+            )
             parsed = json.loads(content)
 
             # Ensure requirements is a list
@@ -725,41 +821,48 @@ class AgentCoordinator:
             requirements = []
         return requirements[:num_questions]
 
-    async def _interpret_requirement_text(self, requirement_text: str) -> dict[str, Any]:
+    async def _interpret_requirement_text(
+        self, requirement_text: str, language: str | None = None
+    ) -> dict[str, Any]:
         """Convert a natural-language request into structured requirement fields."""
-        # Load prompts from YAML file based on language setting
-        prompt_config = self._prompts.get("interpret_requirement_text", "")
-        if prompt_config and isinstance(prompt_config, str):
-            import yaml
-
-            try:
-                parsed_config = yaml.safe_load(prompt_config)
-                system_prompt = parsed_config.get("system", "")
-                user_template = parsed_config.get("user_template", "")
-            except Exception:
-                system_prompt = ""
-                user_template = ""
-        else:
-            system_prompt = ""
-            user_template = ""
+        effective_language = parse_language(language or self.default_language)
+        system_prompt, user_template, _ = self._parse_embedded_prompt(
+            "interpret_requirement_text", effective_language
+        )
 
         # Fallback if prompts not loaded
         if not system_prompt:
-            system_prompt = (
-                "You are an instruction parser for an exam-question generator. "
-                "Given a natural-language request, extract the core knowledge point, "
-                "difficulty (easy/medium/hard), preferred question type (choice/written), "
-                "and additional requirements. Return JSON with keys: "
-                '"knowledge_point", "difficulty", "question_type", "additional_requirements".'
-            )
+            if effective_language == "zh":
+                system_prompt = (
+                    "你是考试题目生成器的指令解析器。"
+                    "给定一个自然语言请求，提取核心知识点、"
+                    "难度（easy/medium/hard）、首选题型（choice/written）"
+                    "以及额外要求。返回JSON，包含键："
+                    '"knowledge_point"、"difficulty"、"question_type"、"additional_requirements"。'
+                )
+            else:
+                system_prompt = (
+                    "You are an instruction parser for an exam-question generator. "
+                    "Given a natural-language request, extract the core knowledge point, "
+                    "difficulty (easy/medium/hard), preferred question type (choice/written), "
+                    "and additional requirements. Return JSON with keys: "
+                    '"knowledge_point", "difficulty", "question_type", "additional_requirements".'
+                )
 
         if user_template:
             user_prompt = user_template.format(requirement_text=requirement_text)
         else:
-            user_prompt = f"Requirement:\n{requirement_text}\n\nReturn JSON only."
+            if effective_language == "zh":
+                user_prompt = f"需求：\n{requirement_text}\n\n仅返回JSON。"
+            else:
+                user_prompt = f"Requirement:\n{requirement_text}\n\nReturn JSON only."
 
         try:
-            content = await self._call_llm(system_prompt=system_prompt, user_prompt=user_prompt)
+            content = await self._call_llm(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                stage="interpret_requirement_text",
+            )
             parsed = json.loads(content)
         except Exception as e:
             self.logger.warning(f"Failed to interpret requirement text: {e}")
@@ -786,6 +889,9 @@ class AgentCoordinator:
         """
         Full workflow for generating and validating a question.
         """
+        resolved_language = self._resolve_requirement_language(requirement)
+        self._set_runtime_language(resolved_language)
+
         # Reset agent status for this question
         self.agent_status = {
             "QuestionGenerationAgent": "pending",
@@ -798,6 +904,7 @@ class AgentCoordinator:
         self.logger.info(f"Knowledge point: {requirement.get('knowledge_point')}")
         self.logger.info(f"Difficulty: {requirement.get('difficulty')}")
         self.logger.info(f"Question type: {requirement.get('question_type')}")
+        self.logger.info(f"Output language: {requirement.get('resolved_output_language')}")
 
         # Send progress update
         await self._send_ws_update(
@@ -980,6 +1087,7 @@ class AgentCoordinator:
                 result = {
                     "success": True,
                     "question": question,
+                    "resolved_output_language": requirement.get("resolved_output_language"),
                     "validation": {
                         "decision": decision,
                         "issues": issues,
@@ -1093,6 +1201,7 @@ class AgentCoordinator:
             return {
                 "success": True,
                 "question": last_question,
+                "resolved_output_language": requirement.get("resolved_output_language"),
                 "validation": {
                     "decision": "extended",
                     "reasoning": extension_analysis.get("reasoning", ""),
@@ -1124,10 +1233,12 @@ class AgentCoordinator:
             raise ValueError("num_questions must be greater than zero")
 
         self._suppress_logging()
+        resolved_language = self._resolve_requirement_language(base_requirement)
+        self._set_runtime_language(resolved_language)
 
         # Step 1: plan retrieval queries and gather context
         queries = precomputed_queries or await self._generate_search_queries(
-            base_requirement, max(3, num_questions)
+            base_requirement, max(3, num_questions), resolved_language
         )
         retrievals = precomputed_retrievals or await self._gather_retrieval_context(queries)
         knowledge_summary = precomputed_summary or self._summarize_retrievals(retrievals)
@@ -1145,7 +1256,7 @@ class AgentCoordinator:
 
         # Step 2: ask LLM to produce sub-requirements
         child_requirements = await self._generate_child_requirements(
-            base_requirement, knowledge_summary, num_questions
+            base_requirement, knowledge_summary, num_questions, resolved_language
         )
 
         if not child_requirements:
@@ -1221,6 +1332,7 @@ class AgentCoordinator:
             "requested": num_questions,
             "completed": len(results),
             "failed": len(failures),
+            "resolved_output_language": base_requirement.get("resolved_output_language"),
             "search_queries": queries,
             "knowledge_summary": knowledge_summary,
             "child_requirements": child_requirements,
@@ -1256,9 +1368,14 @@ class AgentCoordinator:
         Entry point for users supplying only natural-language requirements.
         """
         self._suppress_logging()
+        resolved_language = resolve_output_language(
+            requirement_text,
+            system_language=self.default_language,
+        )
+        self._set_runtime_language(resolved_language)
 
         queries = await self._generate_search_queries_from_text(
-            requirement_text, max(3, num_questions)
+            requirement_text, max(3, num_questions), resolved_language
         )
         retrievals = await self._gather_retrieval_context(queries)
         knowledge_summary = self._summarize_retrievals(retrievals)
@@ -1275,7 +1392,9 @@ class AgentCoordinator:
                 "knowledge_summary": knowledge_summary,
             }
 
-        relevant = await self._check_retrieval_relevance(requirement_text, knowledge_summary)
+        relevant = await self._check_retrieval_relevance(
+            requirement_text, knowledge_summary, resolved_language
+        )
         if not relevant:
             return {
                 "success": False,
@@ -1285,7 +1404,11 @@ class AgentCoordinator:
                 "knowledge_summary": knowledge_summary,
             }
 
-        base_requirement = await self._interpret_requirement_text(requirement_text)
+        base_requirement = await self._interpret_requirement_text(
+            requirement_text, resolved_language
+        )
+        base_requirement["resolved_output_language"] = resolved_language
+        base_requirement["output_language"] = resolved_language
         return await self.generate_multiple_questions(
             base_requirement,
             num_questions,
@@ -1299,24 +1422,65 @@ class AgentCoordinator:
         base_requirement: dict[str, Any],
         shared_context: str,
         num_questions: int,
+        language: str | None = None,
     ) -> list[dict[str, Any]]:
         """Plan distinct sub-focuses for each question in one LLM call."""
-        system_prompt = (
-            "You are an educational content planner. Given a base requirement and knowledge context, "
-            "create distinct sub-focuses for generating multiple questions on the SAME topic. "
-            "Each sub-focus should describe a unique angle, scenario, or aspect to test. "
-            'Output JSON with key "focuses" containing an array of objects, each with: '
-            '"id" (string like "q_1"), "focus" (string describing the specific angle), '
-            '"scenario_hint" (brief scenario suggestion).'
+        effective_language = parse_language(
+            language or base_requirement.get("resolved_output_language") or self.default_language
         )
-        user_prompt = (
-            f"Base requirement:\n{json.dumps(base_requirement, ensure_ascii=False, indent=2)}\n\n"
-            f"Available knowledge context:\n{shared_context[:3000]}...\n\n"
-            f"Generate exactly {num_questions} distinct sub-focuses in JSON."
+        system_prompt, user_template, _ = self._parse_embedded_prompt(
+            "plan_sub_focuses", effective_language
         )
+        output_language = get_language_label(effective_language, effective_language)
+
+        if not system_prompt:
+            if effective_language == "zh":
+                system_prompt = (
+                    "你是一名教育内容规划师。给定基础需求和知识上下文，"
+                    "请为同一主题生成多个不同的题目关注点。"
+                    "每个关注点都应体现不同的角度、场景或考查重点。"
+                    '输出JSON，键为"focuses"，数组中每项包含：'
+                    '"id"（如"q_1"）、"focus"（具体考查点）、"scenario_hint"（简短场景提示）。'
+                    "所有 focus 和 scenario_hint 都必须使用{output_language}。"
+                )
+            else:
+                system_prompt = (
+                    "You are an educational content planner. Given a base requirement and knowledge "
+                    "context, create distinct sub-focuses for generating multiple questions on the "
+                    "SAME topic. Each sub-focus should describe a unique angle, scenario, or aspect "
+                    'to test. Output JSON with key "focuses" containing an array of objects, each '
+                    'with: "id" (string like "q_1"), "focus" (string describing the specific angle), '
+                    '"scenario_hint" (brief scenario suggestion). All focus and scenario_hint values '
+                    "must be written in {output_language}."
+                )
+
+        if user_template:
+            user_prompt = user_template.format(
+                base_requirement=json.dumps(base_requirement, ensure_ascii=False, indent=2),
+                shared_context=shared_context[:3000],
+                num_questions=num_questions,
+                output_language=output_language,
+            )
+        else:
+            if effective_language == "zh":
+                user_prompt = (
+                    f"基础需求：\n{json.dumps(base_requirement, ensure_ascii=False, indent=2)}\n\n"
+                    f"可用知识上下文：\n{shared_context[:3000]}...\n\n"
+                    f"请以JSON格式生成恰好{num_questions}个不同的关注点，使用{output_language}。"
+                )
+            else:
+                user_prompt = (
+                    f"Base requirement:\n{json.dumps(base_requirement, ensure_ascii=False, indent=2)}\n\n"
+                    f"Available knowledge context:\n{shared_context[:3000]}...\n\n"
+                    f"Generate exactly {num_questions} distinct sub-focuses in JSON using {output_language}."
+                )
+
+        system_prompt = system_prompt.format(output_language=output_language)
         try:
             content = await self._call_llm(
-                system_prompt=system_prompt, user_prompt=user_prompt, stage="plan_sub_focuses"
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                stage="plan_sub_focuses",
             )
             parsed = json.loads(content)
             focuses = parsed.get("focuses", [])
@@ -1332,8 +1496,16 @@ class AgentCoordinator:
                 focuses.append(
                     {
                         "id": f"q_{i + 1}",
-                        "focus": f"Variant {i + 1}: Different scenario using the same knowledge point",
-                        "scenario_hint": f"Create a distinct problem #{i + 1}",
+                        "focus": (
+                            f"同一知识点下的不同场景 #{i + 1}"
+                            if effective_language == "zh"
+                            else f"Variant {i + 1}: Different scenario using the same knowledge point"
+                        ),
+                        "scenario_hint": (
+                            f"创建一道不同的问题 #{i + 1}"
+                            if effective_language == "zh"
+                            else f"Create a distinct problem #{i + 1}"
+                        ),
                     }
                 )
 
@@ -1347,6 +1519,7 @@ class AgentCoordinator:
         shared_context: str,
         full_plan: list[dict[str, Any]],
         semaphore: asyncio.Semaphore,
+        language: str | None = None,
     ) -> dict[str, Any]:
         """Generate a single question with shared context and full plan awareness."""
         async with semaphore:
@@ -1371,6 +1544,7 @@ class AgentCoordinator:
                     max_iterations=max_gen_iterations,
                     kb_name=self.kb_name,
                     token_stats_callback=self.update_token_stats,
+                    language=language or base_requirement.get("resolved_output_language"),
                 )
 
                 # Build requirement with focus and plan awareness
@@ -1471,6 +1645,9 @@ class AgentCoordinator:
 
                     question["knowledge_point"] = base_requirement.get("knowledge_point", "")
                     reference_question = base_requirement.get("reference_question")
+                    self.validation_workflow.set_language(
+                        language or base_requirement.get("resolved_output_language")
+                    )
                     validation_result = await self.validation_workflow.validate(
                         question, reference_question
                     )
@@ -1599,6 +1776,8 @@ class AgentCoordinator:
             raise ValueError("num_questions must be greater than zero")
 
         self._suppress_logging()
+        resolved_language = self._resolve_requirement_language(base_requirement)
+        self._set_runtime_language(resolved_language)
 
         # Send initial progress
         await self._send_ws_update(
@@ -1614,7 +1793,9 @@ class AgentCoordinator:
         self.logger.section(f"Parallel Generation: {num_questions} question(s)")
         self.logger.info("Step 1: Splitting into RAG queries...")
 
-        queries = await self._generate_search_queries(base_requirement, self.rag_query_count)
+        queries = await self._generate_search_queries(
+            base_requirement, self.rag_query_count, resolved_language
+        )
         self.logger.info(f"Generated {len(queries)} search queries")
 
         # Step 2: Run RAG queries in parallel
@@ -1647,7 +1828,9 @@ class AgentCoordinator:
         )
         self.logger.info("Step 3: Planning sub-focuses for all questions...")
 
-        sub_focuses = await self._plan_sub_focuses(base_requirement, shared_context, num_questions)
+        sub_focuses = await self._plan_sub_focuses(
+            base_requirement, shared_context, num_questions, resolved_language
+        )
         self.logger.info(f"Planned {len(sub_focuses)} sub-focuses")
 
         # Send focuses to frontend
@@ -1676,6 +1859,7 @@ class AgentCoordinator:
                 shared_context=shared_context,
                 full_plan=sub_focuses,
                 semaphore=semaphore,
+                language=resolved_language,
             )
             for i, focus in enumerate(sub_focuses)
         ]
@@ -1710,6 +1894,7 @@ class AgentCoordinator:
             "requested": num_questions,
             "completed": len(successes),
             "failed": len(failures),
+            "resolved_output_language": resolved_language,
             "search_queries": queries,
             "shared_context": shared_context[:500] + "..."
             if len(shared_context) > 500
@@ -1803,6 +1988,7 @@ class AgentCoordinator:
         base_requirement: dict[str, Any],
         knowledge_summary: str,
         num_questions: int,
+        language: str | None = None,
     ) -> dict[str, Any]:
         """
         Generate a question plan with focuses for each question.
@@ -1818,32 +2004,72 @@ class AgentCoordinator:
         difficulty = base_requirement.get("difficulty", "medium")
         question_type = base_requirement.get("question_type", "written")
         knowledge_point = base_requirement.get("knowledge_point", "")
-
-        system_prompt = (
-            "You are an educational content planner. Given a topic, difficulty level, "
-            "question type, and background knowledge, create a structured question plan.\n\n"
-            "Each question focus should:\n"
-            "1. Test a specific aspect or angle of the knowledge point\n"
-            "2. Be distinct from other focuses (different scenarios, applications, or perspectives)\n"
-            "3. Match the specified difficulty level\n"
-            "4. Be achievable with the provided background knowledge\n\n"
-            "CRITICAL: Return ONLY valid JSON. Do not wrap in markdown code blocks (```json). "
-            "Do not include any explanatory text before or after the JSON. "
-            "Your response must start with { and end with }.\n\n"
-            'Output JSON with key "focuses" containing an array of objects, each with:\n'
-            '- "id": string like "q_1", "q_2", etc.\n'
-            '- "focus": string describing what specific aspect this question will test\n'
-            '- "type": "choice" or "written" (should match the requested type)\n'
+        effective_language = parse_language(
+            language or base_requirement.get("resolved_output_language") or self.default_language
+        )
+        output_language = get_language_label(effective_language, effective_language)
+        system_prompt, user_template, _ = self._parse_embedded_prompt(
+            "generate_question_plan", effective_language
         )
 
-        user_prompt = (
-            f"Topic/Knowledge Point: {knowledge_point}\n"
-            f"Difficulty: {difficulty}\n"
-            f"Question Type: {question_type}\n"
-            f"Number of Questions: {num_questions}\n\n"
-            f"Background Knowledge:\n{knowledge_summary[:3000]}...\n\n"
-            f"Generate exactly {num_questions} distinct question focuses in JSON format."
-        )
+        if not system_prompt:
+            if effective_language == "zh":
+                system_prompt = (
+                    "你是一名教育内容规划师。给定主题、难度、题型和背景知识，创建结构化的题目规划。\n\n"
+                    "每个题目关注点都应：\n"
+                    "1. 考查该知识点的一个具体方面或角度\n"
+                    "2. 与其他关注点明显不同（不同场景、应用或视角）\n"
+                    "3. 匹配指定难度\n"
+                    "4. 能够基于提供的背景知识完成\n"
+                    f"5. focus 字段必须使用{output_language}\n\n"
+                    "关键：仅返回合法JSON，不要使用markdown代码块，也不要在JSON前后添加解释。"
+                )
+            else:
+                system_prompt = (
+                    "You are an educational content planner. Given a topic, difficulty level, "
+                    "question type, and background knowledge, create a structured question plan.\n\n"
+                    "Each question focus should:\n"
+                    "1. Test a specific aspect or angle of the knowledge point\n"
+                    "2. Be distinct from other focuses (different scenarios, applications, or perspectives)\n"
+                    "3. Match the specified difficulty level\n"
+                    "4. Be achievable with the provided background knowledge\n"
+                    f"5. The focus field must be written in {output_language}\n\n"
+                    "CRITICAL: Return ONLY valid JSON. Do not wrap in markdown code blocks "
+                    "(```json). Do not include any explanatory text before or after the JSON."
+                )
+
+        if user_template:
+            user_prompt = user_template.format(
+                knowledge_point=knowledge_point,
+                difficulty=difficulty,
+                question_type=question_type,
+                num_questions=num_questions,
+                knowledge_summary=knowledge_summary[:3000],
+                output_language=output_language,
+            )
+        else:
+            if effective_language == "zh":
+                user_prompt = (
+                    f"主题/知识点：{knowledge_point}\n"
+                    f"难度：{difficulty}\n"
+                    f"题型：{question_type}\n"
+                    f"题目数量：{num_questions}\n"
+                    f"输出语言：{output_language}\n\n"
+                    f"背景知识：\n{knowledge_summary[:3000]}...\n\n"
+                    f"请以JSON格式生成恰好{num_questions}个不同的题目关注点。"
+                )
+            else:
+                user_prompt = (
+                    f"Topic/Knowledge Point: {knowledge_point}\n"
+                    f"Difficulty: {difficulty}\n"
+                    f"Question Type: {question_type}\n"
+                    f"Number of Questions: {num_questions}\n"
+                    f"Output language: {output_language}\n\n"
+                    f"Background Knowledge:\n{knowledge_summary[:3000]}...\n\n"
+                    f"Generate exactly {num_questions} distinct question focuses in JSON format."
+                )
+
+        system_prompt = system_prompt.format(output_language=output_language)
 
         try:
             content = await self._call_llm(
@@ -1877,7 +2103,11 @@ class AgentCoordinator:
                 focuses.append(
                     {
                         "id": f"q_{i + 1}",
-                        "focus": f"Aspect {i + 1} of {knowledge_point}",
+                        "focus": (
+                            f"{knowledge_point} 的第 {i + 1} 个考查角度"
+                            if effective_language == "zh"
+                            else f"Aspect {i + 1} of {knowledge_point}"
+                        ),
                         "type": question_type,
                     }
                 )
@@ -2007,6 +2237,7 @@ class AgentCoordinator:
         focus: dict[str, Any],
         base_requirement: dict[str, Any],
         knowledge_summary: str,
+        language: str | None = None,
     ) -> dict[str, Any]:
         """
         Generate a single question without iteration loop (custom mode).
@@ -2019,19 +2250,39 @@ class AgentCoordinator:
         focus_text = focus.get("focus", "")
         knowledge_point = base_requirement.get("knowledge_point", "")
         difficulty = base_requirement.get("difficulty", "medium")
-
-        system_prompt = (
-            "You are a professional question designer. Generate a high-quality exam question "
-            "based on the provided focus and background knowledge.\n\n"
-            "Requirements:\n"
-            "1. The question must align with the specified focus\n"
-            "2. Use the background knowledge to ensure accuracy\n"
-            "3. Match the difficulty level\n"
-            "4. Provide a detailed explanation\n\n"
-            "CRITICAL: Return ONLY valid JSON. Do not wrap in markdown code blocks (```json). "
-            "Do not include any explanatory text before or after the JSON. "
-            "Your response must start with { and end with }.\n"
+        effective_language = parse_language(
+            language or base_requirement.get("resolved_output_language") or self.default_language
         )
+        output_language = get_language_label(effective_language, effective_language)
+        system_prompt, user_template, _ = self._parse_embedded_prompt(
+            "custom_generate_question", effective_language
+        )
+
+        if not system_prompt:
+            if effective_language == "zh":
+                system_prompt = (
+                    "你是一名专业的题目设计师。请根据指定的关注点和背景知识，生成高质量考试题。\n\n"
+                    "要求：\n"
+                    "1. 题目必须与指定 focus 对齐\n"
+                    "2. 使用背景知识保证准确性\n"
+                    "3. 匹配目标难度\n"
+                    "4. 提供详细解析\n"
+                    f"5. question、correct_answer、explanation 必须全部使用{output_language}\n\n"
+                    "关键：仅返回合法JSON，不要使用markdown代码块，也不要在JSON前后添加解释。"
+                )
+            else:
+                system_prompt = (
+                    "You are a professional question designer. Generate a high-quality exam "
+                    "question based on the provided focus and background knowledge.\n\n"
+                    "Requirements:\n"
+                    "1. The question must align with the specified focus\n"
+                    "2. Use the background knowledge to ensure accuracy\n"
+                    "3. Match the difficulty level\n"
+                    "4. Provide a detailed explanation\n"
+                    f"5. The question, correct_answer, and explanation fields must all be written in {output_language}\n\n"
+                    "CRITICAL: Return ONLY valid JSON. Do not wrap in markdown code blocks "
+                    "(```json). Do not include any explanatory text before or after the JSON."
+                )
 
         if question_type == "choice":
             output_format = """Output JSON format:
@@ -2051,14 +2302,39 @@ class AgentCoordinator:
     "explanation": "detailed explanation"
 }"""
 
-        user_prompt = (
-            f"Knowledge Point: {knowledge_point}\n"
-            f"Focus: {focus_text}\n"
-            f"Difficulty: {difficulty}\n"
-            f"Question Type: {question_type}\n\n"
-            f"Background Knowledge:\n{knowledge_summary[:4000]}\n\n"
-            f"{output_format}"
-        )
+        if user_template:
+            user_prompt = user_template.format(
+                knowledge_point=knowledge_point,
+                focus_text=focus_text,
+                difficulty=difficulty,
+                question_type=question_type,
+                knowledge_summary=knowledge_summary[:4000],
+                output_format=output_format,
+                output_language=output_language,
+            )
+        else:
+            if effective_language == "zh":
+                user_prompt = (
+                    f"知识点：{knowledge_point}\n"
+                    f"关注点：{focus_text}\n"
+                    f"难度：{difficulty}\n"
+                    f"题型：{question_type}\n"
+                    f"输出语言：{output_language}\n\n"
+                    f"背景知识：\n{knowledge_summary[:4000]}\n\n"
+                    f"{output_format}"
+                )
+            else:
+                user_prompt = (
+                    f"Knowledge Point: {knowledge_point}\n"
+                    f"Focus: {focus_text}\n"
+                    f"Difficulty: {difficulty}\n"
+                    f"Question Type: {question_type}\n"
+                    f"Output language: {output_language}\n\n"
+                    f"Background Knowledge:\n{knowledge_summary[:4000]}\n\n"
+                    f"{output_format}"
+                )
+
+        system_prompt = system_prompt.format(output_language=output_language)
 
         try:
             content = await self._call_llm(
@@ -2123,6 +2399,8 @@ class AgentCoordinator:
             raise ValueError("num_questions must be greater than zero")
 
         self._suppress_logging()
+        resolved_language = self._resolve_requirement_language(base_requirement)
+        self._set_runtime_language(resolved_language)
 
         # Create batch directory
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -2148,9 +2426,10 @@ class AgentCoordinator:
         # Generate search queries
         requirement_text = json.dumps(base_requirement, ensure_ascii=False)
         queries = await self._generate_search_queries_from_text(
-            requirement_text, self.rag_query_count
+            requirement_text, self.rag_query_count, resolved_language
         )
         self.logger.info(f"Generated {len(queries)} search queries: {queries}")
+        self.logger.info(f"Custom mode output language: {resolved_language}")
 
         await self._send_ws_update(
             "progress",
@@ -2190,7 +2469,7 @@ class AgentCoordinator:
         )
 
         plan = await self._generate_question_plan(
-            base_requirement, knowledge_summary, num_questions
+            base_requirement, knowledge_summary, num_questions, resolved_language
         )
         focuses = plan.get("focuses", [])
         self.logger.info(f"Generated plan with {len(focuses)} focuses")
@@ -2239,6 +2518,7 @@ class AgentCoordinator:
                 focus=focus,
                 base_requirement=base_requirement,
                 knowledge_summary=knowledge_summary,
+                language=resolved_language,
             )
 
             if not gen_result.get("success"):
@@ -2313,6 +2593,7 @@ class AgentCoordinator:
             "requested": num_questions,
             "completed": len(results),
             "failed": len(failures),
+            "resolved_output_language": resolved_language,
             "search_queries": queries,
             "plan": plan,
             "results": results,

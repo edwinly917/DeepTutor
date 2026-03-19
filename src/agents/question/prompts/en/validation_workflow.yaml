@@ -1,3 +1,27 @@
+retrieval_query_system: |
+  You are a professional knowledge retrieval expert.
+
+retrieval_query: |
+  Analyze the following question and generate a concise retrieval query to retrieve relevant knowledge from the knowledge base to validate this question.
+
+  Question information:
+  - Knowledge point: {knowledge_point}
+  - Question: {question_text}
+  {options_section}{answer_section}
+  Please extract the **core knowledge points and concepts** involved in the question and generate a concise retrieval query (no more than 100 words).
+
+  Requirements:
+  1. Extract core mathematical/physical concepts, theorems, methods from the question
+  2. If specific formulas or algorithms exist, extract key terminology
+  3. Do not include specific numerical values and details from the question
+  4. Query should be able to retrieve theoretical knowledge needed to validate the question
+  5. Write the retrieval query in {output_language}
+
+  Output the retrieval query directly, no additional content.
+
+validate_system: |
+  You are a professional question validation expert who strictly validates questions based on knowledge base content.
+
 validate: |
   Please validate the following question:
 
@@ -86,3 +110,33 @@ relevance_analysis: |
   Guidelines:
   - "high": Question can be fully answered using only the knowledge base content
   - "partial": Question is related but requires some knowledge beyond what's provided
+
+relevance_analysis_system: |
+  You are an educational content analyst specializing in analyzing the relationship between exam questions and knowledge base content.
+
+extension_analysis: |
+  Analyze how the following question relates to and extends from the knowledge base content.
+
+  Question:
+  {question}
+
+  Knowledge Base Content:
+  {knowledge}
+
+  Please analyze from the perspective of knowledge extension and provide a JSON response:
+  {{
+      "kb_connection": "Describe how this question connects to the knowledge base content. What concepts, theories, or methods from the KB are relevant to this question?",
+      "extended_aspect": "Describe what knowledge areas this question extends to beyond the core KB content. What additional concepts, applications, or perspectives does it explore?",
+      "reasoning": "Provide a detailed explanation of the relationship between this question and the knowledge base, and why this extension is valuable for learning."
+  }}
+
+  Guidelines:
+  1. Focus on the POSITIVE aspects - this is an "extended" question that goes beyond basic KB content
+  2. kb_connection should identify the foundation concepts from the KB that the question builds upon
+  3. extended_aspect should highlight what new learning opportunities this question provides
+  4. Keep the analysis constructive and educational
+
+  Output only the JSON, no additional text.
+
+extension_analysis_system: |
+  You are an educational content analyst specializing in identifying knowledge connections and learning extensions.

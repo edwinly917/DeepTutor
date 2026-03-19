@@ -19,9 +19,11 @@ project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.logging import get_logger
-from src.services.config import get_agent_params, load_config_with_main
+from src.services.config import get_agent_params, load_config_with_main, parse_language
 from src.services.prompt import get_prompt_manager
 from src.tools.rag_tool import rag_search
+
+from .language import get_language_label
 
 # Module logger
 logger = get_logger("QuestionValidation")
@@ -66,20 +68,26 @@ class QuestionValidationWorkflow:
         self.model = model
         self.kb_name = kb_name
         self.token_stats_callback = token_stats_callback
-        self.language = language
+        self.language = parse_language(language)
 
-        # Load prompts using unified PromptManager
-        self._prompts = get_prompt_manager().load_prompts(
-            module_name="question",
-            agent_name="validation_workflow",
-            language=language,
-        )
+        self._prompts = {}
+        self.set_language(language)
 
         # Get agent parameters from unified config
         self._agent_params = get_agent_params("question")
 
         # Load config for RAG settings
         self._config = load_config_with_main("question_config.yaml", project_root)
+
+    def set_language(self, language: str | None):
+        """Reload prompts when request language changes."""
+        lang_code = parse_language(language)
+        self.language = lang_code
+        self._prompts = get_prompt_manager().load_prompts(
+            module_name="question",
+            agent_name="validation_workflow",
+            language=lang_code,
+        )
 
     async def validate(
         self, question: dict[str, Any], reference_question: str | None = None
@@ -135,35 +143,76 @@ class QuestionValidationWorkflow:
         question_text = question.get("question", "")
         options = question.get("options", {})
         correct_answer = question.get("correct_answer", "")
+        output_language = get_language_label(self.language, self.language)
+        system_prompt = self._prompts.get("retrieval_query_system", "")
+        if not system_prompt:
+            system_prompt = (
+                "你是一名专业的知识检索专家。"
+                if self.language == "zh"
+                else "You are a professional knowledge retrieval expert."
+            )
 
-        prompt = f"""Analyze the following question and generate a concise retrieval query to retrieve relevant knowledge from the knowledge base to validate this question.
+        prompt_template = self._prompts.get("retrieval_query", "")
+        if not prompt_template:
+            if self.language == "zh":
+                prompt_template = (
+                    "请分析以下题目，并生成一个简洁的检索查询，用于从知识库中检索验证该题所需的相关理论知识。\n\n"
+                    "题目信息：\n"
+                    "- 知识点：{knowledge_point}\n"
+                    "- 题目：{question_text}\n"
+                    "{options_section}"
+                    "{answer_section}"
+                    "请提取题目涉及的**核心知识点和概念**，生成一个简洁的检索查询（不超过100字）。\n\n"
+                    "要求：\n"
+                    "1. 提取题目中的核心数学/物理概念、定理、方法\n"
+                    "2. 如果存在具体公式或算法，提取关键术语\n"
+                    "3. 不要包含题目中的具体数值和细节\n"
+                    "4. 查询应能检索到验证该题所需的理论知识\n"
+                    "5. 检索查询使用{output_language}\n\n"
+                    "直接输出检索查询，不要包含额外内容。"
+                )
+            else:
+                prompt_template = (
+                    "Analyze the following question and generate a concise retrieval query to "
+                    "retrieve relevant knowledge from the knowledge base to validate this question.\n\n"
+                    "Question information:\n"
+                    "- Knowledge point: {knowledge_point}\n"
+                    "- Question: {question_text}\n"
+                    "{options_section}"
+                    "{answer_section}"
+                    "Please extract the **core knowledge points and concepts** involved in the question "
+                    "and generate a concise retrieval query (no more than 100 words).\n\n"
+                    "Requirements:\n"
+                    "1. Extract core mathematical/physical concepts, theorems, methods from the question\n"
+                    "2. If specific formulas or algorithms exist, extract key terminology\n"
+                    "3. Do not include specific numerical values and details from the question\n"
+                    "4. Query should be able to retrieve theoretical knowledge needed to validate the question\n"
+                    "5. Write the retrieval query in {output_language}\n\n"
+                    "Output the retrieval query directly, no additional content."
+                )
 
-Question information:
-- Knowledge point: {knowledge_point}
-- Question: {question_text}
-"""
-
+        options_section = ""
         if options:
-            prompt += f"- Options: {json.dumps(options, ensure_ascii=False)}\n"
+            prefix = "- 选项：" if self.language == "zh" else "- Options: "
+            options_section = f"{prefix}{json.dumps(options, ensure_ascii=False)}\n"
+
+        answer_section = ""
         if correct_answer:
-            prompt += f"- Answer: {correct_answer}\n"
+            prefix = "- 答案：" if self.language == "zh" else "- Answer: "
+            answer_section = f"{prefix}{correct_answer}\n"
 
-        prompt += """
-Please extract the **core knowledge points and concepts** involved in the question and generate a concise retrieval query (no more than 100 words).
-
-Requirements:
-1. Extract core mathematical/physical concepts, theorems, methods from the question
-2. If specific formulas or algorithms exist, extract key terminology
-3. Do not include specific numerical values and details from the question
-4. Query should be able to retrieve theoretical knowledge needed to validate the question
-
-Output the retrieval query directly, no additional content.
-"""
+        prompt = prompt_template.format(
+            knowledge_point=knowledge_point,
+            question_text=question_text,
+            options_section=options_section,
+            answer_section=answer_section,
+            output_language=output_language,
+        )
 
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": "You are a professional knowledge retrieval expert."},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.3,
@@ -189,7 +238,7 @@ Output the retrieval query directly, no additional content.
         logger.log_llm_call(
             model=self.model,
             stage="generate_query",
-            system_prompt="You are a professional knowledge retrieval expert.",
+            system_prompt=system_prompt,
             user_prompt=prompt,
             response=response_content,
             agent_name="QuestionValidationWorkflow",
@@ -263,6 +312,13 @@ Output the retrieval query directly, no additional content.
             innovation_section=innovation_section,
             validation_knowledge=knowledge_str,
         )
+        system_prompt = self._prompts.get("validate_system", "")
+        if not system_prompt:
+            system_prompt = (
+                "你是一名专业的题目验证专家，严格基于知识库内容验证题目。"
+                if self.language == "zh"
+                else "You are a professional question validation expert who strictly validates questions based on knowledge base content."
+            )
 
         try:
             response = await self.client.chat.completions.create(
@@ -270,7 +326,7 @@ Output the retrieval query directly, no additional content.
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a professional question validation expert who strictly validates questions based on knowledge base content.",
+                        "content": system_prompt,
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -299,7 +355,7 @@ Output the retrieval query directly, no additional content.
             logger.log_llm_call(
                 model=self.model,
                 stage="validate",
-                system_prompt="You are a professional question validation expert who strictly validates questions based on knowledge base content.",
+                system_prompt=system_prompt,
                 user_prompt=prompt,
                 response=response_content,
                 agent_name="QuestionValidationWorkflow",
@@ -391,29 +447,53 @@ Output the retrieval query directly, no additional content.
         context_str = shared_context
         if len(context_str) > 4000:
             context_str = context_str[:4000] + "...[truncated]"
+        prompt_template = self._prompts.get("extension_analysis", "")
+        if not prompt_template:
+            if self.language == "zh":
+                prompt_template = (
+                    "分析以下题目如何与知识库内容相关，并在其基础上延展。\n\n"
+                    "题目：\n{question}\n\n"
+                    "知识库内容：\n{knowledge}\n\n"
+                    "请从知识延展的角度分析，并以JSON格式输出：\n"
+                    "{{\n"
+                    '    "kb_connection": "描述这道题目如何连接到知识库内容。知识库中的哪些概念、理论或方法与该题相关？",\n'
+                    '    "extended_aspect": "描述这道题超出了核心知识库内容的哪些知识领域。它探索了哪些额外概念、应用或视角？",\n'
+                    '    "reasoning": "详细说明这道题与知识库之间的关系，以及这种延展为什么对学习有价值。"\n'
+                    "}}\n\n"
+                    "要求：\n"
+                    "1. 强调积极意义，这是一道在知识库基础上延展的题目\n"
+                    "2. kb_connection 要指出题目建立在哪些知识库基础概念之上\n"
+                    "3. extended_aspect 要说明它提供了哪些新的学习机会\n"
+                    "4. 保持分析具有建设性和教学性\n\n"
+                    "只输出JSON，不要包含额外文本。"
+                )
+            else:
+                prompt_template = (
+                    "Analyze how the following question relates to and extends from the knowledge base content.\n\n"
+                    "Question:\n{question}\n\n"
+                    "Knowledge Base Content:\n{knowledge}\n\n"
+                    "Please analyze from the perspective of knowledge extension and provide a JSON response:\n"
+                    "{{\n"
+                    '    "kb_connection": "Describe how this question connects to the knowledge base content. What concepts, theories, or methods from the KB are relevant to this question?",\n'
+                    '    "extended_aspect": "Describe what knowledge areas this question extends to beyond the core KB content. What additional concepts, applications, or perspectives does it explore?",\n'
+                    '    "reasoning": "Provide a detailed explanation of the relationship between this question and the knowledge base, and why this extension is valuable for learning."\n'
+                    "}}\n\n"
+                    "Guidelines:\n"
+                    '1. Focus on the POSITIVE aspects - this is an "extended" question that goes beyond basic KB content\n'
+                    "2. kb_connection should identify the foundation concepts from the KB that the question builds upon\n"
+                    "3. extended_aspect should highlight what new learning opportunities this question provides\n"
+                    "4. Keep the analysis constructive and educational\n\n"
+                    "Output only the JSON, no additional text."
+                )
 
-        prompt = f"""Analyze how the following question relates to and extends from the knowledge base content.
-
-Question:
-{question_str}
-
-Knowledge Base Content:
-{context_str}
-
-Please analyze from the perspective of knowledge extension and provide a JSON response:
-{{
-    "kb_connection": "Describe how this question connects to the knowledge base content. What concepts, theories, or methods from the KB are relevant to this question?",
-    "extended_aspect": "Describe what knowledge areas this question extends to beyond the core KB content. What additional concepts, applications, or perspectives does it explore?",
-    "reasoning": "Provide a detailed explanation of the relationship between this question and the knowledge base, and why this extension is valuable for learning."
-}}
-
-Guidelines:
-1. Focus on the POSITIVE aspects - this is an "extended" question that goes beyond basic KB content
-2. kb_connection should identify the foundation concepts from the KB that the question builds upon
-3. extended_aspect should highlight what new learning opportunities this question provides
-4. Keep the analysis constructive and educational
-
-Output only the JSON, no additional text."""
+        prompt = prompt_template.format(question=question_str, knowledge=context_str)
+        system_prompt = self._prompts.get("extension_analysis_system", "")
+        if not system_prompt:
+            system_prompt = (
+                "你是一名教育内容分析专家，擅长识别知识联系和学习延展。"
+                if self.language == "zh"
+                else "You are an educational content analyst specializing in identifying knowledge connections and learning extensions."
+            )
 
         try:
             response = await self.client.chat.completions.create(
@@ -421,7 +501,7 @@ Output only the JSON, no additional text."""
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an educational content analyst specializing in identifying knowledge connections and learning extensions.",
+                        "content": system_prompt,
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -488,37 +568,15 @@ Output only the JSON, no additional text."""
         context_str = knowledge_summary
         if len(context_str) > 4000:
             context_str = context_str[:4000] + "...[truncated]"
-
-        prompt = f"""Analyze the relevance between the following exam question and the knowledge base content.
-
-Question:
-{question_str}
-
-Knowledge Base Content:
-{context_str}
-
-Please analyze and provide a JSON response with the following structure:
-{{
-    "relevance": "high" or "partial",
-    "kb_coverage": "Describe specifically what concepts, theories, or methods from the knowledge base this question tests. List the key knowledge points that are directly relevant.",
-    "extension_points": "If relevance is 'partial', describe what aspects of this question extend beyond the knowledge base content. What additional knowledge does it require? Leave empty if relevance is 'high'."
-}}
-
-Guidelines for determining relevance:
-1. "high" - The question can be fully answered using only the knowledge base content. All concepts, methods, and required knowledge are present in the KB.
-2. "partial" - The question is related to the KB content but requires some knowledge beyond what's provided. The KB serves as a foundation but the question extends to additional areas.
-
-For kb_coverage:
-- Be specific about which concepts from the KB are being tested
-- Reference the actual content from the KB where possible
-- Explain how the KB content relates to the question
-
-For extension_points (only when relevance is "partial"):
-- Identify what additional knowledge is needed
-- Explain how the question extends from the KB foundation
-- Keep the tone positive - extensions are valuable for learning
-
-Output only the JSON, no additional text."""
+        prompt_template = self._prompts.get("relevance_analysis", "")
+        prompt = prompt_template.format(question=question_str, knowledge=context_str)
+        system_prompt = self._prompts.get("relevance_analysis_system", "")
+        if not system_prompt:
+            system_prompt = (
+                "你是一名教育内容分析专家，擅长分析考试题与知识库内容之间的关系。"
+                if self.language == "zh"
+                else "You are an educational content analyst specializing in analyzing the relationship between exam questions and knowledge base content."
+            )
 
         try:
             response = await self.client.chat.completions.create(
@@ -526,7 +584,7 @@ Output only the JSON, no additional text."""
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an educational content analyst specializing in analyzing the relationship between exam questions and knowledge base content.",
+                        "content": system_prompt,
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -552,7 +610,7 @@ Output only the JSON, no additional text."""
             logger.log_llm_call(
                 model=self.model,
                 stage="analyze_relevance",
-                system_prompt="Educational content analyst for relevance analysis",
+                system_prompt=system_prompt,
                 user_prompt=prompt,
                 response=response_content,
                 agent_name="QuestionValidationWorkflow",

@@ -73,3 +73,71 @@ interpret_requirement_text: |
     {requirement_text}
 
     仅返回JSON。
+
+plan_sub_focuses: |
+  system: |
+    你是一名教育内容规划师。给定基础需求和知识上下文，
+    请为同一主题生成多个不同的题目关注点。
+    每个关注点都应体现不同的角度、场景或考查重点。
+    输出JSON，键为"focuses"，数组中每项包含：
+    "id"（如"q_1"）、"focus"（具体考查点）、"scenario_hint"（简短场景提示）。
+    所有 focus 和 scenario_hint 都必须使用{output_language}。
+
+  user_template: |
+    基础需求：
+    {base_requirement}
+
+    可用知识上下文：
+    {shared_context}...
+
+    请以JSON格式生成恰好{num_questions}个不同的关注点，使用{output_language}。
+
+generate_question_plan: |
+  system: |
+    你是一名教育内容规划师。给定主题、难度、题型和背景知识，创建结构化的题目规划。
+
+    每个题目关注点都应：
+    1. 考查该知识点的一个具体方面或角度
+    2. 与其他关注点明显不同（不同场景、应用或视角）
+    3. 匹配指定难度
+    4. 能够基于提供的背景知识完成
+    5. focus 字段必须使用{output_language}
+
+    关键：仅返回合法JSON，不要使用markdown代码块，也不要在JSON前后添加解释。
+
+  user_template: |
+    主题/知识点：{knowledge_point}
+    难度：{difficulty}
+    题型：{question_type}
+    题目数量：{num_questions}
+    输出语言：{output_language}
+
+    背景知识：
+    {knowledge_summary}...
+
+    请以JSON格式生成恰好{num_questions}个不同的题目关注点。
+
+custom_generate_question: |
+  system: |
+    你是一名专业的题目设计师。请根据指定的关注点和背景知识，生成高质量考试题。
+
+    要求：
+    1. 题目必须与指定 focus 对齐
+    2. 使用背景知识保证准确性
+    3. 匹配目标难度
+    4. 提供详细解析
+    5. question、correct_answer、explanation 必须全部使用{output_language}
+
+    关键：仅返回合法JSON，不要使用markdown代码块，也不要在JSON前后添加解释。
+
+  user_template: |
+    知识点：{knowledge_point}
+    关注点：{focus_text}
+    难度：{difficulty}
+    题型：{question_type}
+    输出语言：{output_language}
+
+    背景知识：
+    {knowledge_summary}
+
+    {output_format}

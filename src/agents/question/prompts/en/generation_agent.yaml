@@ -15,6 +15,7 @@ system: |
   - Calculation problems should have substantial computation, not too simple
   - Use the provided background knowledge as the foundation for question generation
   - Multiple choice questions must have only one correct answer
+  - The fields `question`, `correct_answer`, and `explanation` must follow the requested output language
   - Solutions/explanations should be detailed and clear, using the same narrative style as knowledge base
   - **Chain-of-thought discipline**:
     - Always reason internally in a deliberate, step-by-step manner. First outline the new scenario, then plan how the solution should proceed, and finally produce the answer.
@@ -29,9 +30,13 @@ generate: |
   Retrieved knowledge:
   {knowledge}
 
+  Output language:
+  {output_language}
+
   Thinking instructions:
   - First, silently plan the scenario and reasoning steps (chain-of-thought) to ensure the question is coherent.
   - Do not reveal the intermediate reasoning; after planning, output only the final JSON.
+  - Write `question`, `correct_answer`, and `explanation` in {output_language}.
 
   Please generate a question in JSON format:
   {{
@@ -54,6 +59,9 @@ generate_with_reference: |
   Retrieved knowledge:
   {knowledge}
 
+  Output language:
+  {output_language}
+
   Requirements:
   1. **Maintain same core knowledge and difficulty**: Concepts being tested must stay aligned
   2. **Maintain the exact same knowledge scope**: Infer the primary mathematical concepts from the reference and keep them identical (e.g., if the reference focuses on planar line parametrization, remain within that topic; do NOT escalate to surfaces, directional derivatives, or unrelated advanced subjects).
@@ -74,6 +82,7 @@ generate_with_reference: |
   Thinking instructions:
   - Deliberately plan the new scenario and reasoning steps step-by-step.
   - Keep the chain-of-thought internal; only output the final JSON.
+  - Write `question`, `correct_answer`, and `explanation` in {output_language}.
 
   Please generate question in JSON format:
   {{
@@ -96,9 +105,13 @@ refine: |
   Retrieved knowledge:
   {knowledge}
 
+  Output language:
+  {output_language}
+
   Thinking instructions:
   - Reflect on the validation feedback step-by-step, plan the adjustments mentally, then update the question.
   - Keep the reasoning private; only output the final JSON.
+  - Write `question`, `correct_answer`, and `explanation` in {output_language}.
 
   Please revise the question in JSON format:
   {{

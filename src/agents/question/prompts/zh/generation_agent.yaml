@@ -15,6 +15,7 @@ system: |
   - 计算题应有实质性的计算，不能太简单
   - 使用提供的背景知识作为出题的基础
   - 选择题必须只有一个正确答案
+  - `question`、`correct_answer`、`explanation` 字段必须使用指定输出语言
   - 解答/解释应详细清晰，使用与知识库相同的叙述风格
   - **思维链纪律**：
     - 始终以深思熟虑、逐步的方式进行内部推理。首先概述新场景，然后规划解题步骤，最后产生答案。
@@ -29,9 +30,13 @@ generate: |
   检索到的知识：
   {knowledge}
 
+  输出语言：
+  {output_language}
+
   思考说明：
   - 首先，默默规划场景和推理步骤（思维链），确保题目连贯。
   - 不要透露中间推理过程；规划后，只输出最终的JSON。
+  - `question`、`correct_answer`、`explanation` 必须全部使用{output_language}。
 
   请以JSON格式生成题目：
   {{
@@ -54,6 +59,9 @@ generate_with_reference: |
   检索到的知识：
   {knowledge}
 
+  输出语言：
+  {output_language}
+
   要求：
   1. **保持相同的核心知识和难度**：被测试的概念必须保持一致
   2. **保持完全相同的知识范围**：从参考题推断主要数学概念并保持相同（例如，如果参考题关注平面直线参数化，就保持在该主题内；不要升级到曲面、方向导数或无关的高级主题）
@@ -74,6 +82,7 @@ generate_with_reference: |
   思考说明：
   - 深思熟虑地逐步规划新场景和推理步骤。
   - 保持思维链内部；只输出最终的JSON。
+  - `question`、`correct_answer`、`explanation` 必须全部使用{output_language}。
 
   请以JSON格式生成题目：
   {{
@@ -96,9 +105,13 @@ refine: |
   检索到的知识：
   {knowledge}
 
+  输出语言：
+  {output_language}
+
   思考说明：
   - 逐步反思验证反馈，在心里规划调整，然后更新题目。
   - 保持推理私密；只输出最终的JSON。
+  - `question`、`correct_answer`、`explanation` 必须全部使用{output_language}。
 
   请以JSON格式修改题目：
   {{

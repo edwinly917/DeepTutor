@@ -71,6 +71,7 @@ async def websocket_mimic_generate(websocket: WebSocket):
         mode = data.get("mode", "parsed")  # "upload" or "parsed"
         kb_name = data.get("kb_name", "ai_textbook")
         max_questions = data.get("max_questions")
+        output_language = data.get("output_language")
 
         logger.info(f"Starting mimic generation (mode: {mode}, kb: {kb_name})")
 
@@ -213,6 +214,7 @@ async def websocket_mimic_generate(websocket: WebSocket):
                 kb_name=kb_name,
                 output_dir=output_dir,
                 max_questions=max_questions,
+                output_language=output_language,
                 ws_callback=ws_callback,
             )
 
@@ -271,6 +273,7 @@ async def websocket_question_generate(websocket: WebSocket):
         requirement = data.get("requirement")
         kb_name = data.get("kb_name", "ai_textbook")
         count = data.get("count", 1)
+        output_language = data.get("output_language")
 
         if not requirement:
             try:
@@ -352,6 +355,9 @@ async def websocket_question_generate(websocket: WebSocket):
                 logger.info(f"Starting custom mode generation for {count} question(s)")
 
                 # Use the new custom generation method
+                if isinstance(requirement, dict) and output_language:
+                    requirement["output_language"] = output_language
+
                 batch_result = await coordinator.generate_questions_custom(
                     base_requirement=requirement,
                     num_questions=count,
@@ -389,6 +395,9 @@ async def websocket_question_generate(websocket: WebSocket):
                             "requested": batch_result.get("requested", count),
                             "completed": batch_result.get("completed", 0),
                             "failed": batch_result.get("failed", 0),
+                            "resolved_output_language": batch_result.get(
+                                "resolved_output_language"
+                            ),
                             "plan": batch_result.get("plan", {}),
                         }
                     )

@@ -14,10 +14,11 @@ project_root = Path(__file__).parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.logging import get_logger
-from src.services.config import load_config_with_main
+from src.services.config import load_config_with_main, parse_language
 from src.services.prompt import get_prompt_manager
 from src.tools.rag_tool import rag_search
 
+from ..language import get_language_label
 from .base_agent import Action, BaseAgent, Message, Observation
 
 # Module logger
@@ -30,12 +31,8 @@ class QuestionGenerationAgent(BaseAgent):
     def __init__(self, language: str = "en", **kwargs):
         super().__init__(agent_name="QuestionGenerationAgent", language=language, **kwargs)
 
-        # Load prompts using unified PromptManager
-        self._prompts = get_prompt_manager().load_prompts(
-            module_name="question",
-            agent_name="generation_agent",
-            language=language,
-        )
+        self._prompts = {}
+        self.set_language(language)
 
         # Load config for RAG settings
         self._config = load_config_with_main("question_config.yaml", project_root)
@@ -56,6 +53,24 @@ class QuestionGenerationAgent(BaseAgent):
 
     def get_system_prompt(self) -> str:
         return self._prompts.get("system", "")
+
+    def set_language(self, language: str | None):
+        """Reload prompts when request language changes."""
+        lang_code = parse_language(language)
+        self.language = lang_code
+        self._prompts = get_prompt_manager().load_prompts(
+            module_name="question",
+            agent_name="generation_agent",
+            language=lang_code,
+        )
+
+    def _get_system_prompt_or_fallback(self) -> str:
+        system_prompt = self.get_system_prompt()
+        if system_prompt:
+            return system_prompt
+        if self.language == "zh":
+            return "你是一名专业的题目设计师。"
+        return "You are a professional question designer."
 
     def get_available_actions(self) -> list[dict[str, str]]:
         """Return available actions for the agent."""
@@ -162,6 +177,7 @@ class QuestionGenerationAgent(BaseAgent):
 
         # Check whether a reference question exists
         reference_question = self.current_requirement.get("reference_question")
+        output_language = get_language_label(self.language, self.language)
 
         # Call LLM to generate the question
         if reference_question:
@@ -171,6 +187,7 @@ class QuestionGenerationAgent(BaseAgent):
                 reference_question=reference_question,
                 requirements=json.dumps(self.current_requirement, ensure_ascii=False, indent=2),
                 knowledge=knowledge_str,
+                output_language=output_language,
             )
         else:
             # Use standard prompt
@@ -178,12 +195,15 @@ class QuestionGenerationAgent(BaseAgent):
             prompt = prompt_template.format(
                 requirements=json.dumps(self.current_requirement, ensure_ascii=False, indent=2),
                 knowledge=knowledge_str,
+                output_language=output_language,
             )
+
+        system_prompt = self._get_system_prompt_or_fallback()
 
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": "You are a professional question designer"},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ],
             temperature=self._agent_params["temperature"],
@@ -211,7 +231,7 @@ class QuestionGenerationAgent(BaseAgent):
         _logger.log_llm_call(
             model=self.model,
             stage="generate_question",
-            system_prompt="You are a professional question designer",
+            system_prompt=system_prompt,
             user_prompt=prompt,
             response=response_content,
             agent_name="QuestionGenerationAgent",
@@ -274,11 +294,15 @@ class QuestionGenerationAgent(BaseAgent):
 
         # Call LLM to refine the question
         prompt_template = self._prompts.get("refine", "")
+        output_language = get_language_label(self.language, self.language)
         prompt = prompt_template.format(
             original_question=json.dumps(self.current_question, ensure_ascii=False, indent=2),
             feedback=json.dumps(feedback_msg.content, ensure_ascii=False, indent=2),
             knowledge=knowledge_str,
+            output_language=output_language,
         )
+
+        system_prompt = self._get_system_prompt_or_fallback()
 
         # Log request details
         _logger.debug(
@@ -290,7 +314,7 @@ class QuestionGenerationAgent(BaseAgent):
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a professional question designer"},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=self._agent_params["temperature"],
@@ -348,7 +372,7 @@ class QuestionGenerationAgent(BaseAgent):
         _logger.log_llm_call(
             model=self.model,
             stage="refine_question",
-            system_prompt="You are a professional question designer",
+            system_prompt=system_prompt,
             user_prompt=prompt,
             response=response_content,
             agent_name="QuestionGenerationAgent",

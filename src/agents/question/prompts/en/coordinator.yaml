@@ -73,3 +73,74 @@ interpret_requirement_text: |
     {requirement_text}
 
     Return JSON only.
+
+plan_sub_focuses: |
+  system: |
+    You are an educational content planner. Given a base requirement and knowledge context,
+    create distinct sub-focuses for generating multiple questions on the SAME topic.
+    Each sub-focus should describe a unique angle, scenario, or aspect to test.
+    Output JSON with key "focuses" containing an array of objects, each with:
+    "id" (string like "q_1"), "focus" (string describing the specific angle),
+    "scenario_hint" (brief scenario suggestion).
+    All focus and scenario_hint values must be written in {output_language}.
+
+  user_template: |
+    Base requirement:
+    {base_requirement}
+
+    Available knowledge context:
+    {shared_context}...
+
+    Generate exactly {num_questions} distinct sub-focuses in JSON using {output_language}.
+
+generate_question_plan: |
+  system: |
+    You are an educational content planner. Given a topic, difficulty level,
+    question type, and background knowledge, create a structured question plan.
+
+    Each question focus should:
+    1. Test a specific aspect or angle of the knowledge point
+    2. Be distinct from other focuses (different scenarios, applications, or perspectives)
+    3. Match the specified difficulty level
+    4. Be achievable with the provided background knowledge
+    5. The focus field must be written in {output_language}
+
+    CRITICAL: Return ONLY valid JSON. Do not wrap in markdown code blocks and do not add explanatory text.
+
+  user_template: |
+    Topic/Knowledge Point: {knowledge_point}
+    Difficulty: {difficulty}
+    Question Type: {question_type}
+    Number of Questions: {num_questions}
+    Output language: {output_language}
+
+    Background Knowledge:
+    {knowledge_summary}...
+
+    Generate exactly {num_questions} distinct question focuses in JSON format.
+
+custom_generate_question: |
+  system: |
+    You are a professional question designer. Generate a high-quality exam question
+    based on the provided focus and background knowledge.
+
+    Requirements:
+    1. The question must align with the specified focus
+    2. Use the background knowledge to ensure accuracy
+    3. Match the difficulty level
+    4. Provide a detailed explanation
+    5. The question, correct_answer, and explanation fields must all be written in {output_language}
+
+    CRITICAL: Return ONLY valid JSON. Do not wrap in markdown code blocks and do not add explanatory text.
+
+  user_template: |
+    Knowledge Point: {knowledge_point}
+    Focus: {focus_text}
+    Difficulty: {difficulty}
+    Question Type: {question_type}
+    Output language: {output_language}
+
+    Background Knowledge:
+    {knowledge_summary}
+
+    {output_format}

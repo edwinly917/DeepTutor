@@ -27,6 +27,7 @@ project_root = Path(__file__).parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Note: AgentCoordinator is imported inside functions to avoid circular import
+from src.agents.question.language import resolve_output_language
 from src.agents.question.tools.pdf_parser import parse_pdf_with_mineru
 from src.agents.question.tools.question_extractor import extract_questions_from_paper
 
@@ -35,18 +36,38 @@ WsCallback = Callable[[str, dict[str, Any]], Any]
 
 
 async def generate_question_from_reference(
-    reference_question: dict[str, Any], coordinator: AgentCoordinator, kb_name: str
+    reference_question: dict[str, Any],
+    coordinator: AgentCoordinator,
+    kb_name: str,
+    output_language: str | None = None,
 ) -> dict[str, Any]:
     """
     Generate a new question based on a reference entry.
     """
-    # Build generation requirement that encodes the reference
-    requirement = {
-        "reference_question": reference_question["question_text"],
-        "has_images": len(reference_question.get("images", [])) > 0,
-        "kb_name": kb_name,
-        "allow_reject": False,
-        "additional_requirements": (
+    resolved_language = resolve_output_language(
+        reference_question.get("question_text", ""),
+        fallback_output_language=output_language,
+        system_language=getattr(coordinator, "default_language", "zh"),
+    )
+
+    if resolved_language == "zh":
+        additional_requirements = (
+            f"参考题目：\n{reference_question['question_text']}\n\n"
+            "要求：\n"
+            "1. 保持相近的难度水平。\n"
+            "2. **识别参考题的核心知识概念，并保持其完全一致；不要引入参考题之外的新高级主题。**\n"
+            "3. **改变场景/对象/几何背景；不要只是替换数字或符号。**\n"
+            "4. **至少改变一部分推理过程，或增加一个新的子问题（例如额外计算、分析或证明）。**\n"
+            "5. 保持题目严格处于与参考题相同的数学范围内（例如参考题是平面直线参数化，就必须留在该范围内，不能升级到曲面或方向导数）。\n"
+            "6. 确保题目严谨、精确、信息自洽。\n"
+            "7. 如果原题引用图片，请用文字完整描述图片信息。\n"
+            "8. 不允许拒绝任务，必须完成出题。\n\n"
+            "输出要求：\n"
+            "- 最终题目、答案和解析必须使用中文。\n"
+            "- 可以内部逐步思考，但不要暴露推理过程；只输出最终JSON。"
+        )
+    else:
+        additional_requirements = (
             f"Reference question:\n{reference_question['question_text']}\n\n"
             "Requirements:\n"
             "1. Keep a similar difficulty level.\n"
@@ -58,10 +79,20 @@ async def generate_question_from_reference(
             "6. Ensure the prompt is rigorous, precise, and self-contained.\n"
             "7. If the original problem references images, describe them in text.\n"
             "8. Rejection is forbidden—you must complete the generation task.\n\n"
-            "Chain-of-thought guidance:\n"
-            "- Think step-by-step to plan the new scenario and reasoning before producing the final JSON.\n"
-            "- Do not reveal your reasoning; output only the final JSON."
-        ),
+            "Output requirements:\n"
+            "- The final question, answer, and explanation must be written in English.\n"
+            "- You may think step by step internally, but do not reveal the reasoning; output only the final JSON."
+        )
+
+    # Build generation requirement that encodes the reference
+    requirement = {
+        "reference_question": reference_question["question_text"],
+        "has_images": len(reference_question.get("images", [])) > 0,
+        "kb_name": kb_name,
+        "allow_reject": False,
+        "output_language": output_language or resolved_language,
+        "resolved_output_language": resolved_language,
+        "additional_requirements": additional_requirements,
     }
 
     # Trigger generation through the coordinator
@@ -76,6 +107,7 @@ async def mimic_exam_questions(
     kb_name: str = None,
     output_dir: str | None = None,
     max_questions: int | None = None,
+    output_language: str | None = None,
     ws_callback: WsCallback | None = None,
 ) -> dict[str, Any]:
     """
@@ -389,7 +421,10 @@ async def mimic_exam_questions(
 
             try:
                 result = await generate_question_from_reference(
-                    reference_question=ref_question, coordinator=coordinator, kb_name=kb_name
+                    reference_question=ref_question,
+                    coordinator=coordinator,
+                    kb_name=kb_name,
+                    output_language=output_language,
                 )
 
                 async with completed_lock:
@@ -401,6 +436,7 @@ async def mimic_exam_questions(
 
                     result_data = {
                         "success": True,
+                        "resolved_output_language": result.get("resolved_output_language"),
                         "reference_question_number": ref_number,
                         "reference_question_text": ref_question["question_text"],
                         "reference_images": ref_question.get("images", []),
@@ -513,6 +549,9 @@ async def mimic_exam_questions(
     output_data = {
         "reference_paper": latest_dir.name,
         "kb_name": kb_name,
+        "resolved_output_language": generated_questions[0].get("resolved_output_language")
+        if generated_questions
+        else output_language,
         "total_reference_questions": len(reference_questions),
         "successful_generations": len(generated_questions),
         "failed_generations": len(failed_questions),

@@ -248,7 +248,11 @@ interface GlobalContextType {
   loadChatSession: (sessionId: string) => Promise<void>;
 
   // UI Settings
-  uiSettings: { theme: "light" | "dark"; language: "en" | "zh" };
+  uiSettings: {
+    theme: "light" | "dark";
+    language: "en" | "zh";
+    output_language: "en" | "zh";
+  };
   refreshSettings: () => Promise<void>;
 
   // Sidebar
@@ -266,7 +270,8 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   const [uiSettings, setUiSettings] = useState<{
     theme: "light" | "dark";
     language: "en" | "zh";
-  }>({ theme: "light", language: "zh" });
+    output_language: "en" | "zh";
+  }>({ theme: "light", language: "zh", output_language: "zh" });
 
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -283,6 +288,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
           setUiSettings({
             theme: themeToUse,
             language: "zh",
+            output_language: data.ui.output_language || "zh",
           });
           // Apply and persist theme
           setTheme(themeToUse);
@@ -632,10 +638,11 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
             knowledge_point: topic,
             difficulty: diff,
             question_type: type,
-            additional_requirements: "Ensure clarity and academic rigor.",
+            additional_requirements: "",
           },
           count: count,
           kb_name: kb,
+          output_language: uiSettings.output_language,
         }),
       );
       addQuestionLog({ type: "system", content: "Initializing Generator..." });
@@ -943,6 +950,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
               pdf_name: file.name,
               kb_name: kb,
               max_questions: maxQuestions,
+              output_language: uiSettings.output_language,
             }),
           );
           addQuestionLog({
@@ -959,6 +967,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
             paper_path: paperPath,
             kb_name: kb,
             max_questions: maxQuestions,
+            output_language: uiSettings.output_language,
           }),
         );
         addQuestionLog({

@@ -35,6 +35,6 @@ def isolated_ppt_db():
 
 @pytest.fixture
 def ppt_service(project_root: Path):
-    from src.services.export.ppt_project_service import PptProjectService
+    from src.services.ppt.orchestrator import PptProjectService
 
     return PptProjectService(project_root)

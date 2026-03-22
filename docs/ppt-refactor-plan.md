@@ -8,7 +8,9 @@ This document is the implementation-facing spec for the PPT refactor on top of
 Goals for this phase:
 
 - add `from_research`, `from_notebook`, and `from_sources` as first-class PPT inputs
-- preserve current `idea` / `outline` / `descriptions` compatibility
+- remove legacy `idea` / `outline` / `descriptions` PPT creation modes
+- retire the old `markdown -> PPTGenerator` generation path
+- centralize PPT prompts under a dedicated prompt manager
 - make page editing and export rules internally consistent
 - keep notebook recovery and preview recovery stable
 - use lightweight task guards instead of heavyweight locking
@@ -79,24 +81,15 @@ The effective `from_sources` cache key must include:
 
 Cache invalidation must not rely only on `type + url`.
 
-## 4. Creation Modes and Compatibility
+## 4. Creation Modes
 
-### 4.1 Legacy compatibility
+### 4.1 Supported modes
 
-Existing modes remain valid in this phase:
-
-- `idea`
-- `outline`
-- `descriptions`
-
-New modes are introduced through the new orchestrator path:
+Only the source-backed modes remain valid in this phase:
 
 - `from_research`
 - `from_notebook`
 - `from_sources`
-
-Legacy modes continue working and are mapped into the new orchestration flow
-incrementally. There is no flag day removal of legacy request shapes.
 
 ### 4.2 `from_sources` input contract
 

@@ -33,9 +33,6 @@ export interface PresentationOutline {
 
 export type PptCreationMode =
   | "auto"
-  | "idea"
-  | "outline"
-  | "descriptions"
   | "from_research"
   | "from_notebook"
   | "from_sources";
@@ -98,16 +95,7 @@ export interface PptProject {
   id: string;
   notebook_id?: string | null;
   session_id?: string | null;
-  creation_type:
-    | "idea"
-    | "outline"
-    | "descriptions"
-    | "from_research"
-    | "from_notebook"
-    | "from_sources";
-  idea_prompt?: string | null;
-  outline_text?: string | null;
-  description_text?: string | null;
+  creation_type: "from_research" | "from_notebook" | "from_sources";
   source_content?: string | null;
   template_style?: string | null;
   template_image_path?: string | null;

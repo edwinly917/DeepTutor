@@ -50,33 +50,6 @@ export async function uploadPptReferenceImage(
   return readJson<PptReferenceImageUploadResponse>(res);
 }
 
-export async function deriveIdea(sourceContent: string): Promise<string> {
-  const res = await fetch(apiUrl("/api/v1/ppt/helpers/derive-idea"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_content: sourceContent }),
-  });
-  const data = await readJson<{ idea_prompt?: string }>(res);
-  return data.idea_prompt || "";
-}
-
-export async function deriveOutline(
-  sourceContent: string,
-  stylePrompt?: string,
-  maxSlides?: number,
-): Promise<{ outline_text: string }> {
-  const res = await fetch(apiUrl("/api/v1/ppt/helpers/derive-outline"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      source_content: sourceContent,
-      style_prompt: stylePrompt || undefined,
-      max_slides: maxSlides,
-    }),
-  });
-  return readJson<{ outline_text: string }>(res);
-}
-
 export async function previewPptStyle(
   stylePrompt?: string,
 ): Promise<{ preview_svg?: string }> {
@@ -165,11 +138,14 @@ export async function generatePptFull(
     detail_level?: "concise" | "default" | "detailed";
   },
 ): Promise<PptTask> {
-  const res = await fetch(apiUrl(`/api/v1/ppt/projects/${projectId}/generate/full`), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(options || {}),
-  });
+  const res = await fetch(
+    apiUrl(`/api/v1/ppt/projects/${projectId}/generate/full`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options || {}),
+    },
+  );
   return readJson<PptTask>(res);
 }
 

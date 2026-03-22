@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 from pathlib import Path
 import sys
 
@@ -8,8 +9,8 @@ sys.path.insert(0, str(project_root))
 from src.api.routers import knowledge as knowledge_router
 from src.api.routers import notebook as notebook_router
 from src.services.config import BananaPptImageConfig
-from src.services.export import banana_ppt_service as banana_module
 from src.services.export.banana_ppt_service import BananaPptService
+from src.services.ppt import outline_generator as outline_module
 
 
 class _DummyTaskManager:
@@ -193,9 +194,9 @@ def test_outline_prompt_no_longer_forces_abstract_images(monkeypatch, tmp_path):
             '"layout":"TOP_IMAGE","imagePrompt":"industrial park at sunrise"}]}'
         )
 
-    monkeypatch.setattr(banana_module, "llm_complete", _fake_complete)
-    monkeypatch.setattr(banana_module, "get_llm_config", lambda: _DummyLLMConfig())
-    monkeypatch.setattr(banana_module, "get_token_limit_kwargs", lambda model, max_tokens: {})
+    monkeypatch.setattr(outline_module, "llm_complete", _fake_complete)
+    monkeypatch.setattr(outline_module, "get_llm_config", lambda: _DummyLLMConfig())
+    monkeypatch.setattr(outline_module, "get_token_limit_kwargs", lambda model, max_tokens: {})
 
     result = asyncio.run(service.generate_outline("source content", style_prompt="clean corporate"))
     prompt = captured["prompt"]
@@ -246,7 +247,7 @@ def test_hash_prompt_uses_new_versioned_strategy(tmp_path):
 
     new_hash = service._hash_prompt(prompt, cfg)
 
-    old_hasher = banana_module.hashlib.sha256()
+    old_hasher = hashlib.sha256()
     old_hasher.update(cfg.model.encode("utf-8"))
     old_hasher.update(b"|")
     old_hasher.update(cfg.aspect_ratio.encode("utf-8"))

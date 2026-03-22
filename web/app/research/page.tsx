@@ -27,9 +27,7 @@ import {
   createPptProject,
   exportPptProjectPptx,
   fetchPptTask,
-  generatePptDescriptions,
-  generatePptImages,
-  generatePptOutline,
+  generatePptFull,
 } from "@/lib/pptApi";
 import AddToNotebookModal from "@/components/AddToNotebookModal";
 import { exportToPdf, preprocessMarkdownForPdf } from "@/lib/pdfExport";
@@ -770,32 +768,29 @@ export default function ResearchPage() {
     setIsExportingPptx(true);
     try {
       const project = await createPptProject({
-        creation_type: "descriptions",
-        description_text: state.reporting.generatedReport,
+        creation_type: "from_research",
         source_content: state.reporting.generatedReport,
         template_style: pptStylePrompt || undefined,
         image_aspect_ratio: "16:9",
         language: "zh",
+        source_refs: [
+          {
+            type: "report",
+            title: state.planning.originalTopic || "Research Report",
+            source_key: state.planning.originalTopic || "research-report",
+            content: state.reporting.generatedReport,
+          },
+        ],
       });
 
-      await generatePptOutline(project.id, pptStylePrompt || undefined);
-
-      const descriptionsTask = await generatePptDescriptions(project.id);
-      while (true) {
-        const task = await fetchPptTask(project.id, descriptionsTask.id);
-        if (task.status === "COMPLETED") break;
-        if (task.status === "FAILED" || task.status === "CANCELED") {
-          throw new Error(task.error_message || "PPT 描述生成失败");
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-      }
-
-      const imagesTask = await generatePptImages(project.id);
+      const imagesTask = await generatePptFull(project.id, {
+        style_prompt: pptStylePrompt || undefined,
+      });
       while (true) {
         const task = await fetchPptTask(project.id, imagesTask.id);
         if (task.status === "COMPLETED") break;
         if (task.status === "FAILED" || task.status === "CANCELED") {
-          throw new Error(task.error_message || "PPT 图片生成失败");
+          throw new Error(task.error_message || "PPT 生成失败");
         }
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }

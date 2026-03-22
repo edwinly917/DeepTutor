@@ -11,6 +11,9 @@
 ## Locked Decisions
 
 - Baseline branch stays `codex/ppt-image-semantic-generation`.
+- Do not preserve legacy `idea` / `outline` / `descriptions` PPT creation modes.
+- Do not preserve the old `markdown -> PPTGenerator` PPT generation path.
+- Centralize PPT prompts in a dedicated prompt manager, borrowing the organizational pattern from `banana-slides`.
 - `from_sources` uses a create-time frozen snapshot. Do not make report content depend on runtime re-fetch by default.
 - `source_refs` is expanded to:
 
@@ -180,13 +183,12 @@ type SourceRef = {
 ### Phase 3: Orchestrator and Backend API
 
 - Extend `src/api/routers/ppt.py`:
-  - broaden `creation_type`
+  - narrow `creation_type` to `from_research/from_notebook/from_sources`
   - add `/generate/full`
   - add `/pages/{page_id}/chat`
   - add `/pages/{page_id}/chat-history`
-- Implement orchestrator flow with legacy compatibility:
-  - old `idea/outline/descriptions` continue working
-  - new `from_research/from_notebook/from_sources` go through extractors
+- Introduce a centralized PPT prompt manager and route outline/description/image prompts through it.
+- Implement orchestrator flow only for `from_research/from_notebook/from_sources`.
 - Enforce export guards:
   - dirty page present -> reject
   - missing image present -> reject

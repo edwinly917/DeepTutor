@@ -22,17 +22,7 @@ def _service():
 class CreatePptProjectRequest(BaseModel):
     notebook_id: str | None = None
     session_id: str | None = None
-    creation_type: Literal[
-        "idea",
-        "outline",
-        "descriptions",
-        "from_research",
-        "from_notebook",
-        "from_sources",
-    ]
-    idea_prompt: str | None = None
-    outline_text: str | None = None
-    description_text: str | None = None
+    creation_type: Literal["from_research", "from_notebook", "from_sources"]
     source_content: str | None = None
     template_style: str | None = None
     template_image_path: str | None = None
@@ -75,16 +65,6 @@ class SlideChatRequest(BaseModel):
     message: str
 
 
-class DeriveIdeaRequest(BaseModel):
-    source_content: str
-
-
-class DeriveOutlineRequest(BaseModel):
-    source_content: str
-    style_prompt: str | None = None
-    max_slides: int | None = None
-
-
 class StylePreviewRequest(BaseModel):
     style_prompt: str | None = None
 
@@ -107,30 +87,6 @@ async def upload_reference_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=str(exc))
     except ReferenceStyleExtractionError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@router.post("/helpers/derive-idea")
-async def derive_idea(request: DeriveIdeaRequest):
-    try:
-        return await _service().derive_idea(request.source_content)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@router.post("/helpers/derive-outline")
-async def derive_outline(request: DeriveOutlineRequest):
-    try:
-        return await _service().derive_outline(
-            request.source_content,
-            style_prompt=request.style_prompt,
-            max_slides=request.max_slides,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

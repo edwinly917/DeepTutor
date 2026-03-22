@@ -35,7 +35,7 @@ def test_from_notebook_project_persists_record_ids_and_freezes_selected_records(
     }
 
     monkeypatch.setattr(
-        "src.services.export.ppt_project_service.NotebookManager.get_notebook",
+        "src.services.ppt.content_extractors.NotebookManager.get_notebook",
         lambda self, notebook_id: notebook if notebook_id == "nb-1" else None,
     )
 
@@ -43,9 +43,6 @@ def test_from_notebook_project_persists_record_ids_and_freezes_selected_records(
         notebook_id="nb-1",
         session_id=None,
         creation_type="from_notebook",
-        idea_prompt=None,
-        outline_text=None,
-        description_text=None,
         source_content=None,
         template_style=None,
         template_image_path=None,
@@ -82,9 +79,6 @@ def test_from_sources_project_freezes_report_snapshot_by_value(ppt_service):
         notebook_id="nb-1",
         session_id="session-1",
         creation_type="from_sources",
-        idea_prompt="topic",
-        outline_text=None,
-        description_text=None,
         source_content=None,
         template_style=None,
         template_image_path=None,
@@ -108,7 +102,7 @@ def test_update_page_marks_dirty_and_regenerate_page_refreshes_description_promp
     project = ppt_store.create_project(
         notebook_id="nb-1",
         session_id=None,
-        creation_type="descriptions",
+        creation_type="from_sources",
         idea_prompt=None,
         outline_text=None,
         description_text="seed",
@@ -181,7 +175,7 @@ def test_update_page_marks_dirty_and_regenerate_page_refreshes_description_promp
         func(task_id, *args, **kwargs)
 
     monkeypatch.setattr(
-        "src.services.export.ppt_project_service.ppt_task_manager.submit",
+        "src.services.ppt.orchestrator.ppt_task_manager.submit",
         run_inline,
     )
 
@@ -208,7 +202,7 @@ def test_export_pptx_rejects_dirty_pages(ppt_service):
     project = ppt_store.create_project(
         notebook_id="nb-1",
         session_id=None,
-        creation_type="descriptions",
+        creation_type="from_sources",
         idea_prompt=None,
         outline_text=None,
         description_text="seed",

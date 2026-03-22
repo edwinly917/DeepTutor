@@ -21,9 +21,6 @@ from src.api.utils.task_id_manager import TaskIDManager
 from src.logging import get_logger
 from src.services.config import load_config_with_main
 from src.services.export.pdf_generator import PDFGenerator
-
-# Import the new PPTGenerator service
-from src.services.export.ppt_generator import PPTGenerator
 from src.services.export.ppt_project_service import get_ppt_project_service
 from src.services.export.source_report import SourceReportGenerator
 from src.services.llm import get_llm_config
@@ -293,59 +290,40 @@ class BananaPptImageRequest(BaseModel):
 @router.post("/export_pptx")
 async def export_pptx(request: ExportPptxRequest, response: Response):
     _mark_ppt_deprecated(response)
-    project_root = _project_root()
-    export_dir = project_root / "data" / "user" / "research" / "exports"
-    template_dir = project_root / "data" / "user" / "notebook" / "ppt_templates"
-
-    if request.template_name:
-        generator = PPTGenerator(export_dir=export_dir)
-        try:
-            candidate = template_dir / request.template_name
-            if not candidate.exists():
-                raise _deprecated_http_exception(status_code=404, detail="Template not found")
-            return await generator.generate(
-                markdown=request.markdown,
-                title=request.title,
-                style_prompt=request.style_prompt,
-                style_model=request.style_model,
-                style_api_key=request.style_api_key,
-                style_base_url=request.style_base_url,
-                max_slides=request.max_slides,
-                template_path=candidate,
-            )
-        except HTTPException:
-            raise
-        except ImportError as exc:
-            raise _deprecated_http_exception(
-                status_code=500,
-                detail=f"PPT export dependencies not installed: {exc}",
-            )
-        except Exception as exc:
-            logger.error(f"Legacy PPT export failed: {exc}")
-            raise _deprecated_http_exception(status_code=500, detail=str(exc))
-
     try:
         service = _ppt_service()
+        markdown = (request.markdown or "").strip()
+        if not markdown:
+            raise ValueError("Markdown content is required")
+        if request.template_name:
+            logger.warning("Ignoring legacy PPT template export path; using PPT v2 image pipeline")
+        source_title = (request.title or "").strip() or "Research Report"
         project = service.create_project(
             notebook_id=None,
             session_id=None,
-            creation_type="descriptions",
-            idea_prompt=None,
-            outline_text=None,
-            description_text=request.markdown,
-            source_content=request.markdown,
+            creation_type="from_research",
+            source_content=markdown,
             template_style=request.style_prompt,
             template_image_path=None,
             reference_style_prompt=None,
             image_aspect_ratio="16:9",
             language="zh",
             reference_sources=[],
+            source_refs=[
+                {
+                    "type": "report",
+                    "title": source_title,
+                    "source_key": source_title,
+                    "content": markdown,
+                }
+            ],
         )
-        await service.generate_outline(project["id"], max_slides=request.max_slides)
-        description_task = service.start_generate_descriptions(project["id"])
-        await _wait_for_ppt_task(project["id"], description_task["id"])
-        image_task = service.start_generate_images(project["id"])
-        await _wait_for_ppt_task(project["id"], image_task["id"])
+        full_task = service.start_generate_full(
+            project["id"],
+            style_prompt=request.style_prompt,
+            max_slides=request.max_slides,
+        )
+        await _wait_for_ppt_task(project["id"], full_task["id"])
         return service.export_pptx_with_title(
             project["id"],
             title_override=request.title,
@@ -472,12 +450,16 @@ async def generate_ppt_outline(request: BananaPptOutlineRequest, response: Respo
         raise _deprecated_http_exception(status_code=403, detail="Banana PPT is disabled")
 
     try:
-        result = await _ppt_service().derive_outline(
-            request.source_content,
-            style_prompt=request.style_prompt,
+        service = _ppt_service()
+        style_briefs = await service._build_style_briefs(template_style=request.style_prompt)
+        result = await service.banana_service.generate_outline(
+            source_content=request.source_content,
+            style_prompt=style_briefs.get("outline_style_brief"),
             max_slides=request.max_slides,
+            language="zh",
+            source_type="from_research",
         )
-        return result["presentation_outline"]
+        return result
     except Exception as exc:
         logger.error(f"Banana PPT outline failed: {exc}")
         raise _deprecated_http_exception(status_code=500, detail=str(exc))

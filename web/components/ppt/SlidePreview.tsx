@@ -10,8 +10,10 @@ interface SlidePreviewProps {
   themeColor?: string;
   accentColor?: string;
   isGenerating?: boolean;
+  isSelected?: boolean;
   onUpdateSlide: (index: number, updatedSlide: SlideContent) => void;
   onRegenerateSlide?: (index: number, slide: SlideContent) => void;
+  onSelectSlide?: (index: number, slide: SlideContent) => void;
 }
 
 const SlidePreview: React.FC<SlidePreviewProps> = ({
@@ -20,8 +22,10 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({
   themeColor = "#3b82f6",
   accentColor = "#f59e0b",
   isGenerating,
+  isSelected,
   onUpdateSlide,
   onRegenerateSlide,
+  onSelectSlide,
 }) => {
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onUpdateSlide(index, { ...slide, title: e.target.value });
@@ -258,16 +262,33 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden flex flex-col aspect-[16/9] transition-all hover:shadow-xl group relative">
+    <div
+      className={`bg-white rounded-xl shadow-lg border overflow-hidden flex flex-col aspect-[16/9] transition-all hover:shadow-xl group relative cursor-pointer ${
+        isSelected
+          ? "border-slate-900 ring-2 ring-slate-900/10"
+          : "border-gray-100"
+      }`}
+      onClick={() => onSelectSlide?.(index, slide)}
+    >
       {onRegenerateSlide && slide.pageId && (
         <button
           type="button"
-          onClick={() => onRegenerateSlide(index, slide)}
+          onClick={(event) => {
+            event.stopPropagation();
+            onRegenerateSlide(index, slide);
+          }}
           disabled={Boolean(isGenerating)}
           className="absolute top-2 left-2 z-20 rounded bg-white/90 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-700 shadow-sm transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
         >
           Repaint
         </button>
+      )}
+      {!isGenerating && slide.isDirty && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/35 backdrop-blur-[1px]">
+          <span className="rounded-full bg-white/90 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-700 shadow-sm">
+            Needs Regen
+          </span>
+        </div>
       )}
       <div className="absolute top-2 right-2 z-20">
         <span className="text-[7px] bg-slate-800/80 text-white px-1.5 py-0.5 rounded backdrop-blur-sm opacity-60 group-hover:opacity-100 transition-opacity uppercase font-bold">

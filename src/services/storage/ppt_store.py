@@ -11,6 +11,7 @@ from .db import (
     ppt_page_image_versions,
     ppt_pages,
     ppt_projects,
+    ppt_slide_chat_messages,
     ppt_tasks,
     utc_now,
 )
@@ -43,7 +44,13 @@ def _project_row_to_dict(row: Any) -> dict[str, Any]:
         "reference_style_prompt": row.reference_style_prompt,
         "image_aspect_ratio": row.image_aspect_ratio,
         "language": row.language,
-        "reference_sources": row.reference_sources or [],
+        "reference_sources": getattr(row, "reference_sources", None) or [],
+        "source_refs": getattr(row, "source_refs", None)
+        or getattr(row, "reference_sources", None)
+        or [],
+        "record_ids": getattr(row, "record_ids", None) or [],
+        "normalized_content": getattr(row, "normalized_content", None),
+        "content_cached_at": _to_iso(getattr(row, "content_cached_at", None)),
         "status": row.status,
         "created_at": _to_iso(row.created_at),
         "updated_at": _to_iso(row.updated_at),
@@ -61,6 +68,7 @@ def _page_row_to_dict(row: Any) -> dict[str, Any]:
         "image_prompt": row.image_prompt,
         "generated_image_path": row.generated_image_path,
         "cached_image_path": row.cached_image_path,
+        "is_dirty": bool(getattr(row, "is_dirty", False)),
         "status": row.status,
         "created_at": _to_iso(row.created_at),
         "updated_at": _to_iso(row.updated_at),
@@ -94,6 +102,17 @@ def _image_version_row_to_dict(row: Any) -> dict[str, Any]:
     }
 
 
+def _slide_chat_row_to_dict(row: Any) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "page_id": row.page_id,
+        "role": row.role,
+        "content": row.content,
+        "edit_type": row.edit_type,
+        "created_at": _to_iso(row.created_at),
+    }
+
+
 def create_project(
     *,
     notebook_id: str | None,
@@ -110,6 +129,10 @@ def create_project(
     language: str,
     reference_sources: list[dict[str, Any]] | None,
     status: str,
+    source_refs: list[dict[str, Any]] | None = None,
+    record_ids: list[str] | None = None,
+    normalized_content: str | None = None,
+    content_cached_at: datetime | None = None,
 ) -> dict[str, Any]:
     project_id = _new_id()
     now = utc_now()
@@ -128,6 +151,10 @@ def create_project(
         image_aspect_ratio=image_aspect_ratio,
         language=language,
         reference_sources=reference_sources or [],
+        source_refs=source_refs or reference_sources or [],
+        record_ids=record_ids or [],
+        normalized_content=normalized_content,
+        content_cached_at=content_cached_at,
         status=status,
         created_at=now,
         updated_at=now,
@@ -185,6 +212,7 @@ def create_page(
     image_prompt: str | None = None,
     generated_image_path: str | None = None,
     cached_image_path: str | None = None,
+    is_dirty: bool = False,
     status: str = "DRAFT",
 ) -> dict[str, Any]:
     page_id = _new_id()
@@ -199,6 +227,7 @@ def create_page(
         image_prompt=image_prompt,
         generated_image_path=generated_image_path,
         cached_image_path=cached_image_path,
+        is_dirty=is_dirty,
         status=status,
         created_at=now,
         updated_at=now,
@@ -374,6 +403,44 @@ def activate_page_image_version(page_id: str, version_number: int) -> dict[str, 
             .where(ppt_page_image_versions.c.version_number == version_number)
         ).first()
     return _image_version_row_to_dict(row) if row else None
+
+
+def create_slide_chat_message(
+    *,
+    page_id: str,
+    role: str,
+    content: str,
+    edit_type: str | None = None,
+) -> dict[str, Any]:
+    message_id = _new_id()
+    now = utc_now()
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            ppt_slide_chat_messages.insert().values(
+                id=message_id,
+                page_id=page_id,
+                role=role,
+                content=content,
+                edit_type=edit_type,
+                created_at=now,
+            )
+        )
+        row = conn.execute(
+            select(ppt_slide_chat_messages).where(ppt_slide_chat_messages.c.id == message_id)
+        ).first()
+    return _slide_chat_row_to_dict(row)
+
+
+def list_slide_chat_messages(page_id: str) -> list[dict[str, Any]]:
+    engine = get_engine()
+    with engine.begin() as conn:
+        rows = conn.execute(
+            select(ppt_slide_chat_messages)
+            .where(ppt_slide_chat_messages.c.page_id == page_id)
+            .order_by(ppt_slide_chat_messages.c.created_at.asc())
+        ).all()
+    return [_slide_chat_row_to_dict(row) for row in rows]
 
 
 def get_project_bundle(project_id: str) -> dict[str, Any] | None:

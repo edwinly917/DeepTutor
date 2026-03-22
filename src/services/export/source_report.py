@@ -1,6 +1,9 @@
 import html
+import ipaddress
 import re
+import socket
 from typing import Any, Dict, List, Optional
+from urllib.parse import urljoin, urlparse
 
 import requests
 
@@ -168,16 +171,58 @@ class SourceReportGenerator:
 
     def _fetch_web_content(self, url: str) -> str:
         headers = {"User-Agent": "DeepTutor/1.0"}
-        resp = requests.get(url, headers=headers, timeout=self.request_timeout)
-        resp.raise_for_status()
-        text = resp.text or ""
+        current_url = url
+        for _ in range(4):
+            self._validate_safe_fetch_url(current_url)
+            resp = requests.get(
+                current_url,
+                headers=headers,
+                timeout=self.request_timeout,
+                allow_redirects=False,
+            )
+            if resp.is_redirect or resp.is_permanent_redirect:
+                location = (resp.headers.get("Location") or "").strip()
+                if not location:
+                    raise ValueError("Redirect response missing Location header")
+                current_url = urljoin(current_url, location)
+                continue
+            resp.raise_for_status()
+            text = resp.text or ""
 
-        text = re.sub(r"(?is)<(script|style)[^>]*>.*?</\\1>", " ", text)
-        text = re.sub(r"(?is)<[^>]+>", " ", text)
-        text = html.unescape(text)
-        text = re.sub(r"\\s+", " ", text).strip()
+            text = re.sub(r"(?is)<(script|style)[^>]*>.*?</\\1>", " ", text)
+            text = re.sub(r"(?is)<[^>]+>", " ", text)
+            text = html.unescape(text)
+            text = re.sub(r"\\s+", " ", text).strip()
 
-        return text
+            return text
+
+        raise ValueError("Too many redirects while fetching source content")
+
+    def _validate_safe_fetch_url(self, url: str) -> None:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError(f"Unsupported URL scheme: {parsed.scheme or 'missing'}")
+        if not parsed.hostname:
+            raise ValueError("Missing hostname")
+
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            addr_info = socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            raise ValueError(f"Cannot resolve hostname: {parsed.hostname}") from exc
+
+        for _, _, _, _, sockaddr in addr_info:
+            raw_ip = sockaddr[0].split("%", 1)[0]
+            ip_obj = ipaddress.ip_address(raw_ip)
+            if (
+                ip_obj.is_loopback
+                or ip_obj.is_private
+                or ip_obj.is_link_local
+                or ip_obj.is_multicast
+                or ip_obj.is_reserved
+                or ip_obj.is_unspecified
+            ):
+                raise ValueError(f"Access to non-public network is not allowed: {raw_ip}")
 
     async def _fetch_kb_summary(self, kb_name: str, topic: Optional[str]) -> str:
         query = topic or f"Summarize the key points in knowledge base: {kb_name}."

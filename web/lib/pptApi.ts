@@ -3,6 +3,7 @@ import {
   PptConfigResponse,
   PptProject,
   PptReferenceImageUploadResponse,
+  PptSlideChatMessage,
   PptTask,
 } from "@/types/ppt";
 
@@ -156,6 +157,22 @@ export async function generatePptImages(
   return readJson<PptTask>(res);
 }
 
+export async function generatePptFull(
+  projectId: string,
+  options?: {
+    style_prompt?: string;
+    max_slides?: number;
+    detail_level?: "concise" | "default" | "detailed";
+  },
+): Promise<PptTask> {
+  const res = await fetch(apiUrl(`/api/v1/ppt/projects/${projectId}/generate/full`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(options || {}),
+  });
+  return readJson<PptTask>(res);
+}
+
 export async function fetchPptTask(
   projectId: string,
   taskId: string,
@@ -198,6 +215,42 @@ export async function regeneratePptPageImage(
     { method: "POST" },
   );
   return readJson<PptTask>(res);
+}
+
+export async function chatEditPptPage(
+  projectId: string,
+  pageId: string,
+  message: string,
+): Promise<{
+  task: PptTask;
+  edit_type: string;
+  assistant_message: string;
+}> {
+  const res = await fetch(
+    apiUrl(`/api/v1/ppt/projects/${projectId}/pages/${pageId}/chat`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    },
+  );
+  return readJson<{
+    task: PptTask;
+    edit_type: string;
+    assistant_message: string;
+  }>(res);
+}
+
+export async function fetchPptPageChatHistory(
+  projectId: string,
+  pageId: string,
+): Promise<{
+  messages: PptSlideChatMessage[];
+}> {
+  const res = await fetch(
+    apiUrl(`/api/v1/ppt/projects/${projectId}/pages/${pageId}/chat-history`),
+  );
+  return readJson<{ messages: PptSlideChatMessage[] }>(res);
 }
 
 export async function exportPptProjectPptx(

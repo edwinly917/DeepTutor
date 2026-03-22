@@ -15,11 +15,13 @@ import uuid
 
 from PIL import Image
 
+from src.api.utils.notebook_manager import NotebookManager
 from src.logging import get_logger
 from src.services.config import get_banana_ppt_config, load_config_with_main
 from src.services.export.banana_ppt_service import BananaPptService
 from src.services.export.ppt_generator import PPTGenerator
 from src.services.export.ppt_image_export_service import PptImageExportService
+from src.services.export.source_report import SourceReportGenerator
 from src.services.export.ppt_task_manager import ppt_task_manager
 from src.services.llm import complete as llm_complete
 from src.services.llm import get_llm_client, get_llm_config, get_token_limit_kwargs
@@ -40,6 +42,20 @@ _LAYOUT_SEQUENCE = [
     "TYPOGRAPHIC",
 ]
 
+_ACTIVE_TASK_STATUSES = {"PENDING", "RUNNING"}
+_PROJECT_LEVEL_TASK_TYPES = {"GENERATE_DESCRIPTIONS", "GENERATE_IMAGES", "GENERATE_FULL"}
+_PAGE_LEVEL_TASK_TYPES = {"REGENERATE_PAGE_IMAGE", "PAGE_CHAT_EDIT"}
+_SUPPORTED_CREATION_TYPES = {
+    "idea",
+    "outline",
+    "descriptions",
+    "from_research",
+    "from_notebook",
+    "from_sources",
+}
+_NOTEBOOK_RECORD_CHAR_LIMIT = 2400
+_NOTEBOOK_TOTAL_CHAR_LIMIT = 14000
+
 
 @dataclass
 class _TaskProgress:
@@ -50,6 +66,8 @@ class _TaskProgress:
     warnings: list[str]
     failed_count: int
     download_url: str | None = None
+    page_ids: list[str] | None = None
+    phase: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -60,6 +78,8 @@ class _TaskProgress:
             "warnings": self.warnings,
             "failed_count": self.failed_count,
             "download_url": self.download_url,
+            "page_ids": self.page_ids or [],
+            "phase": self.phase,
         }
 
 
@@ -97,7 +117,15 @@ class PptProjectService:
             ),
             "style_templates": style_templates,
             "polling_hint_ms": self.polling_hint_ms,
-            "creation_modes": ["auto", "idea", "outline", "descriptions"],
+            "creation_modes": [
+                "auto",
+                "idea",
+                "outline",
+                "descriptions",
+                "from_research",
+                "from_notebook",
+                "from_sources",
+            ],
         }
 
     def create_project(
@@ -116,11 +144,33 @@ class PptProjectService:
         image_aspect_ratio: str,
         language: str,
         reference_sources: list[dict[str, Any]] | None,
+        source_refs: list[dict[str, Any]] | None = None,
+        record_ids: list[str] | None = None,
     ) -> dict[str, Any]:
-        if creation_type not in {"idea", "outline", "descriptions"}:
+        if creation_type not in _SUPPORTED_CREATION_TYPES:
             raise ValueError("Invalid creation_type")
         if image_aspect_ratio not in {"16:9", "4:3"}:
             raise ValueError("Invalid image_aspect_ratio")
+        frozen_source_content = (source_content or "").strip() or None
+        frozen_source_refs = [dict(item) for item in (source_refs or reference_sources or [])]
+        normalized_content: str | None = None
+
+        if creation_type == "from_research":
+            frozen_source_content, frozen_source_refs = self._freeze_research_project_input(
+                notebook_id=notebook_id,
+                session_id=session_id,
+                source_content=frozen_source_content,
+                source_refs=frozen_source_refs,
+            )
+        elif creation_type == "from_notebook":
+            frozen_source_content = frozen_source_content or self._freeze_notebook_project_input(
+                notebook_id=notebook_id,
+                record_ids=record_ids or [],
+            )
+        elif creation_type == "from_sources":
+            if not frozen_source_refs:
+                raise ValueError("source_refs are required for from_sources")
+
         project = ppt_store.create_project(
             notebook_id=notebook_id,
             session_id=session_id,
@@ -128,13 +178,16 @@ class PptProjectService:
             idea_prompt=(idea_prompt or "").strip() or None,
             outline_text=(outline_text or "").strip() or None,
             description_text=(description_text or "").strip() or None,
-            source_content=(source_content or "").strip() or None,
+            source_content=frozen_source_content,
             template_style=(template_style or "").strip() or None,
             template_image_path=(template_image_path or "").strip() or None,
             reference_style_prompt=(reference_style_prompt or "").strip() or None,
             image_aspect_ratio=image_aspect_ratio,
             language=language or "zh",
             reference_sources=reference_sources or [],
+            source_refs=frozen_source_refs,
+            record_ids=record_ids or [],
+            normalized_content=normalized_content,
             status="DRAFT",
         )
         return self.get_project_bundle(project["id"])
@@ -282,6 +335,7 @@ class PptProjectService:
                 or project
             )
         project = await self._ensure_reference_style_prompt(project)
+        project, _ = await self._prepare_project_source_content(project_id, project)
 
         normalized_outline = await self._build_outline(
             project, style_prompt=style_prompt, max_slides=max_slides
@@ -307,10 +361,17 @@ class PptProjectService:
         project = ppt_store.get_project(project_id)
         if not project:
             raise ValueError("Project not found")
+        self._assert_no_active_project_task(project_id)
         pages = self._filter_pages(project_id, page_ids)
         if not pages:
             raise ValueError("No pages available for description generation")
-        progress = self._build_progress(0, len(pages), "等待生成页面描述", failed_count=0)
+        progress = self._build_progress(
+            0,
+            len(pages),
+            "等待生成页面描述",
+            failed_count=0,
+            page_ids=[page["id"] for page in pages],
+        )
         task = ppt_store.create_task(project_id, "GENERATE_DESCRIPTIONS", progress=progress)
         for page in pages:
             ppt_store.update_page(page["id"], status="DESCRIPTION_QUEUED")
@@ -329,10 +390,17 @@ class PptProjectService:
         project = ppt_store.get_project(project_id)
         if not project:
             raise ValueError("Project not found")
+        self._assert_no_active_project_task(project_id)
         pages = self._filter_pages(project_id, page_ids)
         if not pages:
             raise ValueError("No pages available for image generation")
-        progress = self._build_progress(0, len(pages), "等待生成页面图片", failed_count=0)
+        progress = self._build_progress(
+            0,
+            len(pages),
+            "等待生成页面图片",
+            failed_count=0,
+            page_ids=[page["id"] for page in pages],
+        )
         task = ppt_store.create_task(project_id, "GENERATE_IMAGES", progress=progress)
         for page in pages:
             ppt_store.update_page(page["id"], status="IMAGE_QUEUED")
@@ -340,8 +408,124 @@ class PptProjectService:
         ppt_task_manager.submit(task["id"], self._run_generate_images, project_id, page_ids or [])
         return task
 
+    def start_generate_full(
+        self,
+        project_id: str,
+        *,
+        style_prompt: str | None = None,
+        max_slides: int | None = None,
+        detail_level: str = "default",
+    ) -> dict[str, Any]:
+        project = ppt_store.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+        self._assert_no_active_project_task(project_id)
+        progress = self._build_progress(
+            0,
+            3,
+            "等待开始完整 PPT 生成",
+            failed_count=0,
+            phase="prepare",
+        )
+        task = ppt_store.create_task(project_id, "GENERATE_FULL", progress=progress)
+        ppt_task_manager.submit(
+            task["id"],
+            self._run_generate_full,
+            project_id,
+            style_prompt,
+            max_slides,
+            detail_level,
+        )
+        return task
+
     def get_task(self, project_id: str, task_id: str) -> dict[str, Any] | None:
         return ppt_store.get_task(project_id, task_id)
+
+    def list_slide_chat_history(self, project_id: str, page_id: str) -> list[dict[str, Any]]:
+        page = ppt_store.get_page(page_id)
+        if not page or page["project_id"] != project_id:
+            raise ValueError("Page not found")
+        return ppt_store.list_slide_chat_messages(page_id)
+
+    def start_page_chat_edit(
+        self,
+        project_id: str,
+        page_id: str,
+        *,
+        message: str,
+    ) -> dict[str, Any]:
+        page = ppt_store.get_page(page_id)
+        if not page or page["project_id"] != project_id:
+            raise ValueError("Page not found")
+        user_message = (message or "").strip()
+        if not user_message:
+            raise ValueError("message is empty")
+        self._assert_page_regeneration_allowed(project_id, page_id)
+        project = ppt_store.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+
+        edit_type = self._classify_page_chat_edit(project, page, user_message)
+        assistant_message: str
+        if edit_type == "outline_edit":
+            updated_outline = self._rewrite_outline_from_chat(page, user_message)
+            assistant_message = updated_outline.pop("assistant_message")
+            page = self.update_page(
+                project_id,
+                page_id,
+                title=updated_outline["title"],
+                points=updated_outline["points"],
+            )
+        elif edit_type == "description_edit":
+            updated_description = self._rewrite_description_from_chat(page, user_message)
+            assistant_message = updated_description.pop("assistant_message")
+            page = self.update_page(
+                project_id,
+                page_id,
+                description_text=updated_description["description_text"],
+            )
+        else:
+            updated_image = self._rewrite_image_prompt_from_chat(page, user_message)
+            assistant_message = updated_image.pop("assistant_message")
+            page = self.update_page(
+                project_id,
+                page_id,
+                image_prompt=updated_image["image_prompt"],
+            )
+
+        ppt_store.create_slide_chat_message(
+            page_id=page_id,
+            role="user",
+            content=user_message,
+            edit_type=edit_type,
+        )
+        ppt_store.create_slide_chat_message(
+            page_id=page_id,
+            role="assistant",
+            content=assistant_message,
+            edit_type=edit_type,
+        )
+
+        total_steps = 1 if edit_type == "image_edit" else 2
+        task = ppt_store.create_task(
+            project_id,
+            "PAGE_CHAT_EDIT",
+            progress=self._build_progress(
+                0,
+                total_steps,
+                "等待根据对话修改页面",
+                failed_count=0,
+                page_ids=[page_id],
+                phase="prepare",
+            ),
+        )
+        ppt_task_manager.submit(task["id"], self._run_page_chat_edit, project_id, page_id, edit_type)
+        return {
+            "task": task,
+            "edit_type": edit_type,
+            "assistant_message": assistant_message,
+            "page": page,
+        }
 
     def update_page(
         self,
@@ -356,6 +540,13 @@ class PptProjectService:
         page = ppt_store.get_page(page_id)
         if not page or page["project_id"] != project_id:
             raise ValueError("Page not found")
+        if (
+            title is None
+            and points is None
+            and description_text is None
+            and image_prompt is None
+        ):
+            return page
 
         outline_content = dict(page["outline_content"] or {})
         if title is not None:
@@ -382,6 +573,8 @@ class PptProjectService:
             outline_content=outline_content,
             description_content=description_content,
             image_prompt=image_prompt if image_prompt is not None else page.get("image_prompt"),
+            is_dirty=True,
+            status="DRAFT",
         )
         if not updated:
             raise ValueError("Failed to update page")
@@ -411,7 +604,37 @@ class PptProjectService:
         return version
 
     def start_regenerate_page_image(self, project_id: str, page_id: str) -> dict[str, Any]:
-        return self.start_generate_images(project_id, page_ids=[page_id])
+        page = ppt_store.get_page(page_id)
+        if not page or page["project_id"] != project_id:
+            raise ValueError("Page not found")
+        self._assert_page_regeneration_allowed(project_id, page_id)
+        requires_full_regeneration = bool(page.get("is_dirty")) or page.get("status") in {
+            "DRAFT",
+            "DESCRIPTION_QUEUED",
+            "DESCRIPTION_GENERATING",
+            "DESCRIPTION_READY",
+        }
+        total_steps = 2 if requires_full_regeneration else 1
+        progress = self._build_progress(
+            0,
+            total_steps,
+            "等待重生成页面",
+            failed_count=0,
+            page_ids=[page_id],
+        )
+        task = ppt_store.create_task(project_id, "REGENERATE_PAGE_IMAGE", progress=progress)
+        if requires_full_regeneration:
+            ppt_store.update_page(page_id, status="DESCRIPTION_QUEUED", is_dirty=True)
+        else:
+            ppt_store.update_page(page_id, status="IMAGE_QUEUED", is_dirty=True)
+        ppt_task_manager.submit(
+            task["id"],
+            self._run_page_regeneration,
+            project_id,
+            page_id,
+            requires_full_regeneration,
+        )
+        return task
 
     def export_pptx(self, project_id: str, page_ids: list[str] | None = None) -> dict[str, Any]:
         return self.export_pptx_with_title(project_id, page_ids=page_ids)
@@ -426,10 +649,15 @@ class PptProjectService:
         project = self.get_project_bundle(project_id)
         if not project:
             raise ValueError("Project not found")
+        self._assert_no_active_export_conflict(project_id, page_ids)
         pages = self._filter_pages(project_id, page_ids)
+        if any(page.get("is_dirty") for page in pages):
+            raise ValueError("Some slides are pending regeneration and cannot be exported")
         image_paths = self._collect_image_paths(pages)
         if not image_paths:
             raise ValueError("No generated images available for PPT export")
+        if len(image_paths) != len(pages):
+            raise ValueError("Some slides are missing generated images")
         title = (title_override or "").strip() or self._resolve_project_title(project)
         return self.export_service.export_pptx(
             project_id=project_id,
@@ -451,10 +679,15 @@ class PptProjectService:
         project = self.get_project_bundle(project_id)
         if not project:
             raise ValueError("Project not found")
+        self._assert_no_active_export_conflict(project_id, page_ids)
         pages = self._filter_pages(project_id, page_ids)
+        if any(page.get("is_dirty") for page in pages):
+            raise ValueError("Some slides are pending regeneration and cannot be exported")
         image_paths = self._collect_image_paths(pages)
         if not image_paths:
             raise ValueError("No generated images available for PDF export")
+        if len(image_paths) != len(pages):
+            raise ValueError("Some slides are missing generated images")
         title = (title_override or "").strip() or self._resolve_project_title(project)
         return self.export_service.export_pdf(
             project_id=project_id, title=title, image_paths=image_paths
@@ -489,6 +722,14 @@ class PptProjectService:
                 or project.get("idea_prompt")
                 or ""
             )
+        elif project["creation_type"] in {"from_research", "from_notebook", "from_sources"}:
+            source_content = (
+                project.get("source_content")
+                or project.get("normalized_content")
+                or project.get("idea_prompt")
+                or project.get("description_text")
+                or ""
+            )
         else:
             source_content = (
                 project.get("idea_prompt")
@@ -504,6 +745,176 @@ class PptProjectService:
         for index, slide in enumerate(outline.get("slides") or []):
             slide.setdefault("layout", self._default_layout(index))
         return outline
+
+    async def _prepare_project_source_content(
+        self, project_id: str, project: dict[str, Any]
+    ) -> tuple[dict[str, Any], list[str]]:
+        creation_type = project.get("creation_type")
+        if creation_type not in {"from_research", "from_notebook", "from_sources"}:
+            return project, []
+
+        if creation_type == "from_research":
+            if project.get("source_content") and project.get("source_refs"):
+                return project, []
+            source_content, source_refs = self._freeze_research_project_input(
+                notebook_id=project.get("notebook_id"),
+                session_id=project.get("session_id"),
+                source_content=project.get("source_content"),
+                source_refs=project.get("source_refs") or project.get("reference_sources") or [],
+            )
+            project = (
+                ppt_store.update_project(
+                    project_id,
+                    source_content=source_content,
+                    source_refs=source_refs,
+                )
+                or project
+            )
+            return project, []
+
+        if creation_type == "from_notebook":
+            if project.get("source_content"):
+                return project, []
+            source_content = self._freeze_notebook_project_input(
+                notebook_id=project.get("notebook_id"),
+                record_ids=project.get("record_ids") or [],
+            )
+            project = ppt_store.update_project(project_id, source_content=source_content) or project
+            return project, []
+
+        if project.get("normalized_content"):
+            if not project.get("source_content"):
+                project = (
+                    ppt_store.update_project(project_id, source_content=project.get("normalized_content"))
+                    or project
+                )
+            return project, []
+
+        source_refs = project.get("source_refs") or project.get("reference_sources") or []
+        if not source_refs:
+            raise ValueError("from_sources requires frozen source_refs")
+        generator = SourceReportGenerator()
+        result = await generator.generate(
+            sources=[dict(item) for item in source_refs],
+            topic=(project.get("idea_prompt") or "").strip() or None,
+        )
+        markdown = (result.get("markdown") or "").strip()
+        if not markdown:
+            raise ValueError("No synthesized markdown was produced from selected sources")
+        warnings = self._format_skipped_source_warnings(result.get("skipped_sources") or [])
+        project = (
+            ppt_store.update_project(
+                project_id,
+                source_content=markdown,
+                normalized_content=markdown,
+                content_cached_at=datetime.now(timezone.utc),
+            )
+            or project
+        )
+        return project, warnings
+
+    def _freeze_research_project_input(
+        self,
+        *,
+        notebook_id: str | None,
+        session_id: str | None,
+        source_content: str | None,
+        source_refs: list[dict[str, Any]],
+    ) -> tuple[str, list[dict[str, Any]]]:
+        frozen_content = (source_content or "").strip()
+        frozen_refs = [dict(item) for item in source_refs]
+        if frozen_content and frozen_refs:
+            return frozen_content, frozen_refs
+        session = self._resolve_notebook_session(notebook_id, session_id)
+        research_report = (session.get("research_report") or "").strip() or frozen_content
+        if not research_report:
+            raise ValueError("No research report available for from_research")
+        if not frozen_refs:
+            frozen_refs = [
+                {
+                    "type": "report",
+                    "title": session.get("title") or "Research Report",
+                    "source_key": session.get("session_id") or session_id,
+                    "content": research_report,
+                }
+            ]
+        return research_report, frozen_refs
+
+    def _freeze_notebook_project_input(
+        self,
+        *,
+        notebook_id: str | None,
+        record_ids: list[str],
+    ) -> str:
+        if not notebook_id:
+            raise ValueError("notebook_id is required for from_notebook")
+        notebook = NotebookManager().get_notebook(notebook_id)
+        if not notebook:
+            raise ValueError("Notebook not found")
+        records = notebook.get("records") or []
+        if record_ids:
+            wanted = {record_id for record_id in record_ids if record_id}
+            records = [record for record in records if record.get("id") in wanted]
+        if not records:
+            raise ValueError("No notebook records available for from_notebook")
+        return self._normalize_notebook_records(records)
+
+    def _resolve_notebook_session(
+        self, notebook_id: str | None, session_id: str | None
+    ) -> dict[str, Any]:
+        if not notebook_id:
+            raise ValueError("notebook_id is required for from_research")
+        manager = NotebookManager()
+        if session_id:
+            session = next(
+                (
+                    item
+                    for item in manager.list_sessions(notebook_id)
+                    if item.get("session_id") == session_id
+                ),
+                None,
+            )
+            if session:
+                return session
+        session = manager.get_latest_session(notebook_id)
+        if not session:
+            raise ValueError("Notebook session not found")
+        return session
+
+    def _normalize_notebook_records(self, records: list[dict[str, Any]]) -> str:
+        ordered = sorted(records, key=lambda item: item.get("created_at", 0))
+        blocks: list[str] = []
+        total_chars = 0
+        for index, record in enumerate(ordered, start=1):
+            title = (record.get("title") or f"Record {index}").strip()
+            record_type = (record.get("type") or "note").strip()
+            user_query = (record.get("user_query") or "").strip()
+            output = self._trim_text(record.get("output") or "", _NOTEBOOK_RECORD_CHAR_LIMIT)
+            if not output:
+                continue
+            block_lines = [f"## {index}. {title}", f"Type: {record_type}"]
+            if user_query:
+                block_lines.append(f"User Query: {user_query}")
+            block_lines.extend(["Content:", output])
+            block = "\n".join(block_lines).strip()
+            next_total = total_chars + len(block) + (2 if blocks else 0)
+            if blocks and next_total > _NOTEBOOK_TOTAL_CHAR_LIMIT:
+                break
+            blocks.append(block)
+            total_chars = next_total
+            if total_chars >= _NOTEBOOK_TOTAL_CHAR_LIMIT:
+                break
+        if not blocks:
+            raise ValueError("Notebook records do not contain usable content")
+        return "\n\n".join(blocks)
+
+    def _format_skipped_source_warnings(self, skipped_sources: list[dict[str, Any]]) -> list[str]:
+        warnings: list[str] = []
+        for source in skipped_sources:
+            title = (source.get("title") or "Untitled source").strip()
+            reason = (source.get("reason") or "skipped").strip()
+            warnings.append(f"Skipped source: {title} ({reason})")
+        return warnings
 
     def _smart_merge_pages(
         self, project_id: str, existing_pages: list[dict[str, Any]], slides: list[dict[str, Any]]
@@ -601,7 +1012,13 @@ class PptProjectService:
         ppt_store.update_task(
             task_id,
             status="RUNNING",
-            progress=self._build_progress(0, total, "正在生成页面描述", failed_count=0),
+            progress=self._build_progress(
+                0,
+                total,
+                "正在生成页面描述",
+                failed_count=0,
+                page_ids=[page["id"] for page in pages],
+            ),
         )
 
         completed = 0
@@ -640,6 +1057,7 @@ class PptProjectService:
                     f"已完成 {completed + failed}/{total} 页描述",
                     warnings=warnings[-5:],
                     failed_count=failed,
+                    page_ids=[page["id"] for page in pages],
                 )
                 ppt_store.update_task(task_id, status="RUNNING", progress=progress)
 
@@ -653,6 +1071,7 @@ class PptProjectService:
                 "页面描述生成完成",
                 warnings=warnings[-5:],
                 failed_count=failed,
+                page_ids=[page["id"] for page in pages],
             ),
             error_message=None,
         )
@@ -724,7 +1143,13 @@ class PptProjectService:
         ppt_store.update_task(
             task_id,
             status="RUNNING",
-            progress=self._build_progress(0, total, "正在生成页面图片", failed_count=0),
+            progress=self._build_progress(
+                0,
+                total,
+                "正在生成页面图片",
+                failed_count=0,
+                page_ids=[page["id"] for page in pages],
+            ),
         )
 
         completed = 0
@@ -745,6 +1170,7 @@ class PptProjectService:
                         page_id,
                         generated_image_path=payload["generated_image_path"],
                         cached_image_path=payload["cached_image_path"],
+                        is_dirty=False,
                         status="IMAGE_READY",
                     )
                     version_number = ppt_store.get_next_page_image_version(page_id)
@@ -767,6 +1193,7 @@ class PptProjectService:
                     f"已完成 {completed + failed}/{total} 页图片",
                     warnings=warnings[-5:],
                     failed_count=failed,
+                    page_ids=[page["id"] for page in pages],
                 )
                 ppt_store.update_task(task_id, status="RUNNING", progress=progress)
 
@@ -780,9 +1207,345 @@ class PptProjectService:
                 "页面图片生成完成",
                 warnings=warnings[-5:],
                 failed_count=failed,
+                page_ids=[page["id"] for page in pages],
             ),
             error_message=None,
         )
+
+    def _run_generate_full(
+        self,
+        task_id: str,
+        project_id: str,
+        style_prompt: str | None,
+        max_slides: int | None,
+        detail_level: str,
+    ) -> None:
+        warnings: list[str] = []
+        failed_count = 0
+        try:
+            project = ppt_store.get_project(project_id)
+            if not project:
+                raise ValueError("Project not found")
+            if style_prompt is not None:
+                project = (
+                    ppt_store.update_project(
+                        project_id,
+                        template_style=(style_prompt or "").strip() or None,
+                    )
+                    or project
+                )
+
+            ppt_store.update_task(
+                task_id,
+                status="RUNNING",
+                progress=self._build_progress(
+                    0,
+                    3,
+                    "正在准备生成输入",
+                    failed_count=0,
+                    phase="prepare",
+                ),
+            )
+            project, prep_warnings = asyncio.run(self._prepare_project_source_content(project_id, project))
+            warnings.extend(prep_warnings)
+
+            ppt_store.update_task(
+                task_id,
+                status="RUNNING",
+                progress=self._build_progress(
+                    0,
+                    3,
+                    "正在生成 PPT 大纲",
+                    warnings=warnings[-5:],
+                    failed_count=0,
+                    phase="outline",
+                ),
+            )
+            asyncio.run(self.generate_outline(project_id, style_prompt=style_prompt, max_slides=max_slides))
+
+            project = ppt_store.get_project(project_id) or project
+            project = asyncio.run(self._ensure_reference_style_prompt(project))
+            pages = self._filter_pages(project_id, None)
+            if not pages:
+                raise ValueError("No pages available after outline generation")
+            deck_pages = self._filter_pages(project_id, None)
+            deck_outline_summary = self._build_deck_outline_summary(deck_pages)
+            style_briefs = asyncio.run(self._resolve_style_briefs_for_project(project))
+
+            for page in pages:
+                ppt_store.update_page(page["id"], status="DESCRIPTION_QUEUED", is_dirty=True)
+            ppt_store.update_project(project_id, status="DESCRIPTIONS_GENERATING")
+            total_pages = len(pages)
+            ppt_store.update_task(
+                task_id,
+                status="RUNNING",
+                progress=self._build_progress(
+                    1,
+                    3,
+                    f"正在生成页面描述 0/{total_pages}",
+                    warnings=warnings[-5:],
+                    failed_count=failed_count,
+                    page_ids=[page["id"] for page in pages],
+                    phase="descriptions",
+                ),
+            )
+
+            desc_completed = 0
+            with ThreadPoolExecutor(max_workers=max(1, self.description_workers)) as executor:
+                futures = {
+                    executor.submit(
+                        self._generate_page_description,
+                        project,
+                        page,
+                        detail_level,
+                        deck_outline_summary,
+                        style_briefs,
+                    ): page["id"]
+                    for page in pages
+                }
+                for future in as_completed(futures):
+                    page_id = futures[future]
+                    try:
+                        payload = future.result()
+                        ppt_store.update_page(
+                            page_id,
+                            description_content=payload["description_content"],
+                            image_prompt=payload["image_prompt"],
+                            status="DESCRIPTION_READY",
+                            is_dirty=True,
+                        )
+                        desc_completed += 1
+                    except Exception as exc:
+                        failed_count += 1
+                        warnings.append(f"页面 {page_id} 描述生成失败: {exc}")
+                        ppt_store.update_page(page_id, status="FAILED", is_dirty=True)
+                    ppt_store.update_task(
+                        task_id,
+                        status="RUNNING",
+                        progress=self._build_progress(
+                            1,
+                            3,
+                            f"正在生成页面描述 {desc_completed + failed_count}/{total_pages}",
+                            warnings=warnings[-5:],
+                            failed_count=failed_count,
+                            page_ids=[page["id"] for page in pages],
+                            phase="descriptions",
+                        ),
+                    )
+
+            ppt_store.update_project(project_id, status="DESCRIPTIONS_GENERATED")
+
+            pages = self._filter_pages(project_id, None)
+            deck_title = self._resolve_project_title({"pages": pages, **project})
+            for page in pages:
+                ppt_store.update_page(page["id"], status="IMAGE_QUEUED", is_dirty=True)
+            ppt_store.update_project(project_id, status="IMAGES_GENERATING")
+            ppt_store.update_task(
+                task_id,
+                status="RUNNING",
+                progress=self._build_progress(
+                    2,
+                    3,
+                    f"正在生成页面图片 0/{total_pages}",
+                    warnings=warnings[-5:],
+                    failed_count=failed_count,
+                    page_ids=[page["id"] for page in pages],
+                    phase="images",
+                ),
+            )
+
+            image_completed = 0
+            with ThreadPoolExecutor(max_workers=max(1, self.image_workers)) as executor:
+                futures = {
+                    executor.submit(
+                        self._generate_page_image, project, page, style_briefs, deck_title
+                    ): page["id"]
+                    for page in pages
+                }
+                for future in as_completed(futures):
+                    page_id = futures[future]
+                    try:
+                        payload = future.result()
+                        ppt_store.update_page(
+                            page_id,
+                            generated_image_path=payload["generated_image_path"],
+                            cached_image_path=payload["cached_image_path"],
+                            is_dirty=False,
+                            status="IMAGE_READY",
+                        )
+                        version_number = ppt_store.get_next_page_image_version(page_id)
+                        ppt_store.create_page_image_version(
+                            page_id=page_id,
+                            version_number=version_number,
+                            image_path=payload["generated_image_path"],
+                            cached_image_path=payload["cached_image_path"],
+                            prompt_used=payload["prompt_used"],
+                            is_current=True,
+                        )
+                        image_completed += 1
+                    except Exception as exc:
+                        failed_count += 1
+                        warnings.append(f"页面 {page_id} 图片生成失败: {exc}")
+                        ppt_store.update_page(page_id, status="FAILED", is_dirty=True)
+                    ppt_store.update_task(
+                        task_id,
+                        status="RUNNING",
+                        progress=self._build_progress(
+                            2,
+                            3,
+                            f"正在生成页面图片 {image_completed + failed_count}/{total_pages}",
+                            warnings=warnings[-5:],
+                            failed_count=failed_count,
+                            page_ids=[page["id"] for page in pages],
+                            phase="images",
+                        ),
+                    )
+
+            ppt_store.update_project(project_id, status="COMPLETED")
+            ppt_store.update_task(
+                task_id,
+                status="COMPLETED",
+                progress=self._build_progress(
+                    3,
+                    3,
+                    "完整 PPT 生成完成",
+                    warnings=warnings[-5:],
+                    failed_count=failed_count,
+                    page_ids=[page["id"] for page in pages],
+                    phase="completed",
+                ),
+                error_message=None,
+            )
+        except Exception as exc:
+            ppt_store.update_task(
+                task_id,
+                status="FAILED",
+                error_message=str(exc),
+                progress=self._build_progress(
+                    0,
+                    3,
+                    "完整 PPT 生成失败",
+                    warnings=warnings[-5:],
+                    failed_count=failed_count,
+                    phase="failed",
+                ),
+            )
+
+    def _run_page_chat_edit(
+        self, task_id: str, project_id: str, page_id: str, edit_type: str
+    ) -> None:
+        warnings: list[str] = []
+        try:
+            project = ppt_store.get_project(project_id)
+            if not project:
+                raise ValueError("Project not found")
+            project = asyncio.run(self._ensure_reference_style_prompt(project))
+            project, prep_warnings = asyncio.run(self._prepare_project_source_content(project_id, project))
+            warnings.extend(prep_warnings)
+            page = ppt_store.get_page(page_id)
+            if not page:
+                raise ValueError("Page not found")
+
+            total_steps = 1 if edit_type == "image_edit" else 2
+            style_briefs = asyncio.run(self._resolve_style_briefs_for_project(project))
+            if edit_type != "image_edit":
+                deck_pages = self._filter_pages(project_id, None)
+                deck_outline_summary = self._build_deck_outline_summary(deck_pages)
+                ppt_store.update_page(page_id, status="DESCRIPTION_QUEUED", is_dirty=True)
+                ppt_store.update_task(
+                    task_id,
+                    status="RUNNING",
+                    progress=self._build_progress(
+                        0,
+                        total_steps,
+                        "正在根据对话重生成页面描述",
+                        warnings=warnings[-5:],
+                        failed_count=0,
+                        page_ids=[page_id],
+                        phase="descriptions",
+                    ),
+                )
+                payload = self._generate_page_description(
+                    project,
+                    page,
+                    "default",
+                    deck_outline_summary,
+                    style_briefs,
+                )
+                ppt_store.update_page(
+                    page_id,
+                    description_content=payload["description_content"],
+                    image_prompt=payload["image_prompt"],
+                    status="DESCRIPTION_READY",
+                    is_dirty=True,
+                )
+
+            page = ppt_store.get_page(page_id)
+            if not page:
+                raise ValueError("Page not found")
+            deck_pages = self._filter_pages(project_id, None)
+            deck_title = self._resolve_project_title({"pages": deck_pages, **project})
+            ppt_store.update_page(page_id, status="IMAGE_QUEUED", is_dirty=True)
+            ppt_store.update_task(
+                task_id,
+                status="RUNNING",
+                progress=self._build_progress(
+                    total_steps - 1,
+                    total_steps,
+                    "正在根据对话重生成页面图片",
+                    warnings=warnings[-5:],
+                    failed_count=0,
+                    page_ids=[page_id],
+                    phase="images",
+                ),
+            )
+            payload = self._generate_page_image(project, page, style_briefs, deck_title)
+            ppt_store.update_page(
+                page_id,
+                generated_image_path=payload["generated_image_path"],
+                cached_image_path=payload["cached_image_path"],
+                is_dirty=False,
+                status="IMAGE_READY",
+            )
+            version_number = ppt_store.get_next_page_image_version(page_id)
+            ppt_store.create_page_image_version(
+                page_id=page_id,
+                version_number=version_number,
+                image_path=payload["generated_image_path"],
+                cached_image_path=payload["cached_image_path"],
+                prompt_used=payload["prompt_used"],
+                is_current=True,
+            )
+            ppt_store.update_task(
+                task_id,
+                status="COMPLETED",
+                progress=self._build_progress(
+                    total_steps,
+                    total_steps,
+                    "页面对话修改已完成",
+                    warnings=warnings[-5:],
+                    failed_count=0,
+                    page_ids=[page_id],
+                    phase="completed",
+                ),
+                error_message=None,
+            )
+        except Exception as exc:
+            ppt_store.update_page(page_id, status="FAILED", is_dirty=True)
+            ppt_store.update_task(
+                task_id,
+                status="FAILED",
+                error_message=str(exc),
+                progress=self._build_progress(
+                    0,
+                    1,
+                    "页面对话修改失败",
+                    warnings=warnings[-5:],
+                    failed_count=1,
+                    page_ids=[page_id],
+                    phase="failed",
+                ),
+            )
 
     def _generate_page_image(
         self,
@@ -828,6 +1591,130 @@ class PptProjectService:
             "prompt_used": prompt,
             "description_text": description_text,
         }
+
+    def _run_page_regeneration(
+        self,
+        task_id: str,
+        project_id: str,
+        page_id: str,
+        regenerate_description: bool,
+    ) -> None:
+        warnings: list[str] = []
+        try:
+            project = ppt_store.get_project(project_id)
+            if not project:
+                raise ValueError("Project not found")
+            project = asyncio.run(self._ensure_reference_style_prompt(project))
+            project, prep_warnings = asyncio.run(
+                self._prepare_project_source_content(project_id, project)
+            )
+            warnings.extend(prep_warnings)
+
+            page = ppt_store.get_page(page_id)
+            if not page:
+                raise ValueError("Page not found")
+
+            total_steps = 2 if regenerate_description else 1
+            style_briefs = asyncio.run(self._resolve_style_briefs_for_project(project))
+
+            if regenerate_description:
+                deck_pages = self._filter_pages(project_id, None)
+                deck_outline_summary = self._build_deck_outline_summary(deck_pages)
+                ppt_store.update_page(page_id, status="DESCRIPTION_QUEUED", is_dirty=True)
+                ppt_store.update_task(
+                    task_id,
+                    status="RUNNING",
+                    progress=self._build_progress(
+                        0,
+                        total_steps,
+                        "正在重生成页面描述",
+                        warnings=warnings[-5:],
+                        failed_count=0,
+                        page_ids=[page_id],
+                        phase="descriptions",
+                    ),
+                )
+                payload = self._generate_page_description(
+                    project,
+                    page,
+                    "default",
+                    deck_outline_summary,
+                    style_briefs,
+                )
+                ppt_store.update_page(
+                    page_id,
+                    description_content=payload["description_content"],
+                    image_prompt=payload["image_prompt"],
+                    status="DESCRIPTION_READY",
+                    is_dirty=True,
+                )
+
+            page = ppt_store.get_page(page_id)
+            if not page:
+                raise ValueError("Page not found")
+            deck_pages = self._filter_pages(project_id, None)
+            deck_title = self._resolve_project_title({"pages": deck_pages, **project})
+            ppt_store.update_page(page_id, status="IMAGE_QUEUED", is_dirty=True)
+            ppt_store.update_task(
+                task_id,
+                status="RUNNING",
+                progress=self._build_progress(
+                    total_steps - 1,
+                    total_steps,
+                    "正在重生成页面图片",
+                    warnings=warnings[-5:],
+                    failed_count=0,
+                    page_ids=[page_id],
+                    phase="images",
+                ),
+            )
+            payload = self._generate_page_image(project, page, style_briefs, deck_title)
+            ppt_store.update_page(
+                page_id,
+                generated_image_path=payload["generated_image_path"],
+                cached_image_path=payload["cached_image_path"],
+                is_dirty=False,
+                status="IMAGE_READY",
+            )
+            version_number = ppt_store.get_next_page_image_version(page_id)
+            ppt_store.create_page_image_version(
+                page_id=page_id,
+                version_number=version_number,
+                image_path=payload["generated_image_path"],
+                cached_image_path=payload["cached_image_path"],
+                prompt_used=payload["prompt_used"],
+                is_current=True,
+            )
+            ppt_store.update_task(
+                task_id,
+                status="COMPLETED",
+                progress=self._build_progress(
+                    total_steps,
+                    total_steps,
+                    "页面重生成已完成",
+                    warnings=warnings[-5:],
+                    failed_count=0,
+                    page_ids=[page_id],
+                    phase="completed",
+                ),
+                error_message=None,
+            )
+        except Exception as exc:
+            ppt_store.update_page(page_id, status="FAILED", is_dirty=True)
+            ppt_store.update_task(
+                task_id,
+                status="FAILED",
+                error_message=str(exc),
+                progress=self._build_progress(
+                    0,
+                    1,
+                    "页面重生成失败",
+                    warnings=warnings[-5:],
+                    failed_count=1,
+                    page_ids=[page_id],
+                    phase="failed",
+                ),
+            )
 
     def _save_page_image(
         self, project_id: str, page_id: str, data_url: str, version_number: int
@@ -894,6 +1781,7 @@ class PptProjectService:
                     or self._default_layout(index),
                     "pageId": page["id"],
                     "status": page.get("status"),
+                    "isDirty": bool(page.get("is_dirty")),
                     "descriptionText": (page.get("description_content") or {}).get("text")
                     if isinstance(page.get("description_content"), dict)
                     else None,
@@ -1314,6 +2202,8 @@ class PptProjectService:
         warnings: list[str] | None = None,
         failed_count: int,
         download_url: str | None = None,
+        page_ids: list[str] | None = None,
+        phase: str | None = None,
     ) -> dict[str, Any]:
         percentage = 100 if total <= 0 else int((current / total) * 100)
         return _TaskProgress(
@@ -1324,7 +2214,159 @@ class PptProjectService:
             warnings=warnings or [],
             failed_count=failed_count,
             download_url=download_url,
+            page_ids=page_ids or [],
+            phase=phase,
         ).to_dict()
+
+    def _list_active_tasks(self, project_id: str) -> list[dict[str, Any]]:
+        return [
+            task
+            for task in ppt_store.list_tasks(project_id)
+            if task.get("status") in _ACTIVE_TASK_STATUSES
+        ]
+
+    def _task_page_ids(self, task: dict[str, Any]) -> set[str]:
+        progress = task.get("progress") or {}
+        page_ids = progress.get("page_ids") or []
+        return {str(page_id) for page_id in page_ids if page_id}
+
+    def _assert_no_active_project_task(self, project_id: str) -> None:
+        active_task = next(iter(self._list_active_tasks(project_id)), None)
+        if active_task:
+            raise ValueError("Another PPT generation task is already running for this project")
+
+    def _assert_page_regeneration_allowed(self, project_id: str, page_id: str) -> None:
+        for task in self._list_active_tasks(project_id):
+            task_type = task.get("task_type")
+            if task_type in _PROJECT_LEVEL_TASK_TYPES:
+                raise ValueError(
+                    "Project-level PPT generation is running; page regeneration is blocked"
+                )
+            if task_type in _PAGE_LEVEL_TASK_TYPES and page_id in self._task_page_ids(task):
+                raise ValueError("This page already has an active regeneration task")
+
+    def _assert_no_active_export_conflict(
+        self, project_id: str, page_ids: list[str] | None = None
+    ) -> None:
+        target_page_ids = set(page_ids or [])
+        for task in self._list_active_tasks(project_id):
+            task_type = task.get("task_type")
+            if task_type in _PROJECT_LEVEL_TASK_TYPES:
+                raise ValueError("PPT generation is still running and export is temporarily blocked")
+            if task_type in _PAGE_LEVEL_TASK_TYPES:
+                task_page_ids = self._task_page_ids(task)
+                if not target_page_ids or not task_page_ids or task_page_ids & target_page_ids:
+                    raise ValueError(
+                        "Some slides are still regenerating and cannot be exported yet"
+                    )
+
+    def _classify_page_chat_edit(
+        self, project: dict[str, Any], page: dict[str, Any], user_message: str
+    ) -> str:
+        lowered = user_message.lower()
+        image_keywords = ["图片", "配图", "图像", "视觉", "插画", "照片", "背景", "image", "visual"]
+        outline_keywords = ["标题", "要点", "结构", "顺序", "大纲", "分成", "合并", "outline"]
+        description_keywords = ["描述", "文案", "内容", "表述", "展开", "精简", "润色", "description"]
+        if any(keyword in lowered for keyword in image_keywords):
+            return "image_edit"
+        if any(keyword in lowered for keyword in outline_keywords):
+            return "outline_edit"
+        if any(keyword in lowered for keyword in description_keywords):
+            return "description_edit"
+
+        outline = page.get("outline_content") or {}
+        system_prompt = (
+            "You classify a slide editing request. "
+            "Return ONLY valid JSON with key edit_type.\n\n"
+            "Allowed values: outline_edit, description_edit, image_edit."
+        )
+        user_prompt = (
+            f"Slide title: {outline.get('title') or 'Untitled'}\n"
+            f"Slide points:\n{self._bullet_join(outline.get('points') or [])}\n\n"
+            f"User request:\n{user_message}\n\n"
+            "Classify which part of the slide the user mainly wants to change."
+        )
+        data = self._complete_json_sync(user_prompt, system_prompt)
+        edit_type = (data.get("edit_type") or "").strip()
+        return edit_type if edit_type in {"outline_edit", "description_edit", "image_edit"} else "description_edit"
+
+    def _rewrite_outline_from_chat(
+        self, page: dict[str, Any], user_message: str
+    ) -> dict[str, Any]:
+        outline = page.get("outline_content") or {}
+        system_prompt = (
+            "You rewrite slide outline content based on user instruction. "
+            "Return ONLY valid JSON with keys title, points, assistant_message."
+        )
+        user_prompt = (
+            f"Current title: {outline.get('title') or 'Untitled'}\n"
+            f"Current points:\n{self._bullet_join(outline.get('points') or [])}\n\n"
+            f"Instruction:\n{user_message}\n\n"
+            "Rewrite the slide title and bullet points.\n"
+            "- Keep title concise and presentation-ready.\n"
+            "- Return 3-5 bullet points.\n"
+            "- assistant_message should briefly confirm what was changed."
+        )
+        data = self._complete_json_sync(user_prompt, system_prompt)
+        points = [str(point).strip() for point in (data.get("points") or []) if str(point).strip()]
+        if not points:
+            points = outline.get("points") or []
+        title = (data.get("title") or "").strip() or outline.get("title") or "Untitled Slide"
+        assistant_message = (data.get("assistant_message") or "").strip() or "已根据你的要求调整这一页的大纲，并开始重生成。"
+        return {"title": title, "points": points, "assistant_message": assistant_message}
+
+    def _rewrite_description_from_chat(
+        self, page: dict[str, Any], user_message: str
+    ) -> dict[str, Any]:
+        outline = page.get("outline_content") or {}
+        current_description = (
+            (page.get("description_content") or {}).get("text")
+            if isinstance(page.get("description_content"), dict)
+            else ""
+        )
+        system_prompt = (
+            "You rewrite slide description content based on user instruction. "
+            "Return ONLY valid JSON with keys description_text, assistant_message."
+        )
+        user_prompt = (
+            f"Slide title: {outline.get('title') or 'Untitled'}\n"
+            f"Slide points:\n{self._bullet_join(outline.get('points') or [])}\n\n"
+            f"Current description:\n{current_description or 'None'}\n\n"
+            f"Instruction:\n{user_message}\n\n"
+            "Write an updated single-slide description that the image generation pipeline can use."
+        )
+        data = self._complete_json_sync(user_prompt, system_prompt)
+        description_text = (data.get("description_text") or "").strip()
+        if not description_text:
+            raise ValueError("Failed to derive updated description text from chat instruction")
+        assistant_message = (data.get("assistant_message") or "").strip() or "已根据你的要求改写这一页内容，并开始重生成。"
+        return {
+            "description_text": description_text,
+            "assistant_message": assistant_message,
+        }
+
+    def _rewrite_image_prompt_from_chat(
+        self, page: dict[str, Any], user_message: str
+    ) -> dict[str, Any]:
+        outline = page.get("outline_content") or {}
+        current_prompt = (page.get("image_prompt") or "").strip()
+        system_prompt = (
+            "You rewrite a slide image prompt based on user instruction. "
+            "Return ONLY valid JSON with keys image_prompt, assistant_message."
+        )
+        user_prompt = (
+            f"Slide title: {outline.get('title') or 'Untitled'}\n"
+            f"Slide points:\n{self._bullet_join(outline.get('points') or [])}\n\n"
+            f"Current image prompt:\n{current_prompt or 'None'}\n\n"
+            f"Instruction:\n{user_message}\n\n"
+            "Write one improved image prompt for a professional 16:9 presentation visual."
+        )
+        data = self._complete_json_sync(user_prompt, system_prompt)
+        image_prompt = (data.get("image_prompt") or "").strip() or current_prompt
+        if not image_prompt:
+            raise ValueError("Failed to derive updated image prompt from chat instruction")
+        assistant_message = (data.get("assistant_message") or "").strip() or "已根据你的要求调整图片方向，并开始重生成。"
+        return {"image_prompt": image_prompt, "assistant_message": assistant_message}
 
     async def _complete_json_async(self, prompt: str, system_prompt: str) -> dict[str, Any]:
         llm_cfg = get_llm_config()

@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from typing import Any, Literal
 
@@ -21,7 +22,14 @@ def _service():
 class CreatePptProjectRequest(BaseModel):
     notebook_id: str | None = None
     session_id: str | None = None
-    creation_type: Literal["idea", "outline", "descriptions"]
+    creation_type: Literal[
+        "idea",
+        "outline",
+        "descriptions",
+        "from_research",
+        "from_notebook",
+        "from_sources",
+    ]
     idea_prompt: str | None = None
     outline_text: str | None = None
     description_text: str | None = None
@@ -32,6 +40,8 @@ class CreatePptProjectRequest(BaseModel):
     image_aspect_ratio: Literal["16:9", "4:3"] = "16:9"
     language: str = "zh"
     reference_sources: list[dict[str, Any]] = Field(default_factory=list)
+    source_refs: list[dict[str, Any]] = Field(default_factory=list)
+    record_ids: list[str] = Field(default_factory=list)
 
 
 class GenerateOutlineRequest(BaseModel):
@@ -48,11 +58,21 @@ class GenerateImagesRequest(BaseModel):
     page_ids: list[str] | None = None
 
 
+class GenerateFullRequest(BaseModel):
+    style_prompt: str | None = None
+    max_slides: int | None = None
+    detail_level: Literal["concise", "default", "detailed"] = "default"
+
+
 class UpdatePageRequest(BaseModel):
     title: str | None = None
     points: list[str] | None = None
     description_text: str | None = None
     image_prompt: str | None = None
+
+
+class SlideChatRequest(BaseModel):
+    message: str
 
 
 class DeriveIdeaRequest(BaseModel):
@@ -182,6 +202,22 @@ async def generate_images(project_id: str, request: GenerateImagesRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@router.post("/projects/{project_id}/generate/full")
+async def generate_full(project_id: str, request: GenerateFullRequest):
+    try:
+        return _service().start_generate_full(
+            project_id,
+            style_prompt=request.style_prompt,
+            max_slides=request.max_slides,
+            detail_level=request.detail_level,
+        )
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @router.get("/projects/{project_id}/tasks/{task_id}")
 async def get_task(project_id: str, task_id: str):
     task = _service().get_task(project_id, task_id)
@@ -201,10 +237,37 @@ async def update_page(project_id: str, page_id: str, request: UpdatePageRequest)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@router.post("/projects/{project_id}/pages/{page_id}/chat")
+async def chat_page(project_id: str, page_id: str, request: SlideChatRequest):
+    try:
+        return await asyncio.to_thread(
+            _service().start_page_chat_edit,
+            project_id,
+            page_id,
+            message=request.message,
+        )
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @router.post("/projects/{project_id}/pages/{page_id}/regenerate-image")
 async def regenerate_page_image(project_id: str, page_id: str):
     try:
         return _service().start_regenerate_page_image(project_id, page_id)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/projects/{project_id}/pages/{page_id}/chat-history")
+async def get_page_chat_history(project_id: str, page_id: str):
+    try:
+        return {"messages": _service().list_slide_chat_history(project_id, page_id)}
     except ValueError as exc:
         status = 404 if "not found" in str(exc).lower() else 400
         raise HTTPException(status_code=status, detail=str(exc))

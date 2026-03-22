@@ -56,6 +56,10 @@ ppt_projects = Table(
     Column("image_aspect_ratio", String, nullable=False),
     Column("language", String, nullable=False),
     Column("reference_sources", JSON, nullable=True),
+    Column("source_refs", JSON, nullable=True),
+    Column("record_ids", JSON, nullable=True),
+    Column("normalized_content", Text, nullable=True),
+    Column("content_cached_at", DateTime(timezone=True), nullable=True),
     Column("status", String, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
@@ -73,6 +77,7 @@ ppt_pages = Table(
     Column("image_prompt", Text, nullable=True),
     Column("generated_image_path", String, nullable=True),
     Column("cached_image_path", String, nullable=True),
+    Column("is_dirty", Boolean, nullable=False, server_default="false"),
     Column("status", String, nullable=False, index=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
@@ -105,6 +110,17 @@ ppt_tasks = Table(
     Column("finished_at", DateTime(timezone=True), nullable=True),
 )
 
+ppt_slide_chat_messages = Table(
+    "ppt_slide_chat_messages",
+    _metadata,
+    Column("id", String, primary_key=True),
+    Column("page_id", String, ForeignKey("ppt_pages.id"), nullable=False, index=True),
+    Column("role", String, nullable=False),
+    Column("content", Text, nullable=False),
+    Column("edit_type", String, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, index=True),
+)
+
 
 def get_database_url() -> str:
     url = os.getenv("DATABASE_URL")
@@ -128,6 +144,65 @@ def get_engine():
 def init_db():
     engine = get_engine()
     _metadata.create_all(engine)
+    _ensure_additive_schema(engine)
+
+
+def _ensure_additive_schema(engine) -> None:
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            ALTER TABLE ppt_projects
+            ADD COLUMN IF NOT EXISTS source_refs JSON
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            ALTER TABLE ppt_projects
+            ADD COLUMN IF NOT EXISTS normalized_content TEXT
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            ALTER TABLE ppt_projects
+            ADD COLUMN IF NOT EXISTS record_ids JSON
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            ALTER TABLE ppt_projects
+            ADD COLUMN IF NOT EXISTS content_cached_at TIMESTAMPTZ
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            ALTER TABLE ppt_pages
+            ADD COLUMN IF NOT EXISTS is_dirty BOOLEAN DEFAULT FALSE
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS ppt_slide_chat_messages (
+                id VARCHAR PRIMARY KEY,
+                page_id VARCHAR NOT NULL REFERENCES ppt_pages(id),
+                role VARCHAR NOT NULL,
+                content TEXT NOT NULL,
+                edit_type VARCHAR NULL,
+                created_at TIMESTAMPTZ NOT NULL
+            )
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            CREATE INDEX IF NOT EXISTS idx_ppt_slide_chat_messages_page
+            ON ppt_slide_chat_messages(page_id)
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            CREATE INDEX IF NOT EXISTS idx_ppt_slide_chat_messages_page_created_at
+            ON ppt_slide_chat_messages(page_id, created_at)
+            """
+        )
 
 
 def utc_now():

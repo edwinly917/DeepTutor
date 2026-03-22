@@ -54,16 +54,16 @@ import "katex/dist/katex.min.css";
 import { processLatexContent } from "@/lib/latex";
 import { apiUrl, wsUrl } from "@/lib/api";
 import {
+  chatEditPptPage,
   createPptProject,
   deriveIdea,
   deriveOutline,
   exportPptProjectPptx,
   fetchPptConfig,
+  fetchPptPageChatHistory,
   fetchPptProject,
   fetchPptTask,
-  generatePptDescriptions,
-  generatePptImages,
-  generatePptOutline,
+  generatePptFull,
   previewPptStyle,
   regeneratePptPageImage,
   uploadPptReferenceImage,
@@ -74,6 +74,7 @@ import PptPreviewModal from "@/components/ppt/PptPreviewModal";
 import {
   PptCreationMode,
   PresentationOutline,
+  PptSlideChatMessage,
   SlideContent,
 } from "@/types/ppt";
 
@@ -185,7 +186,7 @@ type StudioMode =
   | "mindmap"
   | "podcast";
 
-type ExportContentSource = "research" | "sources";
+type ExportContentSource = "research" | "sources" | "notebook";
 
 type PptStyleMode = "default" | "preset" | "reference_image" | "sources";
 
@@ -193,6 +194,7 @@ type AudioResult = { audioUrl?: string; audioId?: string };
 
 interface PptStudioState {
   creationMode?: PptCreationMode;
+  recordIds?: string[];
   ideaPrompt?: string;
   outlineText?: string;
   descriptionText?: string;
@@ -210,6 +212,7 @@ interface PptStudioState {
   stylePreviewSvg?: string;
   outline?: PresentationOutline | null;
   previewOpen?: boolean;
+  selectedSlideId?: string;
 }
 
 interface PodcastStudioState {
@@ -258,6 +261,11 @@ const buildSourceKey = (source: Partial<Source> & { source_key?: string }) => {
   const sourceType = source.type || "web";
   return key ? `${sourceType}-${key}` : "";
 };
+
+const getPptSlideSelectionId = (
+  slide: Partial<SlideContent>,
+  index: number,
+) => slide.pageId || `slide-${index}`;
 
 const withSourceIdentity = (source: Source): Source => {
   const sourceKey = buildSourceKey(source);
@@ -511,11 +519,15 @@ export default function NotebookDetailPage() {
     useState<ExportContentSource>("research");
   const [pptCreationMode, setPptCreationMode] =
     useState<PptCreationMode>("auto");
+  const [selectedNotebookRecordIds, setSelectedNotebookRecordIds] = useState<
+    string[]
+  >([]);
   const [pptIdeaPrompt, setPptIdeaPrompt] = useState("");
   const [pptOutlineText, setPptOutlineText] = useState("");
   const [pptDescriptionText, setPptDescriptionText] = useState("");
   const [pptProjectId, setPptProjectId] = useState("");
   const [pptActiveTaskId, setPptActiveTaskId] = useState("");
+  const [pptTaskPhase, setPptTaskPhase] = useState("");
   const [pptStyleMode, setPptStyleMode] = useState<PptStyleMode>("default");
   const [pptStyleTemplates, setPptStyleTemplates] = useState<
     PptStyleTemplate[]
@@ -541,6 +553,7 @@ export default function NotebookDetailPage() {
   const [pptOutline, setPptOutline] = useState<PresentationOutline | null>(
     null,
   );
+  const [pptSelectedSlideId, setPptSelectedSlideId] = useState("");
   const [pptGeneratingIndices, setPptGeneratingIndices] = useState<number[]>(
     [],
   );
@@ -548,6 +561,12 @@ export default function NotebookDetailPage() {
     current: 0,
     total: 0,
   });
+  const [pptWarnings, setPptWarnings] = useState<string[]>([]);
+  const [pptSlideChatHistory, setPptSlideChatHistory] = useState<
+    Record<string, PptSlideChatMessage[]>
+  >({});
+  const [pptSlideChatLoadingId, setPptSlideChatLoadingId] = useState("");
+  const [pptSlideChatSubmittingId, setPptSlideChatSubmittingId] = useState("");
   const [isPptGenerating, setIsPptGenerating] = useState(false);
   const [isPptExporting, setIsPptExporting] = useState(false);
 
@@ -664,11 +683,13 @@ export default function NotebookDetailPage() {
     exportContentSource,
     ppt: {
       creationMode: pptCreationMode,
+      recordIds: selectedNotebookRecordIds,
       ideaPrompt: pptIdeaPrompt,
       outlineText: pptOutlineText,
       descriptionText: pptDescriptionText,
       projectId: pptProjectId,
       activeTaskId: pptActiveTaskId,
+      taskPhase: pptTaskPhase,
       styleMode: pptStyleMode,
       selectedStyleId: selectedPptStyleId,
       stylePromptText: pptStylePromptText,
@@ -679,6 +700,7 @@ export default function NotebookDetailPage() {
       stylePreviewSvg: pptStylePreviewSvg || "",
       outline: pptOutline,
       previewOpen: pptPreviewOpen,
+      selectedSlideId: pptSelectedSlideId,
     },
     podcast: {
       audioResult: audioResult ? { ...audioResult } : null,
@@ -695,6 +717,7 @@ export default function NotebookDetailPage() {
     if (ppt?.previewOpen) return true;
     if (ppt?.projectId) return true;
     if (ppt?.creationMode && ppt.creationMode !== "auto") return true;
+    if (ppt?.recordIds && ppt.recordIds.length > 0) return true;
     if (ppt?.styleMode && ppt.styleMode !== "default") return true;
     if (ppt?.stylePromptText) return true;
     if (ppt?.referenceImagePath || ppt?.referenceStylePrompt) return true;
@@ -709,11 +732,13 @@ export default function NotebookDetailPage() {
       studioMode,
       exportContentSource,
       pptCreationMode,
+      selectedNotebookRecordIds,
       pptIdeaPrompt,
       pptOutlineText,
       pptDescriptionText,
       pptProjectId,
       pptActiveTaskId,
+      pptTaskPhase,
       pptStyleMode,
       selectedPptStyleId,
       pptStylePromptText,
@@ -724,6 +749,7 @@ export default function NotebookDetailPage() {
       pptStylePreviewSvg,
       pptOutline,
       pptPreviewOpen,
+      pptSelectedSlideId,
       audioResult,
     ],
   );
@@ -801,11 +827,13 @@ export default function NotebookDetailPage() {
     setStudioMode("idle");
     setExportContentSource("research");
     setPptCreationMode("auto");
+    setSelectedNotebookRecordIds([]);
     setPptIdeaPrompt("");
     setPptOutlineText("");
     setPptDescriptionText("");
     setPptProjectId("");
     setPptActiveTaskId("");
+    setPptTaskPhase("");
     setPptStyleMode("default");
     setSelectedPptStyleId("");
     setPptStylePromptText("");
@@ -819,8 +847,13 @@ export default function NotebookDetailPage() {
     setPptStylePreviewError("");
     setPptPreviewOpen(false);
     setPptOutline(null);
+    setPptSelectedSlideId("");
     setPptGeneratingIndices([]);
     setPptImageProgress({ current: 0, total: 0 });
+    setPptWarnings([]);
+    setPptSlideChatHistory({});
+    setPptSlideChatLoadingId("");
+    setPptSlideChatSubmittingId("");
     setIsPptGenerating(false);
     setIsPptExporting(false);
     recoveringAudioIdRef.current = null;
@@ -848,11 +881,13 @@ export default function NotebookDetailPage() {
     setStudioMode(resolvedMode);
     setExportContentSource(next.exportContentSource || "research");
     setPptCreationMode(ppt.creationMode || "auto");
+    setSelectedNotebookRecordIds(ppt.recordIds || []);
     setPptIdeaPrompt(ppt.ideaPrompt || "");
     setPptOutlineText(ppt.outlineText || "");
     setPptDescriptionText(ppt.descriptionText || "");
     setPptProjectId(ppt.projectId || "");
     setPptActiveTaskId(ppt.activeTaskId || "");
+    setPptTaskPhase(ppt.taskPhase || "");
     setPptStyleMode(
       ppt.styleMode === "template" ? "default" : ppt.styleMode || "default",
     );
@@ -867,8 +902,13 @@ export default function NotebookDetailPage() {
     setPptStylePreviewError("");
     setPptOutline(ppt.outline || null);
     setPptPreviewOpen(Boolean(ppt.outline) && (ppt.previewOpen ?? true));
+    setPptSelectedSlideId(ppt.selectedSlideId || "");
     setPptGeneratingIndices([]);
     setPptImageProgress({ current: 0, total: 0 });
+    setPptWarnings([]);
+    setPptSlideChatHistory({});
+    setPptSlideChatLoadingId("");
+    setPptSlideChatSubmittingId("");
     setIsPptGenerating(false);
     setIsPptExporting(false);
     setAudioResult(normalizeAudioResult(next.podcast?.audioResult || null));
@@ -1404,9 +1444,32 @@ export default function NotebookDetailPage() {
     [aggregatedSources],
   );
 
+  const selectedNotebookRecords = useMemo(() => {
+    const wanted = new Set(selectedNotebookRecordIds);
+    return (notebook?.records || []).filter((record) => wanted.has(record.id));
+  }, [notebook?.records, selectedNotebookRecordIds]);
+
+  useEffect(() => {
+    const existingIds = new Set((notebook?.records || []).map((record) => record.id));
+    setSelectedNotebookRecordIds((prev) =>
+      prev.filter((recordId) => existingIds.has(recordId)),
+    );
+  }, [notebook?.records]);
+
   const pptAutoSignalText = useMemo(() => {
     if (exportContentSource === "research") {
       return researchReport;
+    }
+    if (exportContentSource === "notebook") {
+      return selectedNotebookRecords
+        .map((record) =>
+          [record.title, record.output || record.user_query]
+            .filter(Boolean)
+            .join("\n")
+            .trim(),
+        )
+        .filter(Boolean)
+        .join("\n\n");
     }
     return selectedSourcesList
       .map((source) =>
@@ -1414,7 +1477,12 @@ export default function NotebookDetailPage() {
       )
       .filter(Boolean)
       .join("\n\n");
-  }, [exportContentSource, researchReport, selectedSourcesList]);
+  }, [
+    exportContentSource,
+    researchReport,
+    selectedNotebookRecords,
+    selectedSourcesList,
+  ]);
 
   const registerCitationKey = useCallback(
     (sourceKey: string, preferredRef?: number) => {
@@ -1650,6 +1718,7 @@ export default function NotebookDetailPage() {
   const hasSelectedSources = selectedSourcesList.length > 0;
   const selectedSourcesCount = selectedSourcesList.length;
   const totalSourceCount = aggregatedSources.length;
+  const selectedNotebookRecordCount = selectedNotebookRecordIds.length;
   const allSourcesSelected =
     totalSourceCount > 0 && selectedSourcesCount === totalSourceCount;
 
@@ -1657,7 +1726,11 @@ export default function NotebookDetailPage() {
   const ragEnabled = enableRag && !!selectedKb;
 
   const canExport =
-    exportContentSource === "research" ? !!researchReport : hasSelectedSources;
+    exportContentSource === "research"
+      ? !!researchReport
+      : exportContentSource === "notebook"
+        ? selectedNotebookRecordCount > 0
+        : hasSelectedSources;
   const canExportPptContent = canExport;
   const hasPptPresets = pptStyleTemplates.length > 0 && !!selectedPptStyleId;
   const needsSourceForStyle = pptStyleMode === "sources";
@@ -1675,8 +1748,24 @@ export default function NotebookDetailPage() {
     canUseReferenceImageStyle;
   const pptAutoResolution =
     pptCreationMode === "auto" ? getPptAutoResolution(pptAutoSignalText) : null;
+  const effectivePptEntryMode =
+    pptCreationMode === "auto"
+      ? pptAutoResolution?.mode || "from_research"
+      : pptCreationMode;
   const pptContentSourceLabel =
-    exportContentSource === "research" ? "深度研究" : "已选来源";
+    exportContentSource === "research"
+      ? "深度研究"
+      : exportContentSource === "notebook"
+        ? "笔记内容"
+        : "已选来源";
+  const exportUnavailableHint =
+    exportContentSource === "research"
+      ? "完成深度研究后可导出"
+      : exportContentSource === "notebook"
+        ? "勾选笔记后可导出"
+        : "选择来源后可导出";
+  const sourceStyleUnavailableHint =
+    exportContentSource === "notebook" ? "请切换到已选来源后再使用来源风格" : "选择来源后可生成风格";
   const pptTaskStatusLabel = isPptGenerating
     ? `生成中 ${pptImageProgress.current}/${pptImageProgress.total || "?"}`
     : pptActiveTaskId
@@ -3539,6 +3628,24 @@ export default function NotebookDetailPage() {
       return researchReport;
     }
 
+    if (exportContentSource === "notebook") {
+      if (selectedNotebookRecords.length === 0) {
+        alert("请先选择笔记");
+        return "";
+      }
+      return selectedNotebookRecords
+        .map((record) =>
+          [
+            `## ${record.title || "未命名笔记"}`,
+            `类型: ${record.type}`,
+            record.output || record.user_query || "",
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+        )
+        .join("\n\n---\n\n");
+    }
+
     if (selectedSourcesList.length === 0) {
       alert("请先选择来源");
       return "";
@@ -3776,6 +3883,42 @@ export default function NotebookDetailPage() {
     };
   };
 
+  const resolvePptSelectedSlideId = useCallback(
+    (
+      outline: PresentationOutline | null,
+      preferredId?: string | null,
+    ): string => {
+      const slides = outline?.slides || [];
+      if (!slides.length) return "";
+      const slideIds = slides.map((slide, index) =>
+        getPptSlideSelectionId(slide, index),
+      );
+      if (preferredId && slideIds.includes(preferredId)) {
+        return preferredId;
+      }
+      return slideIds[0];
+    },
+    [],
+  );
+
+  const selectedPptSlide = useMemo(() => {
+    if (!pptOutline) return null;
+    const nextSelectedId = resolvePptSelectedSlideId(
+      pptOutline,
+      pptSelectedSlideId,
+    );
+    const selectedIndex = pptOutline.slides.findIndex(
+      (slide, index) =>
+        getPptSlideSelectionId(slide, index) === nextSelectedId,
+    );
+    if (selectedIndex < 0) return null;
+    return {
+      id: nextSelectedId,
+      index: selectedIndex,
+      slide: pptOutline.slides[selectedIndex],
+    };
+  }, [pptOutline, pptSelectedSlideId, resolvePptSelectedSlideId]);
+
   const syncPptProjectState = async (
     projectId: string,
     options?: { openPreview?: boolean },
@@ -3788,7 +3931,10 @@ export default function NotebookDetailPage() {
     }
     const generatingIndices = (project.presentation_outline.slides || [])
       .map((slide, index) =>
-        slide.status === "IMAGE_QUEUED" || slide.status === "IMAGE_GENERATING"
+        slide.status === "IMAGE_QUEUED" ||
+        slide.status === "IMAGE_GENERATING" ||
+        slide.status === "DESCRIPTION_QUEUED" ||
+        slide.status === "DESCRIPTION_GENERATING"
           ? index
           : -1,
       )
@@ -3796,6 +3942,16 @@ export default function NotebookDetailPage() {
     setPptGeneratingIndices(generatingIndices);
     return project;
   };
+
+  useEffect(() => {
+    const nextSelectedId = resolvePptSelectedSlideId(
+      pptOutline,
+      pptSelectedSlideId,
+    );
+    if (nextSelectedId !== pptSelectedSlideId) {
+      setPptSelectedSlideId(nextSelectedId);
+    }
+  }, [pptOutline, pptSelectedSlideId, resolvePptSelectedSlideId]);
 
   const waitForPptTask = async (projectId: string, taskId: string) => {
     const pollingInterval = 1500;
@@ -3805,6 +3961,8 @@ export default function NotebookDetailPage() {
         fetchPptProject(projectId),
       ]);
       setPptActiveTaskId(task.id);
+      setPptTaskPhase(task.progress?.phase || "");
+      setPptWarnings(task.progress?.warnings || []);
       setPptOutline(project.presentation_outline);
       const total = task.progress?.total || project.pages.length || 0;
       const current = task.progress?.current || 0;
@@ -3831,6 +3989,70 @@ export default function NotebookDetailPage() {
     }
   };
 
+  const waitForPptPageTask = async (projectId: string, taskId: string) => {
+    const pollingInterval = 1500;
+    while (true) {
+      const [task, project] = await Promise.all([
+        fetchPptTask(projectId, taskId),
+        fetchPptProject(projectId),
+      ]);
+      setPptTaskPhase(task.progress?.phase || "");
+      setPptWarnings(task.progress?.warnings || []);
+      setPptOutline(project.presentation_outline);
+      const generatingIndices = (project.presentation_outline.slides || [])
+        .map((slide, index) =>
+          slide.status === "IMAGE_QUEUED" ||
+          slide.status === "IMAGE_GENERATING" ||
+          slide.status === "DESCRIPTION_QUEUED" ||
+          slide.status === "DESCRIPTION_GENERATING"
+            ? index
+            : -1,
+        )
+        .filter((index) => index >= 0);
+      setPptGeneratingIndices(generatingIndices);
+
+      if (task.status === "COMPLETED") {
+        return { task, project };
+      }
+      if (task.status === "FAILED" || task.status === "CANCELED") {
+        throw new Error(task.error_message || "PPT 页面任务执行失败");
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollingInterval));
+    }
+  };
+
+  const refreshPptSlideChatHistory = useCallback(
+    async (pageId: string) => {
+      if (!pptProjectId || !pageId) return;
+      setPptSlideChatLoadingId(pageId);
+      try {
+        const data = await fetchPptPageChatHistory(pptProjectId, pageId);
+        setPptSlideChatHistory((prev) => ({
+          ...prev,
+          [pageId]: data.messages || [],
+        }));
+      } catch (err) {
+        console.error("Failed to load PPT slide chat history:", err);
+      } finally {
+        setPptSlideChatLoadingId((prev) => (prev === pageId ? "" : prev));
+      }
+    },
+    [pptProjectId],
+  );
+
+  useEffect(() => {
+    if (!pptPreviewOpen) return;
+    const pageId = selectedPptSlide?.slide.pageId;
+    if (!pptProjectId || !pageId || pptSlideChatHistory[pageId]) return;
+    void refreshPptSlideChatHistory(pageId);
+  }, [
+    pptPreviewOpen,
+    pptProjectId,
+    selectedPptSlide,
+    pptSlideChatHistory,
+    refreshPptSlideChatHistory,
+  ]);
+
   function looksLikeOutlineText(value: string) {
     const text = value.trim();
     if (!text) return false;
@@ -3843,6 +4065,30 @@ export default function NotebookDetailPage() {
     mode: Exclude<PptCreationMode, "auto">;
     reason: string;
   } {
+    if (exportContentSource === "research") {
+      return {
+        mode: "from_research",
+        reason: "当前会基于深度研究报告直接生成 PPT 大纲和逐页内容。",
+      };
+    }
+    if (exportContentSource === "notebook") {
+      return {
+        mode: "from_notebook",
+        reason:
+          selectedNotebookRecordIds.length > 0
+            ? `当前会基于已选 ${selectedNotebookRecordIds.length} 条笔记内容生成 PPT。`
+            : "请选择至少一条笔记后再生成 PPT。",
+      };
+    }
+    if (exportContentSource === "sources") {
+      return {
+        mode: "from_sources",
+        reason:
+          selectedSourcesList.length > 0
+            ? `当前会基于已选 ${selectedSourcesList.length} 个来源生成 PPT。`
+            : "请选择至少一个来源后再生成 PPT。",
+      };
+    }
     if (pptDescriptionText.trim()) {
       return {
         mode: "descriptions",
@@ -3895,9 +4141,13 @@ export default function NotebookDetailPage() {
     stylePlan: PptStylePlan,
   ) => {
     const resolvedMode = resolvePptCreationMode(markdown);
-    let ideaPrompt = pptIdeaPrompt.trim();
-    let outlineText = pptOutlineText.trim();
-    const descriptionText = pptDescriptionText.trim();
+    const isSourceBackedMode =
+      resolvedMode === "from_research" ||
+      resolvedMode === "from_notebook" ||
+      resolvedMode === "from_sources";
+    let ideaPrompt = isSourceBackedMode ? "" : pptIdeaPrompt.trim();
+    let outlineText = isSourceBackedMode ? "" : pptOutlineText.trim();
+    const descriptionText = isSourceBackedMode ? "" : pptDescriptionText.trim();
 
     if (resolvedMode === "idea" && !ideaPrompt) {
       ideaPrompt = await deriveIdea(markdown);
@@ -3914,6 +4164,17 @@ export default function NotebookDetailPage() {
       setPptOutlineText(outlineText);
     }
 
+    const frozenSourceRefs =
+      resolvedMode === "from_sources"
+        ? selectedSourcesList.map((source) => ({
+            type: source.type,
+            title: source.title,
+            url: source.url,
+            source_key: source.source_key,
+            content: source.type === "report" ? source.content : undefined,
+          }))
+        : [];
+
     return {
       notebook_id: notebookId,
       session_id: currentSessionId || undefined,
@@ -3921,17 +4182,16 @@ export default function NotebookDetailPage() {
       idea_prompt: ideaPrompt || undefined,
       outline_text: outlineText || undefined,
       description_text: descriptionText || undefined,
-      source_content: markdown,
+      source_content: isSourceBackedMode ? undefined : markdown,
       template_style: stylePlan.templateStylePrompt || undefined,
       template_image_path: pptReferenceImagePath || undefined,
       reference_style_prompt: stylePlan.referenceStylePrompt || undefined,
       image_aspect_ratio: "16:9",
       language: "zh",
-      reference_sources: selectedSourcesList.map((source) => ({
-        type: source.type,
-        title: source.title,
-        url: source.url,
-      })),
+      reference_sources: frozenSourceRefs,
+      source_refs: frozenSourceRefs,
+      record_ids:
+        resolvedMode === "from_notebook" ? selectedNotebookRecordIds : [],
     };
   };
 
@@ -3986,15 +4246,25 @@ export default function NotebookDetailPage() {
   const resetPptPreview = () => {
     setPptPreviewOpen(false);
     setPptOutline(null);
+    setPptSelectedSlideId("");
     setPptGeneratingIndices([]);
     setPptImageProgress({ current: 0, total: 0 });
+    setPptTaskPhase("");
+    setPptWarnings([]);
+    setPptSlideChatHistory({});
+    setPptSlideChatLoadingId("");
+    setPptSlideChatSubmittingId("");
   };
 
   const handleUpdatePptSlide = (index: number, updatedSlide: SlideContent) => {
     setPptOutline((prev) => {
       if (!prev) return prev;
       const nextSlides = [...prev.slides];
-      nextSlides[index] = updatedSlide;
+      nextSlides[index] = {
+        ...updatedSlide,
+        isDirty: true,
+        status: "DRAFT",
+      };
       return { ...prev, slides: nextSlides };
     });
     if (pptProjectId && updatedSlide.pageId) {
@@ -4091,28 +4361,25 @@ export default function NotebookDetailPage() {
       const project = await createPptProject(createPayload);
       setPptProjectId(project.id);
       setPptActiveTaskId("");
+      setPptTaskPhase("");
+      setPptWarnings([]);
+      setPptSlideChatHistory({});
+      setPptSlideChatLoadingId("");
+      setPptSlideChatSubmittingId("");
       setPptOutline(project.presentation_outline);
-
-      const outlinedProject = await generatePptOutline(
-        project.id,
-        undefined,
-        bananaPptMaxSlides,
-      );
-      setPptOutline(outlinedProject.presentation_outline);
       setPptPreviewOpen(true);
-
-      const descriptionsTask = await generatePptDescriptions(project.id);
-      setPptActiveTaskId(descriptionsTask.id);
-      await waitForPptTask(project.id, descriptionsTask.id);
-
-      const imagesTask = await generatePptImages(project.id);
-      setPptActiveTaskId(imagesTask.id);
+      const fullTask = await generatePptFull(project.id, {
+        style_prompt: stylePlan.templateStylePrompt || undefined,
+        max_slides: bananaPptMaxSlides,
+      });
+      setPptActiveTaskId(fullTask.id);
       const { project: finishedProject } = await waitForPptTask(
         project.id,
-        imagesTask.id,
+        fullTask.id,
       );
       setPptOutline(finishedProject.presentation_outline);
       setPptActiveTaskId("");
+      setPptTaskPhase("");
       setPptGeneratingIndices([]);
     } catch (err) {
       console.error("PPT outline generation failed:", err);
@@ -4134,15 +4401,68 @@ export default function NotebookDetailPage() {
     );
     try {
       const task = await regeneratePptPageImage(pptProjectId, slide.pageId);
-      setPptActiveTaskId(task.id);
-      const { project } = await waitForPptTask(pptProjectId, task.id);
+      const { project } = await waitForPptPageTask(pptProjectId, task.id);
       setPptOutline(project.presentation_outline);
-      setPptActiveTaskId("");
     } catch (err) {
       console.error("PPT page image regeneration failed:", err);
     } finally {
+      setPptTaskPhase("");
       setPptGeneratingIndices((prev) => prev.filter((item) => item !== index));
       setIsPptGenerating(false);
+    }
+  };
+
+  const handleSelectPptSlide = (slideId: string) => {
+    setPptSelectedSlideId(slideId);
+  };
+
+  const handleSubmitPptSlideChat = async (message: string) => {
+    if (!pptProjectId || !selectedPptSlide?.slide.pageId) return;
+    const pageId = selectedPptSlide.slide.pageId;
+    const slideIndex = selectedPptSlide.index;
+    const userMessage: PptSlideChatMessage = {
+      id: makeClientId("ppt-chat-user"),
+      page_id: pageId,
+      role: "user",
+      content: message,
+    };
+
+    setPptSlideChatSubmittingId(pageId);
+    setPptSlideChatHistory((prev) => ({
+      ...prev,
+      [pageId]: [...(prev[pageId] || []), userMessage],
+    }));
+    setPptGeneratingIndices((prev) =>
+      prev.includes(slideIndex) ? prev : [...prev, slideIndex],
+    );
+
+    try {
+      const response = await chatEditPptPage(pptProjectId, pageId, message);
+      const assistantMessage: PptSlideChatMessage = {
+        id: makeClientId("ppt-chat-assistant"),
+        page_id: pageId,
+        role: "assistant",
+        content: response.assistant_message,
+        edit_type: response.edit_type,
+      };
+      setPptSlideChatHistory((prev) => ({
+        ...prev,
+        [pageId]: [...(prev[pageId] || []), assistantMessage],
+      }));
+      const { project } = await waitForPptPageTask(pptProjectId, response.task.id);
+      setPptOutline(project.presentation_outline);
+      await refreshPptSlideChatHistory(pageId);
+    } catch (err) {
+      console.error("PPT slide chat edit failed:", err);
+      setPptWarnings((prev) => [
+        err instanceof Error ? err.message : "单页编辑失败",
+        ...prev,
+      ].slice(0, 5));
+      await refreshPptSlideChatHistory(pageId);
+    } finally {
+      setPptTaskPhase("");
+      setPptGeneratingIndices((prev) => prev.filter((item) => item !== slideIndex));
+      setPptSlideChatSubmittingId((prev) => (prev === pageId ? "" : prev));
     }
   };
 
@@ -4330,6 +4650,8 @@ export default function NotebookDetailPage() {
 
         const task = await fetchPptTask(pptProjectId, pptActiveTaskId);
         if (cancelled) return;
+        setPptTaskPhase(task.progress?.phase || "");
+        setPptWarnings(task.progress?.warnings || []);
 
         const isPendingTask =
           task.status === "PENDING" || task.status === "RUNNING";
@@ -4340,6 +4662,7 @@ export default function NotebookDetailPage() {
           });
           setPptGeneratingIndices([]);
           setPptActiveTaskId("");
+          setPptTaskPhase("");
           return;
         }
 
@@ -4352,6 +4675,7 @@ export default function NotebookDetailPage() {
         setPptOutline(recoveredProject.presentation_outline);
         setPptGeneratingIndices([]);
         setPptActiveTaskId("");
+        setPptTaskPhase("");
       } catch (err) {
         if (!cancelled) {
           console.error("Failed to resume PPT project:", err);
@@ -4394,6 +4718,16 @@ export default function NotebookDetailPage() {
         >
           已选来源
         </button>
+        <button
+          onClick={() => setExportContentSource("notebook")}
+          className={`px-2 py-1 rounded-md transition-colors ${
+            exportContentSource === "notebook"
+              ? "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-sm border border-slate-200 dark:border-slate-700"
+              : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+          }`}
+        >
+          笔记内容
+        </button>
       </div>
     </div>
   );
@@ -4421,12 +4755,24 @@ export default function NotebookDetailPage() {
             label: "自动判定",
             value:
               pptCreationMode === "auto"
-                ? pptAutoResolution?.mode === "outline"
-                  ? "报告转大纲"
-                  : pptAutoResolution?.mode === "descriptions"
-                    ? "逐页描述"
-                    : "主题创意"
-                : pptCreationMode === "descriptions"
+                ? pptAutoResolution?.mode === "from_research"
+                  ? "研究报告"
+                  : pptAutoResolution?.mode === "from_notebook"
+                    ? "笔记内容"
+                    : pptAutoResolution?.mode === "from_sources"
+                      ? "来源摘要"
+                      : pptAutoResolution?.mode === "descriptions"
+                        ? "逐页描述"
+                        : pptAutoResolution?.mode === "outline"
+                          ? "结构化大纲"
+                          : "主题创意"
+                : pptCreationMode === "from_research"
+                  ? "研究报告"
+                  : pptCreationMode === "from_notebook"
+                    ? "笔记内容"
+                    : pptCreationMode === "from_sources"
+                      ? "来源摘要"
+                      : pptCreationMode === "descriptions"
                   ? "逐页描述"
                   : pptCreationMode === "outline"
                     ? "大纲"
@@ -4458,7 +4804,22 @@ export default function NotebookDetailPage() {
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
             {[
-              { id: "auto", label: "自动", hint: "报告 -> 大纲 -> 逐页描述" },
+              { id: "auto", label: "自动", hint: "按当前内容来源选择入口" },
+              {
+                id: "from_research",
+                label: "研究报告",
+                hint: "从深度研究报告生成 PPT",
+              },
+              {
+                id: "from_notebook",
+                label: "笔记内容",
+                hint: "从勾选笔记生成 PPT",
+              },
+              {
+                id: "from_sources",
+                label: "已选来源",
+                hint: "从勾选来源总结生成 PPT",
+              },
               { id: "idea", label: "Idea", hint: "从一句主题发散演示" },
               { id: "outline", label: "大纲", hint: "结构先行，手动可控" },
               {
@@ -4494,6 +4855,12 @@ export default function NotebookDetailPage() {
             <div className="text-[11px] font-medium text-slate-600 dark:text-slate-200">
               {pptCreationMode === "auto"
                 ? "自动策略"
+                : pptCreationMode === "from_research"
+                  ? "研究报告入口"
+                  : pptCreationMode === "from_notebook"
+                    ? "笔记内容入口"
+                    : pptCreationMode === "from_sources"
+                      ? "来源摘要入口"
                 : pptCreationMode === "idea"
                   ? "Idea 输入"
                   : pptCreationMode === "outline"
@@ -4503,6 +4870,12 @@ export default function NotebookDetailPage() {
             <p className="mt-1 text-[11px] leading-5 text-slate-500">
               {pptCreationMode === "auto"
                 ? pptAutoResolution?.reason
+                : pptCreationMode === "from_research"
+                  ? "优先使用当前会话中的深度研究报告作为输入，后端负责冻结报告快照。"
+                  : pptCreationMode === "from_notebook"
+                    ? "先勾选笔记，再由后端把这些记录冻结成项目输入。"
+                    : pptCreationMode === "from_sources"
+                      ? "使用当前勾选来源创建项目快照，并基于这些来源综合生成 PPT。"
                 : pptCreationMode === "idea"
                   ? "适合一句主题或演示方向，系统会先生成更完整的 PPT 框架。"
                   : pptCreationMode === "outline"
@@ -4556,6 +4929,76 @@ export default function NotebookDetailPage() {
                 placeholder="直接输入每页描述；留空时，系统只把当前研究内容当作补充证据，不会把全文直接写入 descriptions。"
                 className="w-full text-xs bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 resize-y"
               />
+            </div>
+          )}
+
+          {(effectivePptEntryMode === "from_research" ||
+            pptCreationMode === "from_research") && (
+            <div className="mt-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/50 px-3 py-2.5">
+              <div className="text-[11px] font-medium text-slate-600 dark:text-slate-200">
+                当前研究报告
+              </div>
+              <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                {researchReport
+                  ? "将直接使用当前深度研究报告创建 PPT 项目，并在后端冻结报告快照。"
+                  : "尚未生成深度研究报告。"}
+              </p>
+            </div>
+          )}
+
+          {(effectivePptEntryMode === "from_sources" ||
+            pptCreationMode === "from_sources") && (
+            <div className="mt-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/50 px-3 py-2.5">
+              <div className="text-[11px] font-medium text-slate-600 dark:text-slate-200">
+                已选来源快照
+              </div>
+              <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                {hasSelectedSources
+                  ? `当前会冻结 ${selectedSourcesCount} 个已选来源用于生成、重试和恢复。`
+                  : "请先在左侧勾选来源。"}
+              </p>
+            </div>
+          )}
+
+          {(effectivePptEntryMode === "from_notebook" ||
+            pptCreationMode === "from_notebook") && (
+            <div className="mt-3 space-y-2">
+              <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/50 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-medium text-slate-600 dark:text-slate-200">
+                      已选笔记
+                    </div>
+                    <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                      {selectedNotebookRecordCount > 0
+                        ? `当前已选择 ${selectedNotebookRecordCount} 条笔记，创建项目时会冻结这些记录。`
+                        : "请在下方“我的笔记”中勾选要纳入 PPT 的记录。"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedNotebookRecordIds(
+                          (notebook?.records || []).map((record) => record.id),
+                        )
+                      }
+                      disabled={(notebook?.records || []).length === 0}
+                      className="px-2.5 py-1 text-[11px] rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 disabled:opacity-50"
+                    >
+                      全选
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedNotebookRecordIds([])}
+                      disabled={selectedNotebookRecordCount === 0}
+                      className="px-2.5 py-1 text-[11px] rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 disabled:opacity-50"
+                    >
+                      清空
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -5716,9 +6159,7 @@ export default function NotebookDetailPage() {
                 </div>
                 {!canExport && (
                   <p className="text-xs text-slate-400 text-center mt-2">
-                    {exportContentSource === "research"
-                      ? "完成深度研究后可导出"
-                      : "选择来源后可导出"}
+                    {exportUnavailableHint}
                   </p>
                 )}
                 <div className="mt-3">{renderPptStylePanel()}</div>
@@ -5738,17 +6179,51 @@ export default function NotebookDetailPage() {
                     notebook.records
                       .slice()
                       .reverse()
-                      .map((record) => (
+                      .map((record) => {
+                        const isSelectedForPpt = selectedNotebookRecordIds.includes(record.id);
+                        return (
                         <div
                           key={record.id}
-                          className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-blue-300 transition-all group"
+                          className={`p-3 bg-white dark:bg-slate-800 border rounded-xl transition-all group ${
+                            isSelectedForPpt
+                              ? "border-blue-400 bg-blue-50/60 dark:bg-blue-950/30"
+                              : "border-slate-200 dark:border-slate-700 hover:border-blue-300"
+                          }`}
                         >
                           <div className="flex items-start justify-between mb-1">
-                            <div
-                              className="font-medium text-sm text-slate-900 line-clamp-1"
-                              title={record.title}
-                            >
-                              {record.title}
+                            <div className="flex items-start gap-2 min-w-0">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedNotebookRecordIds((prev) =>
+                                    prev.includes(record.id)
+                                      ? prev.filter((id) => id !== record.id)
+                                      : [...prev, record.id],
+                                  );
+                                }}
+                                className={`mt-0.5 flex-shrink-0 rounded p-0.5 ${
+                                  isSelectedForPpt
+                                    ? "text-blue-600"
+                                    : "text-slate-300 hover:text-blue-500"
+                                }`}
+                                title={isSelectedForPpt ? "取消用于 PPT" : "加入 PPT 生成"}
+                                aria-label={
+                                  isSelectedForPpt ? "取消用于 PPT" : "加入 PPT 生成"
+                                }
+                              >
+                                {isSelectedForPpt ? (
+                                  <CheckSquare className="w-4 h-4" />
+                                ) : (
+                                  <Square className="w-4 h-4" />
+                                )}
+                              </button>
+                              <div
+                                className="font-medium text-sm text-slate-900 line-clamp-1 min-w-0"
+                                title={record.title}
+                              >
+                                {record.title}
+                              </div>
                             </div>
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
@@ -5802,9 +6277,15 @@ export default function NotebookDetailPage() {
                                 record.created_at * 1000,
                               ).toLocaleDateString()}
                             </span>
+                            {isSelectedForPpt && (
+                              <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                                已纳入 PPT
+                              </span>
+                            )}
                           </div>
                         </div>
-                      ))
+                        );
+                      })
                   )}
                 </div>
               </div>
@@ -6014,11 +6495,7 @@ export default function NotebookDetailPage() {
                   {isExporting ? "导出中..." : "导出 PDF"}
                 </button>
                 {!canExport && (
-                  <p className="text-xs text-slate-400 mt-3">
-                    {exportContentSource === "research"
-                      ? "完成深度研究后可导出"
-                      : "选择来源后可导出"}
-                  </p>
+                  <p className="text-xs text-slate-400 mt-3">{exportUnavailableHint}</p>
                 )}
               </div>
             </div>
@@ -6055,13 +6532,13 @@ export default function NotebookDetailPage() {
                     {!bananaPptEnabled
                       ? "PPT 功能未启用"
                       : !canExportPptContent
-                        ? "完成深度研究后可导出"
+                        ? exportUnavailableHint
                         : !canUseReferenceImageStyle
                           ? "上传参考图后可继续"
                           : !canUsePresetStyle
                             ? "请选择预设风格"
                             : !canUseSourceStyle
-                              ? "选择来源后可生成风格"
+                              ? sourceStyleUnavailableHint
                               : ""}
                   </p>
                 )}
@@ -6098,11 +6575,7 @@ export default function NotebookDetailPage() {
                     {isExporting ? "生成中..." : "生成思维导图"}
                   </button>
                   {!canExport && (
-                    <p className="text-xs text-slate-400 mt-3">
-                      {exportContentSource === "research"
-                        ? "完成深度研究后可导出"
-                        : "选择来源后可导出"}
-                    </p>
+                    <p className="text-xs text-slate-400 mt-3">{exportUnavailableHint}</p>
                   )}
                 </div>
               ) : (
@@ -6244,9 +6717,30 @@ export default function NotebookDetailPage() {
         imageProgress={
           pptImageProgress.total > 0 ? pptImageProgress : undefined
         }
+        warnings={pptWarnings}
         generatingSlideIndices={pptGeneratingIndices}
+        selectedSlideId={pptSelectedSlideId}
+        chatMessages={
+          selectedPptSlide?.slide.pageId
+            ? pptSlideChatHistory[selectedPptSlide.slide.pageId] || []
+            : []
+        }
+        isChatLoading={
+          Boolean(
+            selectedPptSlide?.slide.pageId &&
+              pptSlideChatLoadingId === selectedPptSlide.slide.pageId,
+          )
+        }
+        isChatSubmitting={
+          Boolean(
+            selectedPptSlide?.slide.pageId &&
+              pptSlideChatSubmittingId === selectedPptSlide.slide.pageId,
+          )
+        }
         onClose={resetPptPreview}
         onExport={handleDownloadPptx}
+        onSelectSlide={handleSelectPptSlide}
+        onSubmitSlideChat={handleSubmitPptSlideChat}
         onUpdateSlide={handleUpdatePptSlide}
         onRegenerateSlide={handleRegeneratePptSlide}
       />

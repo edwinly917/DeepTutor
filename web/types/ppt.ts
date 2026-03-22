@@ -19,6 +19,7 @@ export interface SlideContent {
   iconName?: string;
   pageId?: string;
   status?: string;
+  isDirty?: boolean;
   descriptionText?: string | null;
 }
 
@@ -30,7 +31,14 @@ export interface PresentationOutline {
   slides: SlideContent[];
 }
 
-export type PptCreationMode = "auto" | "idea" | "outline" | "descriptions";
+export type PptCreationMode =
+  | "auto"
+  | "idea"
+  | "outline"
+  | "descriptions"
+  | "from_research"
+  | "from_notebook"
+  | "from_sources";
 
 export interface PptProjectPage {
   id: string;
@@ -49,6 +57,7 @@ export interface PptProjectPage {
   image_prompt?: string | null;
   generated_image_path?: string | null;
   cached_image_path?: string | null;
+  is_dirty?: boolean;
   status: string;
   created_at?: string | null;
   updated_at?: string | null;
@@ -64,9 +73,11 @@ export interface PptTask {
     total?: number;
     percentage?: number;
     message?: string;
+    phase?: string | null;
     warnings?: string[];
     failed_count?: number;
     download_url?: string | null;
+    page_ids?: string[];
   };
   error_message?: string | null;
   created_at?: string | null;
@@ -74,11 +85,26 @@ export interface PptTask {
   finished_at?: string | null;
 }
 
+export interface PptSlideChatMessage {
+  id: string;
+  page_id: string;
+  role: string;
+  content: string;
+  edit_type?: string | null;
+  created_at?: string | null;
+}
+
 export interface PptProject {
   id: string;
   notebook_id?: string | null;
   session_id?: string | null;
-  creation_type: "idea" | "outline" | "descriptions";
+  creation_type:
+    | "idea"
+    | "outline"
+    | "descriptions"
+    | "from_research"
+    | "from_notebook"
+    | "from_sources";
   idea_prompt?: string | null;
   outline_text?: string | null;
   description_text?: string | null;
@@ -89,6 +115,9 @@ export interface PptProject {
   image_aspect_ratio: "16:9" | "4:3";
   language: string;
   reference_sources: Array<Record<string, unknown>>;
+  source_refs?: Array<Record<string, unknown>>;
+  normalized_content?: string | null;
+  content_cached_at?: string | null;
   status: string;
   created_at?: string | null;
   updated_at?: string | null;

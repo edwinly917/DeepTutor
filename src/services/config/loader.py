@@ -16,6 +16,8 @@ from typing import Any, Optional
 from dotenv import load_dotenv
 import yaml
 
+from src.services.llm.config import get_llm_config
+
 # PROJECT_ROOT points to the actual project root directory (DeepTutor/)
 # Path(__file__) = src/services/config/loader.py
 # .parent = src/services/config/
@@ -254,6 +256,18 @@ class BananaPptConfig:
     style_templates: list[dict[str, str]] = field(default_factory=list)
 
 
+@dataclass
+class PptAnalysisVisionConfig:
+    """Vision analysis configuration for PPT template understanding."""
+
+    model: str = ""
+    api_key: str = ""
+    base_url: str = ""
+    binding: str = "openai"
+    temperature: float = 0.3
+    max_tokens: int = 2000
+
+
 def get_ppt_config(project_root: Optional[Path] = None) -> PPTConfig:
     """
     Get PPT-specific LLM configuration with fallback chain.
@@ -391,6 +405,58 @@ def get_banana_ppt_config(project_root: Optional[Path] = None) -> BananaPptConfi
     )
 
 
+def get_ppt_analysis_vision_config(project_root: Optional[Path] = None) -> PptAnalysisVisionConfig:
+    """
+    Get PPT template-analysis vision configuration with env-first override.
+
+    Priority:
+    1. Dedicated environment variables: PPT_ANALYSIS_VISION_*
+    2. main.yaml: export.ppt_v2.analysis_vision
+    3. Global LLM config (LLM_*)
+    """
+
+    if project_root is None:
+        project_root = PROJECT_ROOT
+
+    config = load_config_with_main("main.yaml", project_root)
+    analysis_cfg = config.get("export", {}).get("ppt_v2", {}).get("analysis_vision", {}) or {}
+    llm_cfg = get_llm_config()
+
+    def _get_value_env_first(yaml_key: str, env_key: str, default: Any = "") -> Any:
+        env_val = os.getenv(env_key)
+        if env_val not in (None, ""):
+            return env_val.strip().strip("\"'")
+        yaml_val = analysis_cfg.get(yaml_key)
+        if yaml_val not in (None, ""):
+            return yaml_val
+        return default
+
+    return PptAnalysisVisionConfig(
+        model=str(
+            _get_value_env_first("model", "PPT_ANALYSIS_VISION_MODEL", llm_cfg.model)
+        ).strip(),
+        api_key=str(
+            _get_value_env_first("api_key", "PPT_ANALYSIS_VISION_API_KEY", llm_cfg.api_key)
+        ).strip(),
+        base_url=str(
+            _get_value_env_first(
+                "base_url",
+                "PPT_ANALYSIS_VISION_BASE_URL",
+                llm_cfg.base_url or "",
+            )
+        ).strip(),
+        binding=str(
+            _get_value_env_first("binding", "PPT_ANALYSIS_VISION_BINDING", llm_cfg.binding)
+        ).strip(),
+        temperature=float(
+            _get_value_env_first("temperature", "PPT_ANALYSIS_VISION_TEMPERATURE", 0.3)
+        ),
+        max_tokens=int(
+            _get_value_env_first("max_tokens", "PPT_ANALYSIS_VISION_MAX_TOKENS", 2000)
+        ),
+    )
+
+
 __all__ = [
     "PROJECT_ROOT",
     "load_config_with_main",
@@ -399,9 +465,11 @@ __all__ = [
     "get_agent_params",
     "get_ppt_config",
     "get_banana_ppt_config",
+    "get_ppt_analysis_vision_config",
     "PPTConfig",
     "BananaPptConfig",
     "BananaPptOutlineConfig",
     "BananaPptImageConfig",
+    "PptAnalysisVisionConfig",
     "_deep_merge",
 ]

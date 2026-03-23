@@ -9,7 +9,9 @@ class SlideEditor:
     def __init__(self, json_complete: Callable[[str, str], dict[str, Any]]):
         self.json_complete = json_complete
 
-    def classify_edit(self, page: dict[str, Any], user_message: str) -> str:
+    def classify_edit(
+        self, page: dict[str, Any], user_message: str, style_context: Any | None = None
+    ) -> str:
         lowered = user_message.lower()
         image_keywords = ["图片", "配图", "图像", "视觉", "插画", "照片", "背景", "image", "visual"]
         outline_keywords = ["标题", "要点", "结构", "顺序", "大纲", "分成", "合并", "outline"]
@@ -35,6 +37,7 @@ class SlideEditor:
             slide_title=outline.get("title") or "Untitled",
             slide_points=outline.get("points") or [],
             user_message=user_message,
+            style_context=style_context,
         )
         data = self.json_complete(user_prompt, system_prompt)
         edit_type = (data.get("edit_type") or "").strip()
@@ -44,12 +47,15 @@ class SlideEditor:
             else "description_edit"
         )
 
-    def rewrite_outline(self, page: dict[str, Any], user_message: str) -> dict[str, Any]:
+    def rewrite_outline(
+        self, page: dict[str, Any], user_message: str, style_context: Any | None = None
+    ) -> dict[str, Any]:
         outline = page.get("outline_content") or {}
         system_prompt, user_prompt = PptPromptManager.rewrite_outline(
             current_title=outline.get("title") or "Untitled",
             current_points=outline.get("points") or [],
             user_message=user_message,
+            style_context=style_context,
         )
         data = self.json_complete(user_prompt, system_prompt)
         points = [str(point).strip() for point in (data.get("points") or []) if str(point).strip()]
@@ -61,7 +67,9 @@ class SlideEditor:
         ).strip() or "已根据你的要求调整这一页的大纲，并开始重生成。"
         return {"title": title, "points": points, "assistant_message": assistant_message}
 
-    def rewrite_description(self, page: dict[str, Any], user_message: str) -> dict[str, Any]:
+    def rewrite_description(
+        self, page: dict[str, Any], user_message: str, style_context: Any | None = None
+    ) -> dict[str, Any]:
         outline = page.get("outline_content") or {}
         current_description = (
             (page.get("description_content") or {}).get("text")
@@ -73,6 +81,7 @@ class SlideEditor:
             slide_points=outline.get("points") or [],
             current_description=current_description or "",
             user_message=user_message,
+            style_context=style_context,
         )
         data = self.json_complete(user_prompt, system_prompt)
         description_text = (data.get("description_text") or "").strip()
@@ -86,7 +95,9 @@ class SlideEditor:
             "assistant_message": assistant_message,
         }
 
-    def rewrite_image_prompt(self, page: dict[str, Any], user_message: str) -> dict[str, Any]:
+    def rewrite_image_prompt(
+        self, page: dict[str, Any], user_message: str, style_context: Any | None = None
+    ) -> dict[str, Any]:
         outline = page.get("outline_content") or {}
         current_prompt = (page.get("image_prompt") or "").strip()
         system_prompt, user_prompt = PptPromptManager.rewrite_image_prompt(
@@ -94,6 +105,7 @@ class SlideEditor:
             slide_points=outline.get("points") or [],
             current_prompt=current_prompt,
             user_message=user_message,
+            style_context=style_context,
         )
         data = self.json_complete(user_prompt, system_prompt)
         image_prompt = (data.get("image_prompt") or "").strip() or current_prompt

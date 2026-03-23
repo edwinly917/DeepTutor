@@ -44,9 +44,13 @@ def test_from_notebook_project_persists_record_ids_and_freezes_selected_records(
         session_id=None,
         creation_type="from_notebook",
         source_content=None,
-        template_style=None,
+        style_preset_id=None,
+        style_custom_text=None,
         template_image_path=None,
+        template_file_refs=[],
         reference_style_prompt=None,
+        reference_layout_prompt=None,
+        reference_content_prompt=None,
         image_aspect_ratio="16:9",
         language="zh",
         reference_sources=[],
@@ -80,9 +84,13 @@ def test_from_sources_project_freezes_report_snapshot_by_value(ppt_service):
         session_id="session-1",
         creation_type="from_sources",
         source_content=None,
-        template_style=None,
+        style_preset_id=None,
+        style_custom_text=None,
         template_image_path=None,
+        template_file_refs=[],
         reference_style_prompt=None,
+        reference_layout_prompt=None,
+        reference_content_prompt=None,
         image_aspect_ratio="16:9",
         language="zh",
         reference_sources=[],
@@ -107,9 +115,13 @@ def test_update_page_marks_dirty_and_regenerate_page_refreshes_description_promp
         outline_text=None,
         description_text="seed",
         source_content="seed",
-        template_style=None,
+        style_preset_id=None,
+        style_custom_text=None,
         template_image_path=None,
+        template_file_refs=[],
         reference_style_prompt=None,
+        reference_layout_prompt=None,
+        reference_content_prompt=None,
         image_aspect_ratio="16:9",
         language="zh",
         reference_sources=[],
@@ -142,11 +154,11 @@ def test_update_page_marks_dirty_and_regenerate_page_refreshes_description_promp
     ) -> tuple[dict[str, Any], list[str]]:
         return project_payload, []
 
-    async def fake_style_briefs(project_payload: dict[str, Any]) -> dict[str, str]:
-        return {"outline_style_brief": "", "image_style_brief": ""}
+    async def fake_ensure_analysis(project_payload: dict[str, Any]) -> dict[str, Any]:
+        return project_payload
 
     monkeypatch.setattr(ppt_service, "_prepare_project_source_content", fake_prepare)
-    monkeypatch.setattr(ppt_service, "_resolve_style_briefs_for_project", fake_style_briefs)
+    monkeypatch.setattr(ppt_service, "_ensure_template_analysis", fake_ensure_analysis)
     monkeypatch.setattr(
         ppt_service,
         "_filter_pages",
@@ -156,7 +168,7 @@ def test_update_page_marks_dirty_and_regenerate_page_refreshes_description_promp
     monkeypatch.setattr(
         ppt_service,
         "_generate_page_description",
-        lambda project_payload, page_payload, detail_level, deck_outline_summary, style_briefs: {
+        lambda project_payload, page_payload, detail_level, deck_outline_summary, style_context: {
             "description_content": {"text": "Fresh generated description"},
             "image_prompt": "fresh generated image prompt",
         },
@@ -164,7 +176,7 @@ def test_update_page_marks_dirty_and_regenerate_page_refreshes_description_promp
     monkeypatch.setattr(
         ppt_service,
         "_generate_page_image",
-        lambda project_payload, page_payload, style_briefs, deck_title: {
+        lambda project_payload, page_payload, style_context, deck_title: {
             "generated_image_path": "slides/new.png",
             "cached_image_path": "slides/new-thumb.jpg",
             "prompt_used": page_payload.get("image_prompt") or "fresh generated image prompt",
@@ -207,9 +219,13 @@ def test_export_pptx_rejects_dirty_pages(ppt_service):
         outline_text=None,
         description_text="seed",
         source_content="seed",
-        template_style=None,
+        style_preset_id=None,
+        style_custom_text=None,
         template_image_path=None,
+        template_file_refs=[],
         reference_style_prompt=None,
+        reference_layout_prompt=None,
+        reference_content_prompt=None,
         image_aspect_ratio="16:9",
         language="zh",
         reference_sources=[],

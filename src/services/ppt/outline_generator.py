@@ -37,22 +37,28 @@ class OutlineGenerator:
         source_content: str,
         *,
         style_prompt: str | None = None,
+        style_context=None,
         max_slides: int | None = None,
         language: str = "zh",
         source_type: str = "from_sources",
+        reference_files: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if not source_content:
             raise ValueError("source_content is empty")
 
         max_slides = max(1, int(max_slides or self.config.max_slides))
         trimmed_content = self._trim_source(source_content)
+        resolved_style_context = style_context or PptPromptManager.resolve_style_context(
+            style_custom_text=(style_prompt or "").strip()
+        )
         system_prompt = PptPromptManager.outline_system(language)
         user_prompt = PptPromptManager.outline_user(
             source_type=source_type,
-            content=trimmed_content,
+            source_brief=trimmed_content,
             max_slides=max_slides,
-            style_prompt=(style_prompt or "").strip(),
+            style_context=resolved_style_context,
             language=language,
+            reference_files=reference_files,
         )
 
         outline_cfg = self.config.outline

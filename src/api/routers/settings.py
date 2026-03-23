@@ -6,13 +6,16 @@ Manages user settings: theme, language, environment variables, etc.
 import json
 import os
 from pathlib import Path
+import tempfile
 from typing import Any, Dict, Literal
 
 from fastapi import APIRouter, HTTPException
+from PIL import Image, ImageDraw
 from pydantic import BaseModel
 
 from src.services.embedding import get_embedding_config
 from src.services.llm import get_llm_config
+from src.services.ppt.template_analyzer import TemplateAnalyzer
 from src.services.tts import get_tts_config
 from src.utils.config_manager import ConfigManager
 
@@ -198,6 +201,49 @@ ENV_VAR_DEFINITIONS = {
         "default": "16:9",
         "sensitive": False,
     },
+    # PPT VLM / template analysis configuration
+    "PPT_ANALYSIS_VISION_MODEL": {
+        "description": "Vision model name for PPT template analysis (used for image, PDF, and PPT style/layout extraction)",
+        "category": "ppt_vlm",
+        "required": False,
+        "default": "",
+        "sensitive": False,
+    },
+    "PPT_ANALYSIS_VISION_API_KEY": {
+        "description": "API key for PPT template-analysis VLM",
+        "category": "ppt_vlm",
+        "required": False,
+        "default": "",
+        "sensitive": True,
+    },
+    "PPT_ANALYSIS_VISION_BASE_URL": {
+        "description": "Vision API base URL for PPT template analysis",
+        "category": "ppt_vlm",
+        "required": False,
+        "default": "",
+        "sensitive": False,
+    },
+    "PPT_ANALYSIS_VISION_BINDING": {
+        "description": "Vision provider binding for PPT template analysis: gemini, openai, doubao, etc.",
+        "category": "ppt_vlm",
+        "required": False,
+        "default": "openai",
+        "sensitive": False,
+    },
+    "PPT_ANALYSIS_VISION_TEMPERATURE": {
+        "description": "Sampling temperature for PPT template-analysis VLM",
+        "category": "ppt_vlm",
+        "required": False,
+        "default": "0.3",
+        "sensitive": False,
+    },
+    "PPT_ANALYSIS_VISION_MAX_TOKENS": {
+        "description": "Max output tokens for PPT template-analysis VLM",
+        "category": "ppt_vlm",
+        "required": False,
+        "default": "2000",
+        "sensitive": False,
+    },
     # Web Search Configuration
     "SEARCH_PROVIDER": {
         "description": "Search provider: perplexity, baidu, volcengine",
@@ -248,6 +294,11 @@ ENV_CATEGORIES = {
         "name": "PPT Image Generation Configuration",
         "description": "Image generation and export settings for PPT. Supports Gemini, OpenAI, and Doubao (Volcano Engine).",
         "icon": "settings",
+    },
+    "ppt_vlm": {
+        "name": "PPT VLM Configuration",
+        "description": "Vision model settings for PPT template analysis, including image/PDF/PPT style and layout extraction.",
+        "icon": "eye",
     },
 }
 
@@ -697,12 +748,13 @@ async def test_env_config():
     """
     Test current environment configuration by validating all services.
 
-    Returns the status of each service (LLM, Embedding, TTS).
+    Returns the status of each service (LLM, Embedding, TTS, PPT VLM).
     """
     results = {
         "llm": {"status": "unknown", "model": None, "error": None},
         "embedding": {"status": "unknown", "model": None, "error": None},
         "tts": {"status": "unknown", "model": None, "error": None},
+        "ppt_vlm": {"status": "unknown", "model": None, "error": None},
     }
 
     # Test LLM configuration
@@ -745,16 +797,31 @@ async def test_env_config():
         results["tts"]["status"] = "error"
         results["tts"]["error"] = str(e)
 
+    # Test PPT VLM configuration
+    try:
+        from src.services.config import get_ppt_analysis_vision_config
+
+        vision_config = get_ppt_analysis_vision_config()
+        results["ppt_vlm"]["model"] = vision_config.model
+        results["ppt_vlm"]["status"] = "configured"
+        results["ppt_vlm"]["base_url"] = vision_config.base_url
+    except ValueError as e:
+        results["ppt_vlm"]["status"] = "not_configured"
+        results["ppt_vlm"]["error"] = str(e)
+    except Exception as e:
+        results["ppt_vlm"]["status"] = "error"
+        results["ppt_vlm"]["error"] = str(e)
+
     return results
 
 
 @router.post("/env/test/{service}")
-async def test_single_service(service: Literal["llm", "embedding", "tts"]):
+async def test_single_service(service: Literal["llm", "embedding", "tts", "ppt_vlm"]):
     """
     Test a single service configuration with actual API call.
 
     Args:
-        service: The service to test (llm, embedding, tts)
+        service: The service to test (llm, embedding, tts, ppt_vlm)
 
     Returns:
         Test result with status, model info, and response time.
@@ -836,6 +903,40 @@ async def test_single_service(service: Literal["llm", "embedding", "tts"]):
             else:
                 result["status"] = "not_configured"
                 result["error"] = "Missing model or base_url"
+        except ValueError as e:
+            result["status"] = "not_configured"
+            result["error"] = str(e)
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = str(e)
+
+    elif service == "ppt_vlm":
+        try:
+            from src.services.config import get_ppt_analysis_vision_config
+
+            vision_config = get_ppt_analysis_vision_config()
+            result["model"] = vision_config.model
+            result["base_url"] = vision_config.base_url
+
+            with tempfile.TemporaryDirectory(prefix="ppt-vlm-test-") as temp_dir:
+                image_path = Path(temp_dir) / "ppt_vlm_test.png"
+                image = Image.new("RGB", (800, 450), (18, 24, 38))
+                draw = ImageDraw.Draw(image)
+                draw.rectangle((0, 0, 800, 36), fill=(59, 130, 246))
+                draw.text((40, 80), "Template Analysis Test", fill=(255, 255, 255))
+                draw.text((40, 150), "Revenue +12% YoY", fill=(255, 255, 255))
+                draw.rectangle((430, 90, 740, 320), outline=(229, 231, 235), width=3)
+                image.save(image_path)
+
+                analyzer = TemplateAnalyzer(Path(__file__).resolve().parents[3])
+                analysis = await analyzer.analyze_path(image_path)
+
+            if analysis.reference_style_prompt or analysis.reference_layout_prompt:
+                result["status"] = "success"
+                result["message"] = "Style/layout analysis succeeded"
+            else:
+                result["status"] = "error"
+                result["error"] = "VLM returned empty style/layout analysis"
         except ValueError as e:
             result["status"] = "not_configured"
             result["error"] = str(e)

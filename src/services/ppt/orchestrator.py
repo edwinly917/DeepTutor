@@ -18,7 +18,7 @@ from src.logging import get_logger
 from src.services.config import get_banana_ppt_config, load_config_with_main
 from src.services.export.ppt_task_manager import ppt_task_manager
 from src.services.llm import complete as llm_complete
-from src.services.llm import get_llm_client, get_llm_config, get_token_limit_kwargs
+from src.services.llm import get_llm_config, get_token_limit_kwargs
 from src.services.ppt.content_extractors import (
     NotebookExtractor,
     ResearchExtractor,
@@ -28,9 +28,11 @@ from src.services.ppt.description_generator import DescriptionGenerator
 from src.services.ppt.export_service import PptExportService
 from src.services.ppt.image_generator import ImageGenerator
 from src.services.ppt.outline_generator import OutlineGenerator
-from src.services.ppt.prompts import PptPromptManager
+from src.services.ppt.preset_styles import DEFAULT_PRESET_STYLE_ID
+from src.services.ppt.prompts import PptPromptManager, StyleContext
 from src.services.ppt.slide_editor import SlideEditor
 from src.services.ppt.smart_merge import SmartMerge
+from src.services.ppt.template_analyzer import TemplateAnalyzer
 from src.services.storage import ppt_store
 
 logger = get_logger("PPTProjectService")
@@ -108,22 +110,23 @@ class PptProjectService:
         self.description_generator = DescriptionGenerator(self._complete_json_sync)
         self.slide_editor = SlideEditor(self._complete_json_sync)
         self.smart_merge = SmartMerge(self._default_layout)
+        self.template_analyzer = TemplateAnalyzer(project_root)
         task_cfg = self.ppt_v2_config.get("task", {}) or {}
         self.description_workers = int(task_cfg.get("description_workers", 4))
         self.image_workers = int(task_cfg.get("image_workers", 3))
         self.polling_hint_ms = int(task_cfg.get("polling_hint_ms", 1500))
 
     def get_config(self) -> dict[str, Any]:
-        ppt_cfg = self.config.get("export", {}).get("ppt", {}) or {}
-        style_templates = self.banana_config.style_templates or ppt_cfg.get("style_templates", [])
         return {
             "enabled": self.ppt_v2_config.get("enabled", True),
             "max_slides": int(
                 self.ppt_v2_config.get(
-                    "max_slides", self.banana_config.max_slides or ppt_cfg.get("max_slides", 15)
+                    "max_slides",
+                    self.banana_config.max_slides
+                    or (self.config.get("export", {}).get("ppt", {}) or {}).get("max_slides", 15),
                 )
             ),
-            "style_templates": style_templates,
+            "style_presets": PptPromptManager.list_style_presets(),
             "polling_hint_ms": self.polling_hint_ms,
             "creation_modes": ["auto", "from_research", "from_notebook", "from_sources"],
         }
@@ -135,9 +138,13 @@ class PptProjectService:
         session_id: str | None,
         creation_type: str,
         source_content: str | None,
-        template_style: str | None,
+        style_preset_id: str | None,
+        style_custom_text: str | None,
         template_image_path: str | None,
+        template_file_refs: list[dict[str, Any]] | None,
         reference_style_prompt: str | None,
+        reference_layout_prompt: str | None,
+        reference_content_prompt: str | None,
         image_aspect_ratio: str,
         language: str,
         reference_sources: list[dict[str, Any]] | None,
@@ -181,9 +188,14 @@ class PptProjectService:
             outline_text=None,
             description_text=None,
             source_content=frozen_source_content,
-            template_style=(template_style or "").strip() or None,
+            style_preset_id=(style_preset_id or DEFAULT_PRESET_STYLE_ID).strip()
+            or DEFAULT_PRESET_STYLE_ID,
+            style_custom_text=(style_custom_text or "").strip() or None,
             template_image_path=(template_image_path or "").strip() or None,
+            template_file_refs=[dict(item) for item in (template_file_refs or [])],
             reference_style_prompt=(reference_style_prompt or "").strip() or None,
+            reference_layout_prompt=(reference_layout_prompt or "").strip() or None,
+            reference_content_prompt=(reference_content_prompt or "").strip() or None,
             image_aspect_ratio=image_aspect_ratio,
             language=language or "zh",
             reference_sources=reference_sources or [],
@@ -230,7 +242,7 @@ class PptProjectService:
         output_path.write_bytes(data)
 
         try:
-            derived_style_prompt = await self._derive_reference_style_prompt(output_path)
+            analysis = await self.template_analyzer.analyze_path(output_path)
         except Exception as exc:
             output_path.unlink(missing_ok=True)
             raise ReferenceStyleExtractionError(str(exc)) from exc
@@ -240,13 +252,32 @@ class PptProjectService:
             "image_path": relative_path,
             "image_url": self._to_output_url(relative_path),
             "image_name": safe_name,
-            "derived_style_prompt": derived_style_prompt,
+            "derived_style_prompt": analysis.reference_style_prompt,
+            "derived_layout_prompt": analysis.reference_layout_prompt,
+            "derived_content_prompt": analysis.reference_content_prompt,
             "content_type": content_type or self._guess_image_content_type(output_path),
         }
 
-    async def preview_style(self, style_prompt: str | None = None) -> dict[str, Any]:
-        theme = self._build_style_preview_theme((style_prompt or "").strip())
-        return {"theme": theme, "preview_svg": self._build_style_preview_svg(theme)}
+    async def preview_style(
+        self,
+        *,
+        style_preset_id: str | None = None,
+        style_custom_text: str | None = None,
+        reference_style_prompt: str | None = None,
+        reference_layout_prompt: str | None = None,
+        reference_content_prompt: str | None = None,
+        language: str = "zh",
+    ) -> dict[str, Any]:
+        style_context = self._build_style_context(
+            style_preset_id=style_preset_id,
+            style_custom_text=style_custom_text,
+            reference_style_prompt=reference_style_prompt,
+            reference_layout_prompt=reference_layout_prompt,
+            reference_content_prompt=reference_content_prompt,
+        )
+        theme = self._build_style_preview_theme(style_context.preview_prompt(language))
+        payload = PptPromptManager.style_context_to_preview_payload(style_context, language)
+        return {"theme": theme, "preview_svg": self._build_style_preview_svg(theme), **payload}
 
     async def generate_image_preview(
         self,
@@ -272,26 +303,15 @@ class PptProjectService:
         self,
         project_id: str,
         *,
-        style_prompt: str | None = None,
         max_slides: int | None = None,
     ) -> dict[str, Any]:
         project = ppt_store.get_project(project_id)
         if not project:
             raise ValueError("Project not found")
-        if style_prompt is not None:
-            project = (
-                ppt_store.update_project(
-                    project_id,
-                    template_style=(style_prompt or "").strip() or None,
-                )
-                or project
-            )
-        project = await self._ensure_reference_style_prompt(project)
+        project = await self._ensure_template_analysis(project)
         project, _ = await self._prepare_project_source_content(project_id, project)
 
-        normalized_outline = await self._build_outline(
-            project, style_prompt=style_prompt, max_slides=max_slides
-        )
+        normalized_outline = await self._build_outline(project, max_slides=max_slides)
         existing_pages = ppt_store.list_pages(project_id)
         self._smart_merge_pages(project_id, existing_pages, normalized_outline["slides"])
         ppt_store.update_project(
@@ -364,7 +384,6 @@ class PptProjectService:
         self,
         project_id: str,
         *,
-        style_prompt: str | None = None,
         max_slides: int | None = None,
         detail_level: str = "default",
     ) -> dict[str, Any]:
@@ -384,7 +403,6 @@ class PptProjectService:
             task["id"],
             self._run_generate_full,
             project_id,
-            style_prompt,
             max_slides,
             detail_level,
         )
@@ -420,7 +438,7 @@ class PptProjectService:
         edit_type = self._classify_page_chat_edit(project, page, user_message)
         assistant_message: str
         if edit_type == "outline_edit":
-            updated_outline = self._rewrite_outline_from_chat(page, user_message)
+            updated_outline = self._rewrite_outline_from_chat(project, page, user_message)
             assistant_message = updated_outline.pop("assistant_message")
             page = self.update_page(
                 project_id,
@@ -429,7 +447,7 @@ class PptProjectService:
                 points=updated_outline["points"],
             )
         elif edit_type == "description_edit":
-            updated_description = self._rewrite_description_from_chat(page, user_message)
+            updated_description = self._rewrite_description_from_chat(project, page, user_message)
             assistant_message = updated_description.pop("assistant_message")
             page = self.update_page(
                 project_id,
@@ -437,7 +455,7 @@ class PptProjectService:
                 description_text=updated_description["description_text"],
             )
         else:
-            updated_image = self._rewrite_image_prompt_from_chat(page, user_message)
+            updated_image = self._rewrite_image_prompt_from_chat(project, page, user_message)
             assistant_message = updated_image.pop("assistant_message")
             page = self.update_page(
                 project_id,
@@ -646,24 +664,20 @@ class PptProjectService:
         self,
         project: dict[str, Any],
         *,
-        style_prompt: str | None,
         max_slides: int | None,
     ) -> dict[str, Any]:
         limit = int(max_slides or self.get_config()["max_slides"])
-        style_briefs = await self._resolve_style_briefs_for_project(
-            project, style_prompt=style_prompt
-        )
-        source_content = (
-            project.get("source_content") or project.get("normalized_content") or ""
-        ).strip()
-        if not source_content:
+        style_context = self._style_context_for_project(project)
+        source_brief = (project.get("normalized_content") or "").strip()
+        if not source_brief:
             raise ValueError("No project source content available for outline generation")
         outline = await self.outline_generator.generate_outline(
-            source_content=source_content,
-            style_prompt=style_briefs.get("outline_style_brief"),
+            source_content=source_brief,
+            style_context=style_context,
             max_slides=limit,
             language=project.get("language") or "zh",
             source_type=project.get("creation_type") or "from_sources",
+            reference_files=project.get("template_file_refs") or [],
         )
         for index, slide in enumerate(outline.get("slides") or []):
             slide.setdefault("layout", self._default_layout(index))
@@ -676,9 +690,9 @@ class PptProjectService:
         if creation_type not in {"from_research", "from_notebook", "from_sources"}:
             return project, []
 
+        warnings: list[str] = []
+
         if creation_type == "from_research":
-            if project.get("source_content") and project.get("source_refs"):
-                return project, []
             source_content, source_refs = self.research_extractor.freeze_project_input(
                 notebook_id=project.get("notebook_id"),
                 session_id=project.get("session_id"),
@@ -693,44 +707,39 @@ class PptProjectService:
                 )
                 or project
             )
-            return project, []
-
-        if creation_type == "from_notebook":
-            if project.get("source_content"):
-                return project, []
-            source_content = self.notebook_extractor.freeze_project_input(
-                notebook_id=project.get("notebook_id"),
-                record_ids=project.get("record_ids") or [],
-            )
-            project = ppt_store.update_project(project_id, source_content=source_content) or project
-            return project, []
-
-        if project.get("normalized_content"):
+        elif creation_type == "from_notebook":
             if not project.get("source_content"):
-                project = (
-                    ppt_store.update_project(
-                        project_id, source_content=project.get("normalized_content")
-                    )
-                    or project
+                source_content = self.notebook_extractor.freeze_project_input(
+                    notebook_id=project.get("notebook_id"),
+                    record_ids=project.get("record_ids") or [],
                 )
-            return project, []
-
-        source_refs = project.get("source_refs") or project.get("reference_sources") or []
-        if not source_refs:
-            raise ValueError("from_sources requires frozen source_refs")
-        markdown, warnings, cached_at = await self.sources_extractor.generate_markdown(
-            source_refs=source_refs,
-            topic=self._resolve_project_topic(project) or None,
-        )
-        project = (
-            ppt_store.update_project(
-                project_id,
-                source_content=markdown,
-                normalized_content=markdown,
-                content_cached_at=cached_at,
+                project = ppt_store.update_project(project_id, source_content=source_content) or project
+        elif creation_type == "from_sources" and not project.get("source_content"):
+            source_refs = project.get("source_refs") or project.get("reference_sources") or []
+            if not source_refs:
+                raise ValueError("from_sources requires frozen source_refs")
+            markdown, warnings, cached_at = await self.sources_extractor.generate_markdown(
+                source_refs=source_refs,
+                topic=self._resolve_project_topic(project) or None,
             )
-            or project
-        )
+            project = (
+                ppt_store.update_project(
+                    project_id,
+                    source_content=markdown,
+                    content_cached_at=cached_at,
+                )
+                or project
+            )
+
+        normalized_content = (project.get("normalized_content") or "").strip()
+        if not normalized_content:
+            source_content = (project.get("source_content") or "").strip()
+            if not source_content:
+                raise ValueError("No source content available for PPT normalization")
+            normalized_content = await self._normalize_to_deck_source_brief(project, source_content)
+            project = (
+                ppt_store.update_project(project_id, normalized_content=normalized_content) or project
+            )
         return project, warnings
 
     def _smart_merge_pages(
@@ -745,11 +754,11 @@ class PptProjectService:
         if not project:
             ppt_store.update_task(task_id, status="FAILED", error_message="Project not found")
             return
-        project = asyncio.run(self._ensure_reference_style_prompt(project))
+        project = asyncio.run(self._ensure_template_analysis(project))
         pages = self._filter_pages(project_id, page_ids or None)
         deck_pages = self._filter_pages(project_id, None)
         deck_outline_summary = self._build_deck_outline_summary(deck_pages)
-        style_briefs = asyncio.run(self._resolve_style_briefs_for_project(project))
+        style_context = self._style_context_for_project(project)
         total = len(pages)
         ppt_store.update_task(
             task_id,
@@ -774,7 +783,7 @@ class PptProjectService:
                     page,
                     detail_level,
                     deck_outline_summary,
-                    style_briefs,
+                    style_context,
                 ): page["id"]
                 for page in pages
             }
@@ -824,7 +833,7 @@ class PptProjectService:
         page: dict[str, Any],
         detail_level: str,
         deck_outline_summary: str,
-        style_briefs: dict[str, str | None],
+        style_context: StyleContext,
     ) -> dict[str, Any]:
         ppt_store.update_page(page["id"], status="DESCRIPTION_GENERATING")
         payload = self.description_generator.generate_page_description(
@@ -832,7 +841,7 @@ class PptProjectService:
             page,
             detail_level=detail_level,
             deck_outline_summary=deck_outline_summary,
-            style_briefs=style_briefs,
+            style_context=style_context,
         )
         payload["description_content"]["generated_at"] = datetime.now(timezone.utc).isoformat()
         if not payload.get("image_prompt"):
@@ -848,11 +857,11 @@ class PptProjectService:
         if not project:
             ppt_store.update_task(task_id, status="FAILED", error_message="Project not found")
             return
-        project = asyncio.run(self._ensure_reference_style_prompt(project))
+        project = asyncio.run(self._ensure_template_analysis(project))
         pages = self._filter_pages(project_id, page_ids or None)
         deck_pages = self._filter_pages(project_id, None)
         deck_title = self._resolve_project_title({"pages": deck_pages, **project})
-        style_briefs = asyncio.run(self._resolve_style_briefs_for_project(project))
+        style_context = self._style_context_for_project(project)
         total = len(pages)
         ppt_store.update_task(
             task_id,
@@ -871,9 +880,9 @@ class PptProjectService:
         warnings: list[str] = []
         with ThreadPoolExecutor(max_workers=max(1, self.image_workers)) as executor:
             futures = {
-                executor.submit(
-                    self._generate_page_image, project, page, style_briefs, deck_title
-                ): page["id"]
+                executor.submit(self._generate_page_image, project, page, style_context, deck_title): page[
+                    "id"
+                ]
                 for page in pages
             }
             for future in as_completed(futures):
@@ -930,7 +939,6 @@ class PptProjectService:
         self,
         task_id: str,
         project_id: str,
-        style_prompt: str | None,
         max_slides: int | None,
         detail_level: str,
     ) -> None:
@@ -940,14 +948,6 @@ class PptProjectService:
             project = ppt_store.get_project(project_id)
             if not project:
                 raise ValueError("Project not found")
-            if style_prompt is not None:
-                project = (
-                    ppt_store.update_project(
-                        project_id,
-                        template_style=(style_prompt or "").strip() or None,
-                    )
-                    or project
-                )
 
             ppt_store.update_task(
                 task_id,
@@ -978,17 +978,17 @@ class PptProjectService:
                 ),
             )
             asyncio.run(
-                self.generate_outline(project_id, style_prompt=style_prompt, max_slides=max_slides)
+                self.generate_outline(project_id, max_slides=max_slides)
             )
 
             project = ppt_store.get_project(project_id) or project
-            project = asyncio.run(self._ensure_reference_style_prompt(project))
+            project = asyncio.run(self._ensure_template_analysis(project))
             pages = self._filter_pages(project_id, None)
             if not pages:
                 raise ValueError("No pages available after outline generation")
             deck_pages = self._filter_pages(project_id, None)
             deck_outline_summary = self._build_deck_outline_summary(deck_pages)
-            style_briefs = asyncio.run(self._resolve_style_briefs_for_project(project))
+            style_context = self._style_context_for_project(project)
 
             for page in pages:
                 ppt_store.update_page(page["id"], status="DESCRIPTION_QUEUED", is_dirty=True)
@@ -1017,7 +1017,7 @@ class PptProjectService:
                         page,
                         detail_level,
                         deck_outline_summary,
-                        style_briefs,
+                        style_context,
                     ): page["id"]
                     for page in pages
                 }
@@ -1076,7 +1076,7 @@ class PptProjectService:
             with ThreadPoolExecutor(max_workers=max(1, self.image_workers)) as executor:
                 futures = {
                     executor.submit(
-                        self._generate_page_image, project, page, style_briefs, deck_title
+                        self._generate_page_image, project, page, style_context, deck_title
                     ): page["id"]
                     for page in pages
                 }
@@ -1157,7 +1157,7 @@ class PptProjectService:
             project = ppt_store.get_project(project_id)
             if not project:
                 raise ValueError("Project not found")
-            project = asyncio.run(self._ensure_reference_style_prompt(project))
+            project = asyncio.run(self._ensure_template_analysis(project))
             project, prep_warnings = asyncio.run(
                 self._prepare_project_source_content(project_id, project)
             )
@@ -1167,7 +1167,7 @@ class PptProjectService:
                 raise ValueError("Page not found")
 
             total_steps = 1 if edit_type == "image_edit" else 2
-            style_briefs = asyncio.run(self._resolve_style_briefs_for_project(project))
+            style_context = self._style_context_for_project(project)
             if edit_type != "image_edit":
                 deck_pages = self._filter_pages(project_id, None)
                 deck_outline_summary = self._build_deck_outline_summary(deck_pages)
@@ -1190,7 +1190,7 @@ class PptProjectService:
                     page,
                     "default",
                     deck_outline_summary,
-                    style_briefs,
+                    style_context,
                 )
                 ppt_store.update_page(
                     page_id,
@@ -1219,7 +1219,7 @@ class PptProjectService:
                     phase="images",
                 ),
             )
-            payload = self._generate_page_image(project, page, style_briefs, deck_title)
+            payload = self._generate_page_image(project, page, style_context, deck_title)
             ppt_store.update_page(
                 page_id,
                 generated_image_path=payload["generated_image_path"],
@@ -1271,7 +1271,7 @@ class PptProjectService:
         self,
         project: dict[str, Any],
         page: dict[str, Any],
-        style_briefs: dict[str, str | None],
+        style_context: StyleContext,
         deck_title: str,
     ) -> dict[str, Any]:
         ppt_store.update_page(page["id"], status="IMAGE_GENERATING")
@@ -1294,7 +1294,10 @@ class PptProjectService:
                 slide_points=points,
                 layout=layout,
                 deck_title=deck_title,
-                style_prompt=style_briefs.get("image_style_brief"),
+                style_context=style_context,
+                source_brief=project.get("normalized_content") or project.get("source_content") or "",
+                reference_files=project.get("template_file_refs") or [],
+                language=project.get("language") or "zh",
             )
         )
         if not data_url:
@@ -1324,7 +1327,7 @@ class PptProjectService:
             project = ppt_store.get_project(project_id)
             if not project:
                 raise ValueError("Project not found")
-            project = asyncio.run(self._ensure_reference_style_prompt(project))
+            project = asyncio.run(self._ensure_template_analysis(project))
             project, prep_warnings = asyncio.run(
                 self._prepare_project_source_content(project_id, project)
             )
@@ -1335,7 +1338,7 @@ class PptProjectService:
                 raise ValueError("Page not found")
 
             total_steps = 2 if regenerate_description else 1
-            style_briefs = asyncio.run(self._resolve_style_briefs_for_project(project))
+            style_context = self._style_context_for_project(project)
 
             if regenerate_description:
                 deck_pages = self._filter_pages(project_id, None)
@@ -1359,7 +1362,7 @@ class PptProjectService:
                     page,
                     "default",
                     deck_outline_summary,
-                    style_briefs,
+                    style_context,
                 )
                 ppt_store.update_page(
                     page_id,
@@ -1388,7 +1391,7 @@ class PptProjectService:
                     phase="images",
                 ),
             )
-            payload = self._generate_page_image(project, page, style_briefs, deck_title)
+            payload = self._generate_page_image(project, page, style_context, deck_title)
             ppt_store.update_page(
                 page_id,
                 generated_image_path=payload["generated_image_path"],
@@ -1483,10 +1486,11 @@ class PptProjectService:
 
     def _project_to_presentation_outline(self, bundle: dict[str, Any]) -> dict[str, Any]:
         pages = sorted(bundle.get("pages") or [], key=lambda item: item["order_index"])
+        style_context = self._style_context_for_project(bundle)
         return {
             "title": self._resolve_project_title(bundle),
             "subtitle": "",
-            "themeColor": "#3b82f6",
+            "themeColor": style_context.preset_color,
             "accentColor": "#f59e0b",
             "slides": [
                 {
@@ -1510,18 +1514,35 @@ class PptProjectService:
             ],
         }
 
-    async def _ensure_reference_style_prompt(self, project: dict[str, Any]) -> dict[str, Any]:
-        if not project.get("template_image_path") or project.get("reference_style_prompt"):
+    async def _ensure_template_analysis(self, project: dict[str, Any]) -> dict[str, Any]:
+        missing_fields = [
+            field_name
+            for field_name in (
+                "reference_style_prompt",
+                "reference_layout_prompt",
+                "reference_content_prompt",
+            )
+            if not (project.get(field_name) or "").strip()
+        ]
+        if not missing_fields:
             return project
-        image_path = self._resolve_relative_output_path(project["template_image_path"])
-        if not image_path.exists():
-            raise ReferenceStyleExtractionError("Reference image file not found")
-        derived_style_prompt = await self._derive_reference_style_prompt(image_path)
-        updated = ppt_store.update_project(
-            project["id"],
-            reference_style_prompt=derived_style_prompt,
+        if not project.get("template_image_path") and not (project.get("template_file_refs") or []):
+            return project
+        analysis = await self.template_analyzer.analyze(
+            template_image_path=project.get("template_image_path"),
+            template_file_refs=project.get("template_file_refs") or [],
         )
-        return updated or {**project, "reference_style_prompt": derived_style_prompt}
+        update_fields: dict[str, Any] = {}
+        if "reference_style_prompt" in missing_fields and analysis.reference_style_prompt:
+            update_fields["reference_style_prompt"] = analysis.reference_style_prompt
+        if "reference_layout_prompt" in missing_fields and analysis.reference_layout_prompt:
+            update_fields["reference_layout_prompt"] = analysis.reference_layout_prompt
+        if "reference_content_prompt" in missing_fields and analysis.reference_content_prompt:
+            update_fields["reference_content_prompt"] = analysis.reference_content_prompt
+        if not update_fields:
+            return project
+        updated = ppt_store.update_project(project["id"], **update_fields)
+        return updated or {**project, **update_fields}
 
     def _resolve_project_title(self, bundle: dict[str, Any]) -> str:
         pages = bundle.get("pages") or []
@@ -1547,30 +1568,63 @@ class PptProjectService:
     def _default_layout(self, index: int) -> str:
         return _LAYOUT_SEQUENCE[index % len(_LAYOUT_SEQUENCE)]
 
+    def _build_style_context(
+        self,
+        *,
+        style_preset_id: str | None = None,
+        style_custom_text: str | None = None,
+        reference_style_prompt: str | None = None,
+        reference_layout_prompt: str | None = None,
+        reference_content_prompt: str | None = None,
+    ) -> StyleContext:
+        return PptPromptManager.resolve_style_context(
+            style_preset_id=style_preset_id,
+            style_custom_text=style_custom_text,
+            reference_style_prompt=reference_style_prompt,
+            reference_layout_prompt=reference_layout_prompt,
+            reference_content_prompt=reference_content_prompt,
+        )
+
+    def _style_context_for_project(self, project: dict[str, Any]) -> StyleContext:
+        return self._build_style_context(
+            style_preset_id=project.get("style_preset_id"),
+            style_custom_text=project.get("style_custom_text"),
+            reference_style_prompt=project.get("reference_style_prompt"),
+            reference_layout_prompt=project.get("reference_layout_prompt"),
+            reference_content_prompt=project.get("reference_content_prompt"),
+        )
+
     async def _resolve_style_briefs_for_project(
         self,
         project: dict[str, Any],
-        *,
-        style_prompt: str | None = None,
     ) -> dict[str, str | None]:
-        template_style = style_prompt if style_prompt is not None else project.get("template_style")
         return await self._build_style_briefs(
-            template_style=template_style,
+            style_preset_id=project.get("style_preset_id"),
+            style_custom_text=project.get("style_custom_text"),
             reference_style_prompt=project.get("reference_style_prompt"),
+            reference_layout_prompt=project.get("reference_layout_prompt"),
+            reference_content_prompt=project.get("reference_content_prompt"),
+            language=project.get("language") or "zh",
         )
 
     async def _build_style_briefs(
         self,
         *,
-        template_style: str | None = None,
+        style_preset_id: str | None = None,
+        style_custom_text: str | None = None,
         reference_style_prompt: str | None = None,
+        reference_layout_prompt: str | None = None,
+        reference_content_prompt: str | None = None,
+        language: str = "zh",
     ) -> dict[str, str | None]:
-        sections = self._split_template_style_sections(template_style)
-        fallback = self._compose_effective_style_prompt_from_parts(
-            sections.get("preset"),
-            reference_style_prompt,
-            sections.get("user"),
+        style_context = self._build_style_context(
+            style_preset_id=style_preset_id,
+            style_custom_text=style_custom_text,
+            reference_style_prompt=reference_style_prompt,
+            reference_layout_prompt=reference_layout_prompt,
+            reference_content_prompt=reference_content_prompt,
         )
+        fallback = style_context.style_summary(language)
         if not fallback:
             return {
                 "outline_style_brief": None,
@@ -1578,11 +1632,7 @@ class PptProjectService:
                 "image_style_brief": None,
             }
 
-        system_prompt, user_prompt = PptPromptManager.style_briefs(
-            preset_text=sections.get("preset") or "",
-            reference_style_prompt=(reference_style_prompt or "").strip(),
-            user_override=sections.get("user") or "",
-        )
+        system_prompt, user_prompt = PptPromptManager.style_briefs(style_context, language)
 
         try:
             data = await self._complete_json_async(user_prompt, system_prompt)
@@ -1602,56 +1652,6 @@ class PptProjectService:
             "description_style_brief": description_style_brief,
             "image_style_brief": image_style_brief,
         }
-
-    def _split_template_style_sections(self, template_style: str | None) -> dict[str, str]:
-        text = (template_style or "").strip()
-        if not text:
-            return {"preset": "", "user": ""}
-
-        preset_lines: list[str] = []
-        user_lines: list[str] = []
-        default_lines: list[str] = []
-        current = "default"
-        for raw_line in text.splitlines():
-            line = raw_line.rstrip()
-            lowered = line.strip().lower()
-            if lowered == "preset base:" or lowered == "source-derived guidance:":
-                current = "preset"
-                continue
-            if lowered == "user override:":
-                current = "user"
-                continue
-            if current == "preset":
-                preset_lines.append(line)
-            elif current == "user":
-                user_lines.append(line)
-            else:
-                default_lines.append(line)
-
-        if not preset_lines and not user_lines:
-            preset_lines = default_lines
-        elif default_lines:
-            preset_lines = [*preset_lines, *default_lines]
-
-        return {
-            "preset": "\n".join(line for line in preset_lines if line.strip()).strip(),
-            "user": "\n".join(line for line in user_lines if line.strip()).strip(),
-        }
-
-    def _compose_effective_style_prompt(
-        self,
-        project: dict[str, Any],
-        *,
-        style_prompt: str | None = None,
-    ) -> str | None:
-        return self._compose_effective_style_prompt_from_parts(
-            project.get("reference_style_prompt"),
-            style_prompt if style_prompt is not None else project.get("template_style"),
-        )
-
-    def _compose_effective_style_prompt_from_parts(self, *parts: str | None) -> str | None:
-        normalized = [str(part).strip() for part in parts if str(part or "").strip()]
-        return "\n\n".join(normalized) if normalized else None
 
     def _to_output_relative(self, path: Path) -> str:
         parts = path.parts
@@ -1830,24 +1830,86 @@ class PptProjectService:
     def _classify_page_chat_edit(
         self, project: dict[str, Any], page: dict[str, Any], user_message: str
     ) -> str:
-        return self.slide_editor.classify_edit(page, user_message)
+        return self.slide_editor.classify_edit(
+            page,
+            user_message,
+            style_context=self._style_context_for_project(project),
+        )
 
-    def _rewrite_outline_from_chat(self, page: dict[str, Any], user_message: str) -> dict[str, Any]:
-        return self.slide_editor.rewrite_outline(page, user_message)
+    def _rewrite_outline_from_chat(
+        self, project: dict[str, Any], page: dict[str, Any], user_message: str
+    ) -> dict[str, Any]:
+        return self.slide_editor.rewrite_outline(
+            page,
+            user_message,
+            style_context=self._style_context_for_project(project),
+        )
 
     def _rewrite_description_from_chat(
-        self, page: dict[str, Any], user_message: str
+        self, project: dict[str, Any], page: dict[str, Any], user_message: str
     ) -> dict[str, Any]:
-        return self.slide_editor.rewrite_description(page, user_message)
+        return self.slide_editor.rewrite_description(
+            page,
+            user_message,
+            style_context=self._style_context_for_project(project),
+        )
 
     def _rewrite_image_prompt_from_chat(
-        self, page: dict[str, Any], user_message: str
+        self, project: dict[str, Any], page: dict[str, Any], user_message: str
     ) -> dict[str, Any]:
-        return self.slide_editor.rewrite_image_prompt(page, user_message)
+        return self.slide_editor.rewrite_image_prompt(
+            page,
+            user_message,
+            style_context=self._style_context_for_project(project),
+        )
 
     async def _complete_json_async(self, prompt: str, system_prompt: str) -> dict[str, Any]:
         llm_cfg = get_llm_config()
         kwargs = get_token_limit_kwargs(llm_cfg.model, 1200)
+        try:
+            raw = await llm_complete(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                model=llm_cfg.model,
+                api_key=llm_cfg.api_key,
+                base_url=llm_cfg.base_url,
+                binding=llm_cfg.binding,
+                temperature=0.3,
+                response_format={"type": "json_object"},
+                **kwargs,
+            )
+        except Exception as exc:
+            if not self._should_retry_without_json_mode(exc):
+                raise
+            logger.warning(
+                f"Model {llm_cfg.model} does not support response_format=json_object; "
+                "retrying PPT JSON completion without JSON mode"
+            )
+            raw = await llm_complete(
+                prompt=self._force_json_output(prompt),
+                system_prompt=system_prompt,
+                model=llm_cfg.model,
+                api_key=llm_cfg.api_key,
+                base_url=llm_cfg.base_url,
+                binding=llm_cfg.binding,
+                temperature=0.3,
+                **kwargs,
+            )
+        data = self._extract_json(raw)
+        if not data:
+            raise ValueError("Failed to parse LLM JSON output")
+        return data
+
+    async def _complete_text_async(
+        self,
+        prompt: str,
+        system_prompt: str,
+        *,
+        max_tokens: int = 3200,
+        temperature: float = 0.3,
+    ) -> str:
+        llm_cfg = get_llm_config()
+        kwargs = get_token_limit_kwargs(llm_cfg.model, max_tokens)
         raw = await llm_complete(
             prompt=prompt,
             system_prompt=system_prompt,
@@ -1855,60 +1917,66 @@ class PptProjectService:
             api_key=llm_cfg.api_key,
             base_url=llm_cfg.base_url,
             binding=llm_cfg.binding,
-            temperature=0.3,
-            response_format={"type": "json_object"},
+            temperature=temperature,
             **kwargs,
         )
-        data = self._extract_json(raw)
-        if not data:
-            raise ValueError("Failed to parse LLM JSON output")
-        return data
+        return (raw or "").strip()
 
-    async def _derive_reference_style_prompt(self, image_path: Path) -> str:
-        image_bytes = image_path.read_bytes()
-        if not image_bytes:
-            raise ReferenceStyleExtractionError("Reference image is empty")
-        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        mime_type = self._guess_image_content_type(image_path)
-        system_prompt, user_text = PptPromptManager.reference_style_extraction()
-        llm_cfg = get_llm_config()
-        kwargs = get_token_limit_kwargs(llm_cfg.model, 1200)
-        vision_model_func = get_llm_client().get_vision_model_func()
-        raw = await vision_model_func(
-            prompt="",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": user_text},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{mime_type};base64,{image_b64}",
-                            },
-                        },
-                    ],
-                },
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.2,
-            **kwargs,
+    async def _normalize_to_deck_source_brief(
+        self, project: dict[str, Any], source_content: str
+    ) -> str:
+        style_context = self._style_context_for_project(project)
+        reference_context_xml = PptPromptManager._format_reference_context_xml(
+            style_context=style_context,
+            reference_files=project.get("source_refs") or project.get("reference_sources") or [],
+            source_anchors=self._build_source_anchor_summary(project),
         )
-        data = self._extract_json(raw)
-        if not data:
-            raise ReferenceStyleExtractionError("Failed to parse reference style JSON output")
-        style_prompt = (data.get("style_prompt") or "").strip()
-        palette_hint = (data.get("palette_hint") or "").strip()
-        composition_hint = (data.get("composition_hint") or "").strip()
-        if not style_prompt:
-            raise ReferenceStyleExtractionError("Reference style response missing style_prompt")
-        prompt_parts = [style_prompt]
-        if palette_hint:
-            prompt_parts.append(f"Palette hint: {palette_hint}")
-        if composition_hint:
-            prompt_parts.append(f"Composition hint: {composition_hint}")
-        return "\n".join(prompt_parts)
+        system_prompt, user_prompt = PptPromptManager.normalization_prompt(
+            source_type=project.get("creation_type") or "from_sources",
+            source_content=source_content,
+            reference_context_xml=reference_context_xml,
+        )
+        raw = await self._complete_text_async(user_prompt, system_prompt, max_tokens=3600)
+        if not raw:
+            raise ValueError("Failed to generate DeckSourceBrief")
+        return self._ensure_deck_source_brief_sections(
+            raw,
+            project.get("creation_type") or "from_sources",
+        )
+
+    def _ensure_deck_source_brief_sections(self, text: str, source_type: str) -> str:
+        normalized = (text or "").strip()
+        required_sections = [
+            "## Core Theme",
+            "## Key Findings",
+            "## Supporting Evidence",
+            "## Source Anchors",
+        ]
+        optional_for_sources = [
+            "## Consensus",
+            "## Divergence",
+            "## Complementary Evidence",
+        ]
+        for section in required_sections:
+            if section.lower() not in normalized.lower():
+                normalized = f"{normalized}\n\n{section}\n- None".strip()
+        if (source_type or "").strip().lower() == "from_sources":
+            for section in optional_for_sources:
+                if section.lower() not in normalized.lower():
+                    continue
+        return normalized.strip()
+
+    def _build_source_anchor_summary(self, project: dict[str, Any]) -> str:
+        anchors: list[str] = []
+        for ref in project.get("source_refs") or project.get("reference_sources") or []:
+            title = str(ref.get("title") or "Untitled source").strip()
+            source_key = str(ref.get("source_key") or "").strip()
+            ref_type = str(ref.get("type") or "source").strip()
+            anchor = f"- {title} [{ref_type}]"
+            if source_key:
+                anchor += f" ({source_key})"
+            anchors.append(anchor)
+        return "\n".join(anchors)
 
     def _complete_json_sync(self, prompt: str, system_prompt: str) -> dict[str, Any]:
         return asyncio.run(self._complete_json_async(prompt, system_prompt))
@@ -1943,6 +2011,22 @@ class PptProjectService:
             except Exception:
                 return None
         return None
+
+    def _force_json_output(self, prompt: str) -> str:
+        return (
+            f"{prompt.rstrip()}\n\n"
+            "IMPORTANT: Return a single valid JSON object only. "
+            "Do not use markdown fences. Do not add explanations before or after the JSON."
+        )
+
+    def _should_retry_without_json_mode(self, exc: Exception) -> bool:
+        message = str(exc).lower()
+        if "json_object" not in message:
+            return False
+        return any(
+            marker in message
+            for marker in ("not supported", "not valid", "invalidparameter", "unsupported")
+        )
 
 
 _service: PptProjectService | None = None

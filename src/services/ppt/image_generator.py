@@ -33,6 +33,10 @@ class ImageGenerator:
         layout: str | None = None,
         deck_title: str | None = None,
         style_prompt: str | None = None,
+        style_context=None,
+        source_brief: str | None = None,
+        reference_files: list[dict] | None = None,
+        language: str = "zh",
     ) -> str:
         prompt = (prompt or "").strip()
         if not prompt:
@@ -50,7 +54,11 @@ class ImageGenerator:
             layout=layout,
             deck_title=deck_title,
             style_prompt=style_prompt,
+            style_context=style_context,
+            source_brief=source_brief,
+            reference_files=reference_files,
             simplified=False,
+            language=language,
         )
         image_data = self._generate_image_with_cache(primary_prompt, img_cfg)
         if image_data:
@@ -63,7 +71,11 @@ class ImageGenerator:
             layout=layout,
             deck_title=deck_title,
             style_prompt=style_prompt,
+            style_context=style_context,
+            source_brief=source_brief,
+            reference_files=reference_files,
             simplified=True,
+            language=language,
         )
         if fallback_prompt != primary_prompt:
             logger.info("Retrying PPT image generation with simplified prompt")
@@ -82,16 +94,26 @@ class ImageGenerator:
         layout: str | None,
         deck_title: str | None,
         style_prompt: str | None,
+        style_context=None,
+        source_brief: str | None = None,
+        reference_files: list[dict] | None = None,
         simplified: bool = False,
+        language: str = "zh",
     ) -> str:
+        resolved_style_context = style_context or PptPromptManager.resolve_style_context(
+            style_custom_text=style_prompt
+        )
         return PptPromptManager.image_generation(
             image_prompt=prompt,
             slide_title=slide_title,
             slide_points=slide_points,
             layout=layout,
             deck_title=deck_title,
-            style_prompt=style_prompt,
+            style_context=resolved_style_context,
+            source_brief=source_brief,
+            reference_files=reference_files,
             simplified=simplified,
+            language=language,
         )
 
     def _generate_image_with_cache(

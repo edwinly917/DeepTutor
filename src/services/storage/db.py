@@ -50,9 +50,13 @@ ppt_projects = Table(
     Column("outline_text", Text, nullable=True),
     Column("description_text", Text, nullable=True),
     Column("source_content", Text, nullable=True),
-    Column("template_style", Text, nullable=True),
+    Column("style_preset_id", String, nullable=True),
+    Column("style_custom_text", Text, nullable=True),
     Column("template_image_path", String, nullable=True),
+    Column("template_file_refs", JSON, nullable=True),
     Column("reference_style_prompt", Text, nullable=True),
+    Column("reference_layout_prompt", Text, nullable=True),
+    Column("reference_content_prompt", Text, nullable=True),
     Column("image_aspect_ratio", String, nullable=False),
     Column("language", String, nullable=False),
     Column("reference_sources", JSON, nullable=True),
@@ -149,6 +153,36 @@ def init_db():
 
 def _ensure_additive_schema(engine) -> None:
     with engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            ALTER TABLE ppt_projects
+            ADD COLUMN IF NOT EXISTS style_preset_id VARCHAR
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            ALTER TABLE ppt_projects
+            ADD COLUMN IF NOT EXISTS style_custom_text TEXT
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            ALTER TABLE ppt_projects
+            ADD COLUMN IF NOT EXISTS template_file_refs JSON
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            ALTER TABLE ppt_projects
+            ADD COLUMN IF NOT EXISTS reference_layout_prompt TEXT
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            ALTER TABLE ppt_projects
+            ADD COLUMN IF NOT EXISTS reference_content_prompt TEXT
+            """
+        )
         conn.exec_driver_sql(
             """
             ALTER TABLE ppt_projects

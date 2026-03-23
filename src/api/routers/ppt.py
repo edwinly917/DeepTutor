@@ -24,9 +24,13 @@ class CreatePptProjectRequest(BaseModel):
     session_id: str | None = None
     creation_type: Literal["from_research", "from_notebook", "from_sources"]
     source_content: str | None = None
-    template_style: str | None = None
+    style_preset_id: str | None = None
+    style_custom_text: str | None = None
     template_image_path: str | None = None
+    template_file_refs: list[dict[str, Any]] = Field(default_factory=list)
     reference_style_prompt: str | None = None
+    reference_layout_prompt: str | None = None
+    reference_content_prompt: str | None = None
     image_aspect_ratio: Literal["16:9", "4:3"] = "16:9"
     language: str = "zh"
     reference_sources: list[dict[str, Any]] = Field(default_factory=list)
@@ -35,7 +39,6 @@ class CreatePptProjectRequest(BaseModel):
 
 
 class GenerateOutlineRequest(BaseModel):
-    style_prompt: str | None = None
     max_slides: int | None = None
 
 
@@ -49,7 +52,6 @@ class GenerateImagesRequest(BaseModel):
 
 
 class GenerateFullRequest(BaseModel):
-    style_prompt: str | None = None
     max_slides: int | None = None
     detail_level: Literal["concise", "default", "detailed"] = "default"
 
@@ -66,7 +68,12 @@ class SlideChatRequest(BaseModel):
 
 
 class StylePreviewRequest(BaseModel):
-    style_prompt: str | None = None
+    style_preset_id: str | None = None
+    style_custom_text: str | None = None
+    reference_style_prompt: str | None = None
+    reference_layout_prompt: str | None = None
+    reference_content_prompt: str | None = None
+    language: str = "zh"
 
 
 @router.get("/config")
@@ -94,7 +101,7 @@ async def upload_reference_image(file: UploadFile = File(...)):
 @router.post("/style-preview")
 async def preview_style(request: StylePreviewRequest):
     try:
-        return await _service().preview_style(request.style_prompt)
+        return await _service().preview_style(**request.model_dump())
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -122,7 +129,6 @@ async def generate_outline(project_id: str, request: GenerateOutlineRequest):
     try:
         return await _service().generate_outline(
             project_id,
-            style_prompt=request.style_prompt,
             max_slides=request.max_slides,
         )
     except ValueError as exc:
@@ -163,7 +169,6 @@ async def generate_full(project_id: str, request: GenerateFullRequest):
     try:
         return _service().start_generate_full(
             project_id,
-            style_prompt=request.style_prompt,
             max_slides=request.max_slides,
             detail_level=request.detail_level,
         )

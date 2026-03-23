@@ -51,14 +51,21 @@ export async function uploadPptReferenceImage(
 }
 
 export async function previewPptStyle(
-  stylePrompt?: string,
-): Promise<{ preview_svg?: string }> {
+  payload?: {
+    style_preset_id?: string;
+    style_custom_text?: string;
+    reference_style_prompt?: string;
+    reference_layout_prompt?: string;
+    reference_content_prompt?: string;
+    language?: string;
+  },
+): Promise<{ preview_svg?: string; preview_prompt?: string }> {
   const res = await fetch(apiUrl("/api/v1/ppt/style-preview"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ style_prompt: stylePrompt || undefined }),
+    body: JSON.stringify(payload || {}),
   });
-  return readJson<{ preview_svg?: string }>(res);
+  return readJson<{ preview_svg?: string; preview_prompt?: string }>(res);
 }
 
 export async function createPptProject(
@@ -79,7 +86,6 @@ export async function fetchPptProject(projectId: string): Promise<PptProject> {
 
 export async function generatePptOutline(
   projectId: string,
-  stylePrompt?: string,
   maxSlides?: number,
 ): Promise<PptProject> {
   const res = await fetch(
@@ -88,7 +94,6 @@ export async function generatePptOutline(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        style_prompt: stylePrompt || undefined,
         max_slides: maxSlides,
       }),
     },
@@ -133,7 +138,6 @@ export async function generatePptImages(
 export async function generatePptFull(
   projectId: string,
   options?: {
-    style_prompt?: string;
     max_slides?: number;
     detail_level?: "concise" | "default" | "detailed";
   },

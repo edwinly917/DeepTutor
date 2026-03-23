@@ -18,7 +18,7 @@ class DescriptionGenerator:
         *,
         detail_level: str,
         deck_outline_summary: str,
-        style_briefs: dict[str, str | None],
+        style_context,
     ) -> dict[str, Any]:
         outline = page.get("outline_content") or {}
         title = outline.get("title") or "Untitled Slide"
@@ -31,9 +31,11 @@ class DescriptionGenerator:
             slide_points=points,
             deck_outline_summary=deck_outline_summary,
             supporting_context=supporting_context,
-            style_brief=style_briefs.get("description_style_brief"),
+            style_context=style_context,
+            source_brief=(project.get("normalized_content") or project.get("source_content") or ""),
             detail_level=detail_level,
             language=language,
+            reference_files=project.get("template_file_refs") or [],
         )
         data = self.json_complete(user_prompt, system_prompt)
         text = (data.get("text") or "").strip()

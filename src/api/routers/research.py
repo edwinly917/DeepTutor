@@ -303,9 +303,13 @@ async def export_pptx(request: ExportPptxRequest, response: Response):
             session_id=None,
             creation_type="from_research",
             source_content=markdown,
-            template_style=request.style_prompt,
+            style_preset_id=None,
+            style_custom_text=request.style_prompt,
             template_image_path=None,
+            template_file_refs=[],
             reference_style_prompt=None,
+            reference_layout_prompt=None,
+            reference_content_prompt=None,
             image_aspect_ratio="16:9",
             language="zh",
             reference_sources=[],
@@ -320,7 +324,6 @@ async def export_pptx(request: ExportPptxRequest, response: Response):
         )
         full_task = service.start_generate_full(
             project["id"],
-            style_prompt=request.style_prompt,
             max_slides=request.max_slides,
         )
         await _wait_for_ppt_task(project["id"], full_task["id"])
@@ -390,7 +393,7 @@ async def export_pdf(request: ExportPdfRequest):
 async def list_ppt_style_templates(response: Response):
     _mark_ppt_deprecated(response)
     config = _ppt_service().get_config()
-    return {"templates": config.get("style_templates") or []}
+    return {"templates": config.get("style_presets") or []}
 
 
 @router.post("/compose_from_sources")
@@ -425,7 +428,7 @@ async def ppt_style_from_sources(request: PptStyleFromSourcesRequest):
 async def ppt_style_preview(request: PptStylePreviewRequest, response: Response):
     _mark_ppt_deprecated(response)
     try:
-        return await _ppt_service().preview_style(request.style_prompt)
+        return await _ppt_service().preview_style(style_custom_text=request.style_prompt)
     except Exception as exc:
         logger.error(f"PPT style preview failed: {exc}")
         raise _deprecated_http_exception(status_code=500, detail=str(exc))
@@ -435,10 +438,12 @@ async def ppt_style_preview(request: PptStylePreviewRequest, response: Response)
 async def get_ppt_config_for_banana(response: Response):
     _mark_ppt_deprecated(response)
     config = _ppt_service().get_config()
+    style_presets = config.get("style_presets") or []
     return {
         "enabled": config.get("enabled", True),
         "max_slides": config.get("max_slides", 15),
-        "style_templates": config.get("style_templates") or [],
+        "style_presets": style_presets,
+        "style_templates": style_presets,
     }
 
 
@@ -451,7 +456,7 @@ async def generate_ppt_outline(request: BananaPptOutlineRequest, response: Respo
 
     try:
         service = _ppt_service()
-        style_briefs = await service._build_style_briefs(template_style=request.style_prompt)
+        style_briefs = await service._build_style_briefs(style_custom_text=request.style_prompt)
         result = await service.banana_service.generate_outline(
             source_content=request.source_content,
             style_prompt=style_briefs.get("outline_style_brief"),

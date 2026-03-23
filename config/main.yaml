@@ -147,19 +147,7 @@ export:
     max_tokens: 2000
     max_slides: 15
     default_style_prompt: ''
-    style_templates:
-    - id: clean
-      name: Clean Minimal
-      prompt: Use a clean, minimal layout with ample white space, subtle gray dividers,
-        and a calm, professional tone.
-    - id: academic
-      name: Academic Report
-      prompt: Use a formal academic style with muted colors, clear section hierarchy,
-        and emphasis on concise bullet points.
-    - id: business
-      name: Business Pitch
-      prompt: Use a modern business deck style with bold accent color, sharp contrast,
-        and short impactful bullets.
+    style_templates: []
   banana_ppt:
     enabled: true
     max_slides: 15
@@ -176,6 +164,11 @@ export:
   ppt_v2:
     enabled: true
     max_slides: 15
+    analysis_vision:
+      binding: gemini
+      model: gemini-2.5-flash
+      temperature: 0.3
+      max_tokens: 2000
     task:
       description_workers: 4
       image_workers: 3

@@ -137,6 +137,12 @@ interface TestResults {
     base_url?: string;
     provider?: string;
   };
+  ppt_vlm: {
+    status: string;
+    model: string | null;
+    error: string | null;
+    base_url?: string;
+  };
 }
 
 interface LLMProvider {
@@ -723,8 +729,10 @@ export default function SettingsPage() {
     }
   };
 
-  // Test a single service (llm, embedding, tts)
-  const testSingleService = async (service: "llm" | "embedding" | "tts") => {
+  // Test a single service (llm, embedding, tts, ppt_vlm)
+  const testSingleService = async (
+    service: "llm" | "embedding" | "tts" | "ppt_vlm",
+  ) => {
     setTestingService((prev) => ({ ...prev, [service]: true }));
     try {
       const res = await fetch(apiUrl(`/api/v1/settings/env/test/${service}`), {
@@ -777,6 +785,8 @@ export default function SettingsPage() {
         return <Search className="w-4 h-4" />;
       case "settings":
         return <SettingsIcon className="w-4 h-4" />;
+      case "eye":
+        return <Eye className="w-4 h-4" />;
       default:
         return <Key className="w-4 h-4" />;
     }
@@ -1066,7 +1076,7 @@ export default function SettingsPage() {
             </span>
           </div>
           <div className="p-3">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
               {/* LLM Status */}
               <div
                 className={`p-3 rounded-lg border transition-all ${
@@ -1117,12 +1127,18 @@ export default function SettingsPage() {
                     : t("No endpoint")}
                 </p>
                 {serviceTestResults.llm?.message && (
-                  <p className="text-[9px] text-green-600 dark:text-green-400 truncate mb-2">
+                  <p
+                    title={serviceTestResults.llm.message}
+                    className="text-[9px] text-green-600 dark:text-green-400 mb-2 whitespace-pre-wrap break-all max-h-20 overflow-auto"
+                  >
                     {serviceTestResults.llm.message}
                   </p>
                 )}
                 {serviceTestResults.llm?.error && (
-                  <p className="text-[9px] text-red-600 dark:text-red-400 truncate mb-2">
+                  <p
+                    title={serviceTestResults.llm.error}
+                    className="text-[9px] text-red-600 dark:text-red-400 mb-2 whitespace-pre-wrap break-all max-h-24 overflow-auto"
+                  >
                     {serviceTestResults.llm.error}
                   </p>
                 )}
@@ -1190,12 +1206,18 @@ export default function SettingsPage() {
                     : t("No endpoint")}
                 </p>
                 {serviceTestResults.embedding?.message && (
-                  <p className="text-[9px] text-green-600 dark:text-green-400 truncate mb-2">
+                  <p
+                    title={serviceTestResults.embedding.message}
+                    className="text-[9px] text-green-600 dark:text-green-400 mb-2 whitespace-pre-wrap break-all max-h-20 overflow-auto"
+                  >
                     {serviceTestResults.embedding.message}
                   </p>
                 )}
                 {serviceTestResults.embedding?.error && (
-                  <p className="text-[9px] text-red-600 dark:text-red-400 truncate mb-2">
+                  <p
+                    title={serviceTestResults.embedding.error}
+                    className="text-[9px] text-red-600 dark:text-red-400 mb-2 whitespace-pre-wrap break-all max-h-24 overflow-auto"
+                  >
                     {serviceTestResults.embedding.error}
                   </p>
                 )}
@@ -1265,12 +1287,18 @@ export default function SettingsPage() {
                     t("No endpoint")}
                 </p>
                 {serviceTestResults.tts?.message && (
-                  <p className="text-[9px] text-green-600 dark:text-green-400 truncate mb-2">
+                  <p
+                    title={serviceTestResults.tts.message}
+                    className="text-[9px] text-green-600 dark:text-green-400 mb-2 whitespace-pre-wrap break-all max-h-20 overflow-auto"
+                  >
                     {serviceTestResults.tts.message}
                   </p>
                 )}
                 {serviceTestResults.tts?.error && (
-                  <p className="text-[9px] text-red-600 dark:text-red-400 truncate mb-2">
+                  <p
+                    title={serviceTestResults.tts.error}
+                    className="text-[9px] text-red-600 dark:text-red-400 mb-2 whitespace-pre-wrap break-all max-h-24 overflow-auto"
+                  >
                     {serviceTestResults.tts.error}
                   </p>
                 )}
@@ -1285,6 +1313,86 @@ export default function SettingsPage() {
                     <RefreshCw className="w-3 h-3" />
                   )}
                   {testingService.tts ? t("Testing...") : t("Test TTS")}
+                </button>
+              </div>
+
+              {/* PPT VLM Status */}
+              <div
+                className={`p-3 rounded-lg border transition-all ${
+                  serviceTestResults.ppt_vlm?.status === "success" ||
+                  testResults?.ppt_vlm?.status === "configured"
+                    ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+                    : serviceTestResults.ppt_vlm?.status === "error" ||
+                        testResults?.ppt_vlm?.status === "error"
+                      ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+                      : "bg-slate-50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Eye className="w-4 h-4 text-cyan-500" />
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      PPT VLM
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {serviceTestResults.ppt_vlm?.response_time_ms && (
+                      <span className="text-[9px] text-slate-400">
+                        {serviceTestResults.ppt_vlm.response_time_ms}ms
+                      </span>
+                    )}
+                    {(serviceTestResults.ppt_vlm || testResults?.ppt_vlm) &&
+                      getStatusIcon(
+                        serviceTestResults.ppt_vlm?.status === "success"
+                          ? "configured"
+                          : serviceTestResults.ppt_vlm?.status ||
+                              testResults?.ppt_vlm?.status ||
+                              "unknown",
+                      )}
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-600 dark:text-slate-400 font-mono truncate mb-1">
+                  {serviceTestResults.ppt_vlm?.model ||
+                    testResults?.ppt_vlm?.model ||
+                    editedEnvVars["PPT_ANALYSIS_VISION_MODEL"] ||
+                    t("Not configured")}
+                </p>
+                <p className="text-[10px] text-slate-500 dark:text-slate-500 truncate mb-2">
+                  {serviceTestResults.ppt_vlm?.base_url ||
+                    testResults?.ppt_vlm?.base_url ||
+                    editedEnvVars["PPT_ANALYSIS_VISION_BASE_URL"] ||
+                    editedEnvVars["LLM_HOST"] ||
+                    t("No endpoint")}
+                </p>
+                {serviceTestResults.ppt_vlm?.message && (
+                  <p
+                    title={serviceTestResults.ppt_vlm.message}
+                    className="text-[9px] text-green-600 dark:text-green-400 mb-2 whitespace-pre-wrap break-all max-h-20 overflow-auto"
+                  >
+                    {serviceTestResults.ppt_vlm.message}
+                  </p>
+                )}
+                {serviceTestResults.ppt_vlm?.error && (
+                  <p
+                    title={serviceTestResults.ppt_vlm.error}
+                    className="text-[9px] text-red-600 dark:text-red-400 mb-2 whitespace-pre-wrap break-all max-h-24 overflow-auto"
+                  >
+                    {serviceTestResults.ppt_vlm.error}
+                  </p>
+                )}
+                <button
+                  onClick={() => testSingleService("ppt_vlm")}
+                  disabled={testingService.ppt_vlm}
+                  className="w-full py-1.5 text-[10px] font-medium text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/30 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded flex items-center justify-center gap-1.5 transition-colors border border-cyan-200 dark:border-cyan-800 disabled:opacity-50"
+                >
+                  {testingService.ppt_vlm ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3 h-3" />
+                  )}
+                  {testingService.ppt_vlm
+                    ? t("Testing...")
+                    : t("Test PPT VLM")}
                 </button>
               </div>
             </div>

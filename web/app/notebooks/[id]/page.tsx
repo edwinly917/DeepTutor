@@ -112,17 +112,20 @@ interface KnowledgeBase {
 
 interface PptStyleTemplate {
   id: string;
-  name: string;
-  prompt: string;
+  name_zh: string;
+  name_en: string;
+  color: string;
+  description_zh: string;
+  description_en: string;
 }
 
 interface PptStylePlan {
   previewPrompt: string;
-  outlinePlanningPrompt: string;
-  templateStylePrompt: string;
+  stylePresetId: string;
+  styleCustomText: string;
   referenceStylePrompt: string;
-  presetBasePrompt: string;
-  userOverridePrompt: string;
+  referenceLayoutPrompt: string;
+  referenceContentPrompt: string;
 }
 
 interface ChatMessage {
@@ -206,6 +209,8 @@ interface PptStudioState {
   referenceImageUrl?: string;
   referenceImageName?: string;
   referenceStylePrompt?: string;
+  referenceLayoutPrompt?: string;
+  referenceContentPrompt?: string;
   selectedTemplate?: string;
   stylePreviewSvg?: string;
   outline?: PresentationOutline | null;
@@ -534,6 +539,8 @@ export default function NotebookDetailPage() {
   const [pptReferenceImageUrl, setPptReferenceImageUrl] = useState("");
   const [pptReferenceImageName, setPptReferenceImageName] = useState("");
   const [pptReferenceStylePrompt, setPptReferenceStylePrompt] = useState("");
+  const [pptReferenceLayoutPrompt, setPptReferenceLayoutPrompt] = useState("");
+  const [pptReferenceContentPrompt, setPptReferenceContentPrompt] = useState("");
   const [pptReferenceUploading, setPptReferenceUploading] = useState(false);
   const [researchStartTime, setResearchStartTime] = useState<number | null>(
     null,
@@ -693,6 +700,8 @@ export default function NotebookDetailPage() {
       referenceImageUrl: pptReferenceImageUrl,
       referenceImageName: pptReferenceImageName,
       referenceStylePrompt: pptReferenceStylePrompt,
+      referenceLayoutPrompt: pptReferenceLayoutPrompt,
+      referenceContentPrompt: pptReferenceContentPrompt,
       stylePreviewSvg: pptStylePreviewSvg || "",
       outline: pptOutline,
       previewOpen: pptPreviewOpen,
@@ -716,7 +725,13 @@ export default function NotebookDetailPage() {
     if (ppt?.recordIds && ppt.recordIds.length > 0) return true;
     if (ppt?.styleMode && ppt.styleMode !== "default") return true;
     if (ppt?.stylePromptText) return true;
-    if (ppt?.referenceImagePath || ppt?.referenceStylePrompt) return true;
+    if (
+      ppt?.referenceImagePath ||
+      ppt?.referenceStylePrompt ||
+      ppt?.referenceLayoutPrompt ||
+      ppt?.referenceContentPrompt
+    )
+      return true;
     const audio = state.podcast?.audioResult;
     if (audio?.audioUrl || audio?.audioId) return true;
     return false;
@@ -742,6 +757,8 @@ export default function NotebookDetailPage() {
       pptReferenceImageUrl,
       pptReferenceImageName,
       pptReferenceStylePrompt,
+      pptReferenceLayoutPrompt,
+      pptReferenceContentPrompt,
       pptStylePreviewSvg,
       pptOutline,
       pptPreviewOpen,
@@ -893,6 +910,8 @@ export default function NotebookDetailPage() {
     setPptReferenceImageUrl(ppt.referenceImageUrl || "");
     setPptReferenceImageName(ppt.referenceImageName || "");
     setPptReferenceStylePrompt(ppt.referenceStylePrompt || "");
+    setPptReferenceLayoutPrompt(ppt.referenceLayoutPrompt || "");
+    setPptReferenceContentPrompt(ppt.referenceContentPrompt || "");
     setPptStylePreviewSvg(ppt.stylePreviewSvg || "");
     setPptStylePreviewLoading(false);
     setPptStylePreviewError("");
@@ -2103,6 +2122,8 @@ export default function NotebookDetailPage() {
     pptStyleMode,
     selectedPptStyleId,
     pptReferenceStylePrompt,
+    pptReferenceLayoutPrompt,
+    pptReferenceContentPrompt,
     pptStylePromptText,
   ]);
 
@@ -2216,15 +2237,15 @@ export default function NotebookDetailPage() {
         setBananaPptMaxSlides(data.max_slides);
       }
       if (
-        Array.isArray(data.style_templates) &&
-        data.style_templates.length > 0
+        Array.isArray(data.style_presets) &&
+        data.style_presets.length > 0
       ) {
-        setPptStyleTemplates(data.style_templates);
-        const ids = data.style_templates.map(
+        setPptStyleTemplates(data.style_presets);
+        const ids = data.style_presets.map(
           (template: PptStyleTemplate) => template.id,
         );
         if (!selectedPptStyleId || !ids.includes(selectedPptStyleId)) {
-          setSelectedPptStyleId(data.style_templates[0].id);
+          setSelectedPptStyleId(data.style_presets[0].id);
         }
       }
     } catch (err) {
@@ -2247,6 +2268,8 @@ export default function NotebookDetailPage() {
       setPptReferenceImageUrl(data.image_url || "");
       setPptReferenceImageName(data.image_name || file.name);
       setPptReferenceStylePrompt(data.derived_style_prompt || "");
+      setPptReferenceLayoutPrompt(data.derived_layout_prompt || "");
+      setPptReferenceContentPrompt(data.derived_content_prompt || "");
       setPptStylePreviewSvg("");
       if (pptReferenceImageInputRef.current) {
         pptReferenceImageInputRef.current.value = "";
@@ -3752,11 +3775,11 @@ export default function NotebookDetailPage() {
     [],
   );
 
-  const getSelectedPptStylePrompt = () => {
+  const getSelectedPptStyleDescription = () => {
     const selected = pptStyleTemplates.find(
       (tmpl) => tmpl.id === selectedPptStyleId,
     );
-    return selected?.prompt || "";
+    return selected?.description_zh || selected?.description_en || "";
   };
 
   const getSourcesStylePrompt = async () => {
@@ -3784,27 +3807,29 @@ export default function NotebookDetailPage() {
 
   const getPromptForSource = async (source: "preset" | "sources") => {
     if (source === "preset") {
-      return getSelectedPptStylePrompt();
+      return getSelectedPptStyleDescription();
     }
     return getSourcesStylePrompt();
   };
 
-  const buildStyleBlock = (label: string, value: string) =>
-    value.trim() ? `${label}:\n${value.trim()}` : "";
-
   const getPptStylePlan = async (): Promise<PptStylePlan> => {
-    const presetBasePrompt = getSelectedPptStylePrompt().trim();
+    const defaultPresetId = selectedPptStyleId || pptStyleTemplates[0]?.id || "minimal-business";
+    const selectedPresetId =
+      pptStyleMode === "preset" ? selectedPptStyleId || defaultPresetId : defaultPresetId;
     const userOverridePrompt = pptStylePromptText.trim();
+    const referenceStylePrompt = pptReferenceStylePrompt.trim();
+    const referenceLayoutPrompt = pptReferenceLayoutPrompt.trim();
+    const referenceContentPrompt = pptReferenceContentPrompt.trim();
 
     if (pptStyleMode === "preset") {
       const previewPrompt = (await getPromptForSource("preset")).trim();
       return {
         previewPrompt,
-        outlinePlanningPrompt: previewPrompt,
-        templateStylePrompt: buildStyleBlock("Preset base", previewPrompt),
+        stylePresetId: selectedPresetId,
+        styleCustomText: "",
         referenceStylePrompt: "",
-        presetBasePrompt: previewPrompt,
-        userOverridePrompt: "",
+        referenceLayoutPrompt: "",
+        referenceContentPrompt: "",
       };
     }
 
@@ -3812,58 +3837,42 @@ export default function NotebookDetailPage() {
       const previewPrompt = (await getPromptForSource("sources")).trim();
       return {
         previewPrompt,
-        outlinePlanningPrompt: previewPrompt,
-        templateStylePrompt: buildStyleBlock(
-          "Source-derived guidance",
-          previewPrompt,
-        ),
+        stylePresetId: defaultPresetId,
+        styleCustomText: previewPrompt,
         referenceStylePrompt: "",
-        presetBasePrompt: previewPrompt,
-        userOverridePrompt: "",
+        referenceLayoutPrompt: "",
+        referenceContentPrompt: "",
       };
     }
 
     if (pptStyleMode === "reference_image") {
-      const referenceStylePrompt = pptReferenceStylePrompt.trim();
       const previewPrompt = [
-        presetBasePrompt,
+        getSelectedPptStyleDescription().trim(),
         referenceStylePrompt,
+        referenceLayoutPrompt,
+        referenceContentPrompt,
         userOverridePrompt,
-      ]
-        .filter(Boolean)
-        .join("\n\n");
-      const outlinePlanningPrompt =
-        [
-          buildStyleBlock("Preset base", presetBasePrompt),
-          buildStyleBlock("Reference-image summary", referenceStylePrompt),
-          buildStyleBlock("User override", userOverridePrompt),
-        ]
-          .filter(Boolean)
-          .join("\n\n") || previewPrompt;
-      const templateStylePrompt = [
-        buildStyleBlock("Preset base", presetBasePrompt),
-        buildStyleBlock("User override", userOverridePrompt),
       ]
         .filter(Boolean)
         .join("\n\n");
 
       return {
         previewPrompt,
-        outlinePlanningPrompt,
-        templateStylePrompt,
+        stylePresetId: defaultPresetId,
+        styleCustomText: userOverridePrompt,
         referenceStylePrompt,
-        presetBasePrompt,
-        userOverridePrompt,
+        referenceLayoutPrompt,
+        referenceContentPrompt,
       };
     }
 
     return {
       previewPrompt: "",
-      outlinePlanningPrompt: "",
-      templateStylePrompt: "",
+      stylePresetId: defaultPresetId,
+      styleCustomText: "",
       referenceStylePrompt: "",
-      presetBasePrompt: "",
-      userOverridePrompt: "",
+      referenceLayoutPrompt: "",
+      referenceContentPrompt: "",
     };
   };
 
@@ -4122,9 +4131,13 @@ export default function NotebookDetailPage() {
       session_id: currentSessionId || undefined,
       creation_type: resolvedMode,
       source_content: sourceContent,
-      template_style: stylePlan.templateStylePrompt || undefined,
+      style_preset_id: stylePlan.stylePresetId || undefined,
+      style_custom_text: stylePlan.styleCustomText || undefined,
       template_image_path: pptReferenceImagePath || undefined,
+      template_file_refs: [],
       reference_style_prompt: stylePlan.referenceStylePrompt || undefined,
+      reference_layout_prompt: stylePlan.referenceLayoutPrompt || undefined,
+      reference_content_prompt: stylePlan.referenceContentPrompt || undefined,
       image_aspect_ratio: "16:9",
       language: "zh",
       reference_sources: frozenSourceRefs,
@@ -4151,7 +4164,14 @@ export default function NotebookDetailPage() {
         return;
       }
 
-      const data = await previewPptStyle(stylePlan.previewPrompt || undefined);
+      const data = await previewPptStyle({
+        style_preset_id: stylePlan.stylePresetId || undefined,
+        style_custom_text: stylePlan.styleCustomText || undefined,
+        reference_style_prompt: stylePlan.referenceStylePrompt || undefined,
+        reference_layout_prompt: stylePlan.referenceLayoutPrompt || undefined,
+        reference_content_prompt: stylePlan.referenceContentPrompt || undefined,
+        language: "zh",
+      });
       setPptStylePreviewSvg(data.preview_svg || "");
     } catch (err) {
       console.error("PPT style preview failed:", err);
@@ -4287,7 +4307,6 @@ export default function NotebookDetailPage() {
       setPptOutline(project.presentation_outline);
       setPptPreviewOpen(true);
       const fullTask = await generatePptFull(project.id, {
-        style_prompt: stylePlan.templateStylePrompt || undefined,
         max_slides: bananaPptMaxSlides,
       });
       setPptActiveTaskId(fullTask.id);
@@ -4881,12 +4900,12 @@ export default function NotebookDetailPage() {
                   )}
                   {pptStyleTemplates.map((tmpl) => (
                     <option key={tmpl.id} value={tmpl.id}>
-                      {tmpl.name}
+                      {tmpl.name_zh || tmpl.name_en}
                     </option>
                   ))}
                 </select>
                 <p className="text-[11px] leading-5 text-slate-400">
-                  {getSelectedPptStylePrompt() ||
+                  {getSelectedPptStyleDescription() ||
                     "选择预设后，会先定义配色倾向、布局节奏和整体语气。"}
                 </p>
               </div>
@@ -4907,7 +4926,7 @@ export default function NotebookDetailPage() {
                       <option value="">不使用预设基底</option>
                       {pptStyleTemplates.map((tmpl) => (
                         <option key={tmpl.id} value={tmpl.id}>
-                          {tmpl.name}
+                          {tmpl.name_zh || tmpl.name_en}
                         </option>
                       ))}
                     </select>
@@ -4960,6 +4979,8 @@ export default function NotebookDetailPage() {
                           setPptReferenceImageUrl("");
                           setPptReferenceImageName("");
                           setPptReferenceStylePrompt("");
+                          setPptReferenceLayoutPrompt("");
+                          setPptReferenceContentPrompt("");
                           setPptStylePreviewSvg("");
                         }}
                         className="px-2.5 py-1 text-[11px] rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"

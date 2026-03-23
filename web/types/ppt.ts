@@ -97,9 +97,13 @@ export interface PptProject {
   session_id?: string | null;
   creation_type: "from_research" | "from_notebook" | "from_sources";
   source_content?: string | null;
-  template_style?: string | null;
+  style_preset_id?: string | null;
+  style_custom_text?: string | null;
   template_image_path?: string | null;
+  template_file_refs?: Array<Record<string, unknown>>;
   reference_style_prompt?: string | null;
+  reference_layout_prompt?: string | null;
+  reference_content_prompt?: string | null;
   image_aspect_ratio: "16:9" | "4:3";
   language: string;
   reference_sources: Array<Record<string, unknown>>;
@@ -117,7 +121,14 @@ export interface PptProject {
 export interface PptConfigResponse {
   enabled: boolean;
   max_slides: number;
-  style_templates: Array<{ id: string; name: string; prompt: string }>;
+  style_presets: Array<{
+    id: string;
+    name_zh: string;
+    name_en: string;
+    color: string;
+    description_zh: string;
+    description_en: string;
+  }>;
   polling_hint_ms: number;
   creation_modes: PptCreationMode[];
 }
@@ -127,6 +138,8 @@ export interface PptReferenceImageUploadResponse {
   image_url: string;
   image_name: string;
   derived_style_prompt: string;
+  derived_layout_prompt?: string;
+  derived_content_prompt?: string;
   content_type?: string;
 }
 

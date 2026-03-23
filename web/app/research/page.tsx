@@ -770,7 +770,9 @@ export default function ResearchPage() {
       const project = await createPptProject({
         creation_type: "from_research",
         source_content: state.reporting.generatedReport,
-        template_style: pptStylePrompt || undefined,
+        style_preset_id: "minimal-business",
+        style_custom_text: pptStylePrompt || undefined,
+        template_file_refs: [],
         image_aspect_ratio: "16:9",
         language: "zh",
         source_refs: [
@@ -783,9 +785,7 @@ export default function ResearchPage() {
         ],
       });
 
-      const imagesTask = await generatePptFull(project.id, {
-        style_prompt: pptStylePrompt || undefined,
-      });
+      const imagesTask = await generatePptFull(project.id);
       while (true) {
         const task = await fetchPptTask(project.id, imagesTask.id);
         if (task.status === "COMPLETED") break;

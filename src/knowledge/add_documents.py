@@ -40,6 +40,7 @@ logger = get_logger("KnowledgeInit")
 
 # Import numbered items extraction functionality
 from src.knowledge.extract_numbered_items import process_content_list
+from src.knowledge.text_sanitizer import sanitize_extracted_text
 
 
 class DocumentAdder:
@@ -102,7 +103,7 @@ class DocumentAdder:
             return ""
 
     async def _insert_text_content(self, rag: RAGAnything, doc_file: Path, text: str) -> bool:
-        text = text.strip()
+        text = sanitize_extracted_text(text).strip()
         if not text:
             return False
         content_list = self._build_text_content_list(text)

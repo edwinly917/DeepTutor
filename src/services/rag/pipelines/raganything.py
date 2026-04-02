@@ -5,12 +5,135 @@ RAGAnything Pipeline
 End-to-end pipeline wrapping RAG-Anything for academic document processing.
 """
 
+import json
 from pathlib import Path
+import re
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from src.logging import get_logger
 from src.logging.adapters import LightRAGLogContext
+from src.services.llm.config import supports_response_format_json_object
+
+_KEYWORD_EXTRACTION_JSON_INSTRUCTION = """
+Return a single valid JSON object only. Do not use markdown fences.
+Use exactly this schema:
+{
+  "high_level_keywords": ["keyword1", "keyword2"],
+  "low_level_keywords": ["keyword1", "keyword2"]
+}
+Do not include any explanation before or after the JSON.
+""".strip()
+
+
+def _extract_json_payload(text: str) -> Any | None:
+    """Extract JSON payload from raw model text or fenced code blocks."""
+    if not text:
+        return None
+
+    candidates: list[str] = [text.strip()]
+
+    fenced_blocks = re.findall(r"```(?:json)?\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE)
+    candidates.extend(block.strip() for block in fenced_blocks if block.strip())
+
+    for open_char, close_char in (("{", "}"), ("[", "]")):
+        start = text.find(open_char)
+        end = text.rfind(close_char)
+        if start != -1 and end != -1 and end > start:
+            snippet = text[start : end + 1].strip()
+            if snippet:
+                candidates.append(snippet)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def _normalize_keyword_list(values: Any) -> list[str]:
+    if isinstance(values, list):
+        return [str(value).strip() for value in values if str(value).strip()]
+    if values is None:
+        return []
+    value = str(values).strip()
+    return [value] if value else []
+
+
+def _coerce_keyword_extraction_response(text: str) -> str:
+    """Normalize keyword extraction output into the JSON string LightRAG expects."""
+    payload = _extract_json_payload(text)
+    if not isinstance(payload, dict):
+        payload = {}
+
+    normalized = {
+        "high_level_keywords": _normalize_keyword_list(payload.get("high_level_keywords")),
+        "low_level_keywords": _normalize_keyword_list(payload.get("low_level_keywords")),
+    }
+    return json.dumps(normalized, ensure_ascii=False)
+
+
+def _wrap_keyword_extraction_for_unsupported_models(
+    llm_call: Callable[..., Awaitable[str]],
+    *,
+    model: str,
+    base_url: str | None,
+    logger,
+) -> Callable[..., Awaitable[str]]:
+    """
+    Fall back to plain-text JSON prompting when the model rejects OpenAI structured output.
+    """
+    supports_json_mode = supports_response_format_json_object(
+        model=model,
+        base_url=base_url,
+    )
+
+    if supports_json_mode:
+        return llm_call
+
+    async def wrapped(
+        prompt: str,
+        system_prompt: str | None = None,
+        history_messages: list[dict[str, Any]] | None = None,
+        **kwargs,
+    ) -> str:
+        keyword_extraction = kwargs.pop("keyword_extraction", False)
+        if not keyword_extraction:
+            return await llm_call(
+                prompt,
+                system_prompt=system_prompt,
+                history_messages=history_messages,
+                **kwargs,
+            )
+
+        combined_system_prompt = (
+            f"{system_prompt}\n\n{_KEYWORD_EXTRACTION_JSON_INSTRUCTION}"
+            if system_prompt
+            else _KEYWORD_EXTRACTION_JSON_INSTRUCTION
+        )
+        prompt_with_json_guard = (
+            f"{prompt.rstrip()}\n\nIMPORTANT: {_KEYWORD_EXTRACTION_JSON_INSTRUCTION}"
+        )
+
+        logger.info(
+            "Model does not support structured response_format during keyword extraction; "
+            "falling back to plain-text JSON prompting"
+        )
+
+        response = await llm_call(
+            prompt_with_json_guard,
+            system_prompt=combined_system_prompt,
+            history_messages=history_messages,
+            **kwargs,
+        )
+        return _coerce_keyword_extraction_response(response)
+
+    return wrapped
 
 
 class RAGAnythingPipeline:
@@ -78,21 +201,30 @@ class RAGAnythingPipeline:
         llm_client = get_llm_client()
         embed_client = get_embedding_client()
 
-        def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs):
-            return openai_complete_if_cache(
+        async def _base_llm_model_func(
+            prompt, system_prompt=None, history_messages=None, **kwargs
+        ):
+            return await openai_complete_if_cache(
                 llm_client.config.model,
                 prompt,
                 system_prompt=system_prompt,
-                history_messages=history_messages,
+                history_messages=history_messages or [],
                 api_key=llm_client.config.api_key,
                 base_url=llm_client.config.base_url,
                 **kwargs,
             )
 
-        def vision_model_func(
+        llm_model_func = _wrap_keyword_extraction_for_unsupported_models(
+            _base_llm_model_func,
+            model=llm_client.config.model,
+            base_url=llm_client.config.base_url,
+            logger=self.logger,
+        )
+
+        async def vision_model_func(
             prompt,
             system_prompt=None,
-            history_messages=[],
+            history_messages=None,
             image_data=None,
             messages=None,
             **kwargs,
@@ -104,7 +236,7 @@ class RAGAnythingPipeline:
                     for k, v in kwargs.items()
                     if k not in ["messages", "prompt", "system_prompt", "history_messages"]
                 }
-                return openai_complete_if_cache(
+                return await openai_complete_if_cache(
                     llm_client.config.model,
                     prompt="",
                     messages=messages,
@@ -124,7 +256,7 @@ class RAGAnythingPipeline:
                         },
                     ],
                 }
-                return openai_complete_if_cache(
+                return await openai_complete_if_cache(
                     llm_client.config.model,
                     prompt="",
                     messages=[image_message],
@@ -132,7 +264,12 @@ class RAGAnythingPipeline:
                     base_url=llm_client.config.base_url,
                     **kwargs,
                 )
-            return llm_model_func(prompt, system_prompt, history_messages, **kwargs)
+            return await llm_model_func(
+                prompt,
+                system_prompt=system_prompt,
+                history_messages=history_messages,
+                **kwargs,
+            )
 
         config = RAGAnythingConfig(
             working_dir=working_dir,
@@ -270,7 +407,23 @@ class RAGAnythingPipeline:
             rag = self._get_rag_instance(kb_name)
             await rag._ensure_lightrag_initialized()
 
-            answer = await rag.aquery(query, mode=mode, only_need_context=only_need_context)
+            try:
+                answer = await rag.aquery(query, mode=mode, only_need_context=only_need_context)
+            except TypeError as exc:
+                if "expected string or bytes-like object" not in str(exc) or "NoneType" not in str(
+                    exc
+                ):
+                    raise
+
+                self.logger.warning(
+                    "VLM-enhanced RAG query returned an invalid prompt; retrying without VLM enhancement"
+                )
+                answer = await rag.aquery(
+                    query,
+                    mode=mode,
+                    only_need_context=only_need_context,
+                    vlm_enhanced=False,
+                )
             answer_str = answer if isinstance(answer, str) else str(answer)
 
             return {

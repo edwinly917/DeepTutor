@@ -62,10 +62,8 @@ import {
   fetchPptProject,
   fetchPptTask,
   generatePptFull,
-  previewPptStyle,
   regeneratePptPageImage,
   uploadPptReferenceImage,
-  updatePptPage,
 } from "@/lib/pptApi";
 import { Mermaid } from "@/components/Mermaid";
 import PptPreviewModal from "@/components/ppt/PptPreviewModal";
@@ -212,7 +210,6 @@ interface PptStudioState {
   referenceLayoutPrompt?: string;
   referenceContentPrompt?: string;
   selectedTemplate?: string;
-  stylePreviewSvg?: string;
   outline?: PresentationOutline | null;
   previewOpen?: boolean;
   selectedSlideId?: string;
@@ -540,18 +537,17 @@ export default function NotebookDetailPage() {
   const [pptReferenceImageName, setPptReferenceImageName] = useState("");
   const [pptReferenceStylePrompt, setPptReferenceStylePrompt] = useState("");
   const [pptReferenceLayoutPrompt, setPptReferenceLayoutPrompt] = useState("");
-  const [pptReferenceContentPrompt, setPptReferenceContentPrompt] = useState("");
+  const [pptReferenceContentPrompt, setPptReferenceContentPrompt] =
+    useState("");
   const [pptReferenceUploading, setPptReferenceUploading] = useState(false);
   const [researchStartTime, setResearchStartTime] = useState<number | null>(
     null,
   );
   const [estimatedTimeRemaining, setEstimatedTimeRemaining] =
     useState<string>("");
-  const [pptStylePreviewSvg, setPptStylePreviewSvg] = useState("");
-  const [pptStylePreviewLoading, setPptStylePreviewLoading] = useState(false);
-  const [pptStylePreviewError, setPptStylePreviewError] = useState("");
-  const [bananaPptEnabled, setBananaPptEnabled] = useState(true);
-  const [bananaPptMaxSlides, setBananaPptMaxSlides] = useState(15);
+  const [pptStyleError, setPptStyleError] = useState("");
+  const [pptEnabled, setPptEnabled] = useState(true);
+  const [pptMaxSlides, setPptMaxSlides] = useState(15);
   const [pptPreviewOpen, setPptPreviewOpen] = useState(false);
   const [pptOutline, setPptOutline] = useState<PresentationOutline | null>(
     null,
@@ -702,7 +698,6 @@ export default function NotebookDetailPage() {
       referenceStylePrompt: pptReferenceStylePrompt,
       referenceLayoutPrompt: pptReferenceLayoutPrompt,
       referenceContentPrompt: pptReferenceContentPrompt,
-      stylePreviewSvg: pptStylePreviewSvg || "",
       outline: pptOutline,
       previewOpen: pptPreviewOpen,
       selectedSlideId: pptSelectedSlideId,
@@ -759,7 +754,6 @@ export default function NotebookDetailPage() {
       pptReferenceStylePrompt,
       pptReferenceLayoutPrompt,
       pptReferenceContentPrompt,
-      pptStylePreviewSvg,
       pptOutline,
       pptPreviewOpen,
       pptSelectedSlideId,
@@ -854,10 +848,10 @@ export default function NotebookDetailPage() {
     setPptReferenceImageUrl("");
     setPptReferenceImageName("");
     setPptReferenceStylePrompt("");
+    setPptReferenceLayoutPrompt("");
+    setPptReferenceContentPrompt("");
     setPptReferenceUploading(false);
-    setPptStylePreviewSvg("");
-    setPptStylePreviewLoading(false);
-    setPptStylePreviewError("");
+    setPptStyleError("");
     setPptPreviewOpen(false);
     setPptOutline(null);
     setPptSelectedSlideId("");
@@ -912,9 +906,7 @@ export default function NotebookDetailPage() {
     setPptReferenceStylePrompt(ppt.referenceStylePrompt || "");
     setPptReferenceLayoutPrompt(ppt.referenceLayoutPrompt || "");
     setPptReferenceContentPrompt(ppt.referenceContentPrompt || "");
-    setPptStylePreviewSvg(ppt.stylePreviewSvg || "");
-    setPptStylePreviewLoading(false);
-    setPptStylePreviewError("");
+    setPptStyleError("");
     setPptOutline(ppt.outline || null);
     setPptPreviewOpen(Boolean(ppt.outline) && (ppt.previewOpen ?? true));
     setPptSelectedSlideId(ppt.selectedSlideId || "");
@@ -1436,6 +1428,7 @@ export default function NotebookDetailPage() {
   const activeResearchIdRef = useRef<string | null>(null);
   const currentSessionIdRef = useRef<string | null>(null);
   const recoveringPptKeyRef = useRef<string | null>(null);
+  const localPptPollingTaskIdRef = useRef<string | null>(null);
 
   // WebSocket refs
   const wsRef = useRef<WebSocket | null>(null);
@@ -1733,7 +1726,7 @@ export default function NotebookDetailPage() {
     pptStyleMode !== "reference_image" || !!pptReferenceImagePath;
   const isPptBusy = isPptGenerating || isPptExporting;
   const canExportPpt =
-    bananaPptEnabled &&
+    pptEnabled &&
     canExportPptContent &&
     canUseSourceStyle &&
     canUsePresetStyle &&
@@ -2095,7 +2088,7 @@ export default function NotebookDetailPage() {
   }, [pendingResearchRecovery, notebookId]);
 
   useEffect(() => {
-    fetchBananaPptConfig();
+    fetchPptRuntimeConfig();
     // Fetch available podcast speakers
     (async () => {
       try {
@@ -2113,19 +2106,6 @@ export default function NotebookDetailPage() {
       }
     })();
   }, []);
-
-  useEffect(() => {
-    if (studioHydrationRef.current) return;
-    setPptStylePreviewSvg("");
-    setPptStylePreviewError("");
-  }, [
-    pptStyleMode,
-    selectedPptStyleId,
-    pptReferenceStylePrompt,
-    pptReferenceLayoutPrompt,
-    pptReferenceContentPrompt,
-    pptStylePromptText,
-  ]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -2229,17 +2209,14 @@ export default function NotebookDetailPage() {
     }
   };
 
-  const fetchBananaPptConfig = async () => {
+  const fetchPptRuntimeConfig = async () => {
     try {
       const data = await fetchPptConfig();
-      setBananaPptEnabled(Boolean(data.enabled));
+      setPptEnabled(Boolean(data.enabled));
       if (typeof data.max_slides === "number") {
-        setBananaPptMaxSlides(data.max_slides);
+        setPptMaxSlides(data.max_slides);
       }
-      if (
-        Array.isArray(data.style_presets) &&
-        data.style_presets.length > 0
-      ) {
+      if (Array.isArray(data.style_presets) && data.style_presets.length > 0) {
         setPptStyleTemplates(data.style_presets);
         const ids = data.style_presets.map(
           (template: PptStyleTemplate) => template.id,
@@ -2249,7 +2226,7 @@ export default function NotebookDetailPage() {
         }
       }
     } catch (err) {
-      console.error("Failed to fetch BananaPPT config:", err);
+      console.error("Failed to fetch PPT config:", err);
     }
   };
 
@@ -2260,7 +2237,7 @@ export default function NotebookDetailPage() {
     if (!file) return;
 
     setPptReferenceUploading(true);
-    setPptStylePreviewError("");
+    setPptStyleError("");
     try {
       const data = await uploadPptReferenceImage(file);
       setPptStyleMode("reference_image");
@@ -2270,15 +2247,12 @@ export default function NotebookDetailPage() {
       setPptReferenceStylePrompt(data.derived_style_prompt || "");
       setPptReferenceLayoutPrompt(data.derived_layout_prompt || "");
       setPptReferenceContentPrompt(data.derived_content_prompt || "");
-      setPptStylePreviewSvg("");
       if (pptReferenceImageInputRef.current) {
         pptReferenceImageInputRef.current.value = "";
       }
     } catch (err) {
       console.error("PPT reference image upload failed:", err);
-      setPptStylePreviewError(
-        err instanceof Error ? err.message : "参考图上传失败",
-      );
+      setPptStyleError(err instanceof Error ? err.message : "参考图上传失败");
     } finally {
       setPptReferenceUploading(false);
     }
@@ -3813,9 +3787,12 @@ export default function NotebookDetailPage() {
   };
 
   const getPptStylePlan = async (): Promise<PptStylePlan> => {
-    const defaultPresetId = selectedPptStyleId || pptStyleTemplates[0]?.id || "minimal-business";
+    const defaultPresetId =
+      selectedPptStyleId || pptStyleTemplates[0]?.id || "minimal-business";
     const selectedPresetId =
-      pptStyleMode === "preset" ? selectedPptStyleId || defaultPresetId : defaultPresetId;
+      pptStyleMode === "preset"
+        ? selectedPptStyleId || defaultPresetId
+        : defaultPresetId;
     const userOverridePrompt = pptStylePromptText.trim();
     const referenceStylePrompt = pptReferenceStylePrompt.trim();
     const referenceLayoutPrompt = pptReferenceLayoutPrompt.trim();
@@ -3932,8 +3909,26 @@ export default function NotebookDetailPage() {
       )
       .filter((index) => index >= 0);
     setPptGeneratingIndices(generatingIndices);
+    setPptImageProgress(buildPptImageProgress(project.presentation_outline));
     return project;
   };
+
+  const buildPptImageProgress = useCallback(
+    (outline: PresentationOutline | null | undefined) => {
+      const slides = outline?.slides || [];
+      const total = slides.length;
+      if (total === 0) {
+        return { current: 0, total: 0 };
+      }
+      const current = slides.filter(
+        (slide) =>
+          Boolean(slide.generatedImageUrl) ||
+          (slide.status || "") === "IMAGE_READY",
+      ).length;
+      return { current, total };
+    },
+    [],
+  );
 
   useEffect(() => {
     const nextSelectedId = resolvePptSelectedSlideId(
@@ -3952,13 +3947,10 @@ export default function NotebookDetailPage() {
         fetchPptTask(projectId, taskId),
         fetchPptProject(projectId),
       ]);
-      setPptActiveTaskId(task.id);
       setPptTaskPhase(task.progress?.phase || "");
       setPptWarnings(task.progress?.warnings || []);
       setPptOutline(project.presentation_outline);
-      const total = task.progress?.total || project.pages.length || 0;
-      const current = task.progress?.current || 0;
-      setPptImageProgress({ current, total });
+      setPptImageProgress(buildPptImageProgress(project.presentation_outline));
       const generatingIndices = (project.presentation_outline.slides || [])
         .map((slide, index) =>
           slide.status === "IMAGE_QUEUED" ||
@@ -3991,6 +3983,7 @@ export default function NotebookDetailPage() {
       setPptTaskPhase(task.progress?.phase || "");
       setPptWarnings(task.progress?.warnings || []);
       setPptOutline(project.presentation_outline);
+      setPptImageProgress(buildPptImageProgress(project.presentation_outline));
       const generatingIndices = (project.presentation_outline.slides || [])
         .map((slide, index) =>
           slide.status === "IMAGE_QUEUED" ||
@@ -4147,41 +4140,8 @@ export default function NotebookDetailPage() {
     };
   };
 
-  const handlePreviewPptStyle = async () => {
-    setPptStylePreviewLoading(true);
-    setPptStylePreviewError("");
-    try {
-      const stylePlan = await getPptStylePlan();
-      if (pptStyleMode === "preset" && !stylePlan.previewPrompt) {
-        alert("请选择风格模板");
-        return;
-      }
-      if (pptStyleMode === "sources" && !stylePlan.previewPrompt) {
-        return;
-      }
-      if (pptStyleMode === "reference_image" && !pptReferenceImagePath) {
-        alert("请先上传参考图");
-        return;
-      }
-
-      const data = await previewPptStyle({
-        style_preset_id: stylePlan.stylePresetId || undefined,
-        style_custom_text: stylePlan.styleCustomText || undefined,
-        reference_style_prompt: stylePlan.referenceStylePrompt || undefined,
-        reference_layout_prompt: stylePlan.referenceLayoutPrompt || undefined,
-        reference_content_prompt: stylePlan.referenceContentPrompt || undefined,
-        language: "zh",
-      });
-      setPptStylePreviewSvg(data.preview_svg || "");
-    } catch (err) {
-      console.error("PPT style preview failed:", err);
-      setPptStylePreviewError("风格预览失败");
-    } finally {
-      setPptStylePreviewLoading(false);
-    }
-  };
-
   const resetPptPreview = () => {
+    localPptPollingTaskIdRef.current = null;
     setPptPreviewOpen(false);
     setPptOutline(null);
     setPptSelectedSlideId("");
@@ -4192,29 +4152,6 @@ export default function NotebookDetailPage() {
     setPptSlideChatHistory({});
     setPptSlideChatLoadingId("");
     setPptSlideChatSubmittingId("");
-  };
-
-  const handleUpdatePptSlide = (index: number, updatedSlide: SlideContent) => {
-    setPptOutline((prev) => {
-      if (!prev) return prev;
-      const nextSlides = [...prev.slides];
-      nextSlides[index] = {
-        ...updatedSlide,
-        isDirty: true,
-        status: "DRAFT",
-      };
-      return { ...prev, slides: nextSlides };
-    });
-    if (pptProjectId && updatedSlide.pageId) {
-      void updatePptPage(pptProjectId, updatedSlide.pageId, {
-        title: updatedSlide.title,
-        points: updatedSlide.points,
-        description_text: updatedSlide.descriptionText || undefined,
-        image_prompt: updatedSlide.imagePrompt,
-      }).catch((err) => {
-        console.error("PPT page update failed:", err);
-      });
-    }
   };
 
   const handleDownloadPptx = async () => {
@@ -4270,7 +4207,7 @@ export default function NotebookDetailPage() {
   };
 
   const handleExportPptx = async () => {
-    if (!bananaPptEnabled) {
+    if (!pptEnabled) {
       alert("PPT 功能未启用");
       return;
     }
@@ -4298,6 +4235,7 @@ export default function NotebookDetailPage() {
       const createPayload = await buildPptCreatePayload(markdown, stylePlan);
       const project = await createPptProject(createPayload);
       setPptProjectId(project.id);
+      localPptPollingTaskIdRef.current = null;
       setPptActiveTaskId("");
       setPptTaskPhase("");
       setPptWarnings([]);
@@ -4307,14 +4245,16 @@ export default function NotebookDetailPage() {
       setPptOutline(project.presentation_outline);
       setPptPreviewOpen(true);
       const fullTask = await generatePptFull(project.id, {
-        max_slides: bananaPptMaxSlides,
+        max_slides: pptMaxSlides,
       });
+      localPptPollingTaskIdRef.current = fullTask.id;
       setPptActiveTaskId(fullTask.id);
       const { project: finishedProject } = await waitForPptTask(
         project.id,
         fullTask.id,
       );
       setPptOutline(finishedProject.presentation_outline);
+      localPptPollingTaskIdRef.current = null;
       setPptActiveTaskId("");
       setPptTaskPhase("");
       setPptGeneratingIndices([]);
@@ -4322,6 +4262,7 @@ export default function NotebookDetailPage() {
       console.error("PPT outline generation failed:", err);
       resetPptPreview();
     } finally {
+      localPptPollingTaskIdRef.current = null;
       setPptGeneratingIndices([]);
       setIsPptGenerating(false);
     }
@@ -4573,6 +4514,12 @@ export default function NotebookDetailPage() {
   useEffect(() => {
     if (studioMode !== "ppt" || !pptProjectId) return;
     if (!pptActiveTaskId && !pptPreviewOpen) return;
+    if (
+      pptActiveTaskId &&
+      localPptPollingTaskIdRef.current === pptActiveTaskId
+    ) {
+      return;
+    }
 
     const recoveryKey = `${pptProjectId}:${pptActiveTaskId || "preview"}`;
     if (recoveringPptKeyRef.current === recoveryKey) return;
@@ -4588,7 +4535,9 @@ export default function NotebookDetailPage() {
         if (cancelled) return;
 
         if (!pptActiveTaskId) {
-          setPptImageProgress({ current: 0, total: project.pages.length || 0 });
+          setPptImageProgress(
+            buildPptImageProgress(project.presentation_outline),
+          );
           return;
         }
 
@@ -4600,10 +4549,9 @@ export default function NotebookDetailPage() {
         const isPendingTask =
           task.status === "PENDING" || task.status === "RUNNING";
         if (!isPendingTask) {
-          setPptImageProgress({
-            current: task.progress?.current || 0,
-            total: task.progress?.total || project.pages.length || 0,
-          });
+          setPptImageProgress(
+            buildPptImageProgress(project.presentation_outline),
+          );
           setPptGeneratingIndices([]);
           setPptActiveTaskId("");
           setPptTaskPhase("");
@@ -4622,6 +4570,19 @@ export default function NotebookDetailPage() {
         setPptTaskPhase("");
       } catch (err) {
         if (!cancelled) {
+          const errorMessage = err instanceof Error ? err.message : "";
+          if (/project not found/i.test(errorMessage)) {
+            setPptProjectId("");
+            setPptActiveTaskId("");
+            resetPptPreview();
+            return;
+          }
+          if (/task not found/i.test(errorMessage)) {
+            setPptActiveTaskId("");
+            setPptTaskPhase("");
+            setPptGeneratingIndices([]);
+            return;
+          }
           console.error("Failed to resume PPT project:", err);
         }
       } finally {
@@ -4636,7 +4597,13 @@ export default function NotebookDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [studioMode, pptProjectId, pptActiveTaskId, pptPreviewOpen]);
+  }, [
+    studioMode,
+    pptProjectId,
+    pptActiveTaskId,
+    pptPreviewOpen,
+    buildPptImageProgress,
+  ]);
 
   const renderExportSourceToggle = () => (
     <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
@@ -4688,7 +4655,7 @@ export default function NotebookDetailPage() {
           </p>
         </div>
         <div className="rounded-full border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-slate-300">
-          {bananaPptEnabled ? "PPT v2" : "未启用"}
+          {pptEnabled ? "PPT" : "未启用"}
         </div>
       </div>
 
@@ -4703,7 +4670,7 @@ export default function NotebookDetailPage() {
                 : pptCreationMode,
             ),
           },
-          { label: "页数上限", value: `${bananaPptMaxSlides} 页` },
+          { label: "页数上限", value: `${pptMaxSlides} 页` },
           { label: "任务状态", value: pptTaskStatusLabel },
         ].map((item) => (
           <div
@@ -4981,7 +4948,6 @@ export default function NotebookDetailPage() {
                           setPptReferenceStylePrompt("");
                           setPptReferenceLayoutPrompt("");
                           setPptReferenceContentPrompt("");
-                          setPptStylePreviewSvg("");
                         }}
                         className="px-2.5 py-1 text-[11px] rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                       >
@@ -5042,19 +5008,12 @@ export default function NotebookDetailPage() {
                 3. 生成操作
               </div>
               <p className="mt-1 text-[11px] leading-5 text-slate-500">
-                先预览风格，再直接生成 PPT；项目和任务会自动保存在当前会话中。
+                配置完成后直接生成 PPT；真实预览会在生成任务启动后展示。
               </p>
             </div>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              onClick={handlePreviewPptStyle}
-              disabled={pptStylePreviewLoading}
-              className="px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500 transition-colors disabled:opacity-50"
-            >
-              {pptStylePreviewLoading ? "生成预览..." : "预览风格"}
-            </button>
             <button
               onClick={handleExportPptx}
               disabled={!canExportPpt || isPptBusy}
@@ -5075,24 +5034,9 @@ export default function NotebookDetailPage() {
             )}
           </div>
 
-          {pptStylePreviewError && (
-            <p className="mt-2 text-[11px] text-rose-500">
-              {pptStylePreviewError}
-            </p>
+          {pptStyleError && (
+            <p className="mt-2 text-[11px] text-rose-500">{pptStyleError}</p>
           )}
-
-          <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 overflow-hidden">
-            {pptStylePreviewSvg ? (
-              <div
-                className="max-h-52 overflow-hidden"
-                dangerouslySetInnerHTML={{ __html: pptStylePreviewSvg }}
-              />
-            ) : (
-              <div className="px-3 py-4 text-[11px] leading-5 text-slate-400">
-                风格预览会根据当前预设、参考图和补充要求生成一张缩略示意图，不再占据整段右栏空间。
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>
@@ -6390,7 +6334,7 @@ export default function NotebookDetailPage() {
                 </button>
                 {!canExportPpt && (
                   <p className="text-xs text-slate-400 mt-3">
-                    {!bananaPptEnabled
+                    {!pptEnabled
                       ? "PPT 功能未启用"
                       : !canExportPptContent
                         ? exportUnavailableHint
@@ -6577,6 +6521,7 @@ export default function NotebookDetailPage() {
         isOpen={pptPreviewOpen}
         outline={pptOutline}
         isExporting={isPptExporting}
+        isProjectGenerating={Boolean(pptActiveTaskId) || isPptGenerating}
         imageProgress={
           pptImageProgress.total > 0 ? pptImageProgress : undefined
         }
@@ -6600,7 +6545,6 @@ export default function NotebookDetailPage() {
         onExport={handleDownloadPptx}
         onSelectSlide={handleSelectPptSlide}
         onSubmitSlideChat={handleSubmitPptSlideChat}
-        onUpdateSlide={handleUpdatePptSlide}
         onRegenerateSlide={handleRegeneratePptSlide}
       />
       {/* Selected Record Preview Modal */}

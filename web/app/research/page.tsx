@@ -1181,8 +1181,6 @@ export default function ResearchPage() {
           onExportPdf={handleExportPdf}
           isExportingPdf={isExportingPdf}
           onExportPptx={handleExportPptx}
-          pptStylePrompt={pptStylePrompt}
-          onPptStylePromptChange={setPptStylePrompt}
           isExportingPptx={isExportingPptx}
         />
         {/* Hidden Render Div for PDF - uses preprocessed markdown */}

@@ -16,7 +16,7 @@ from src.services.config import get_ppt_analysis_vision_config
 from src.services.llm import complete as llm_complete
 from src.services.llm import get_token_limit_kwargs
 from src.services.llm.client import LLMClient
-from src.services.llm.config import LLMConfig
+from src.services.llm.config import LLMConfig, supports_response_format_json_object
 from src.services.ppt.prompts import PptPromptManager
 
 logger = get_logger("PptTemplateAnalyzer")
@@ -69,7 +69,9 @@ class TemplateAnalyzer:
     ) -> TemplateAnalysisResult:
         result = TemplateAnalysisResult()
         if template_image_path:
-            result = self._merge(result, await self.analyze_path(self._resolve_path(template_image_path)))
+            result = self._merge(
+                result, await self.analyze_path(self._resolve_path(template_image_path))
+            )
         for item in template_file_refs or []:
             path_value = str(item.get("path") or item.get("file_path") or "").strip()
             if not path_value:
@@ -117,7 +119,9 @@ class TemplateAnalyzer:
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
         style_system, style_user = PptPromptManager.reference_style_extraction()
         layout_system, layout_user = PptPromptManager.layout_extraction()
-        style_data = await self._vision_json_complete(style_system, style_user, mime_type, image_b64)
+        style_data = await self._vision_json_complete(
+            style_system, style_user, mime_type, image_b64
+        )
         layout_data = await self._vision_json_complete(
             layout_system, layout_user, mime_type, image_b64
         )
@@ -167,9 +171,7 @@ class TemplateAnalyzer:
             extracted_text=trimmed_text,
         )
 
-    async def _analyze_preview_images(
-        self, preview_paths: list[Path]
-    ) -> TemplateAnalysisResult:
+    async def _analyze_preview_images(self, preview_paths: list[Path]) -> TemplateAnalysisResult:
         page_results: list[tuple[Path, TemplateAnalysisResult]] = []
         for path in preview_paths[:_PREVIEW_MAX_PAGES]:
             try:
@@ -231,18 +233,26 @@ class TemplateAnalyzer:
     ) -> dict[str, Any]:
         kwargs = get_token_limit_kwargs(self.config.model, self.config.max_tokens)
         vision_func = self._vision_client.get_vision_model_func()
+        use_json_mode = supports_response_format_json_object(
+            self.config.model,
+            self.config.binding,
+            self.config.base_url,
+        )
         try:
             raw = await vision_func(
                 prompt="",
                 messages=self._build_vision_messages(
-                    system_prompt, user_prompt, mime_type, image_b64
+                    system_prompt,
+                    user_prompt if use_json_mode else self._force_json_output(user_prompt),
+                    mime_type,
+                    image_b64,
                 ),
-                response_format={"type": "json_object"},
+                **({"response_format": {"type": "json_object"}} if use_json_mode else {}),
                 temperature=self.config.temperature,
                 **kwargs,
             )
         except Exception as exc:
-            if not self._should_retry_without_json_mode(exc):
+            if not use_json_mode or not self._should_retry_without_json_mode(exc):
                 raise
             logger.warning(
                 f"Vision model {self.config.model} does not support "
@@ -266,20 +276,25 @@ class TemplateAnalyzer:
 
     async def _json_complete(self, system_prompt: str, user_prompt: str) -> dict[str, Any]:
         kwargs = get_token_limit_kwargs(self.config.model, self.config.max_tokens)
+        use_json_mode = supports_response_format_json_object(
+            self.config.model,
+            self.config.binding,
+            self.config.base_url,
+        )
         try:
             raw = await llm_complete(
-                prompt=user_prompt,
+                prompt=user_prompt if use_json_mode else self._force_json_output(user_prompt),
                 system_prompt=system_prompt,
                 model=self.config.model,
                 api_key=self.config.api_key,
                 base_url=self.config.base_url,
                 binding=self.config.binding,
                 temperature=self.config.temperature,
-                response_format={"type": "json_object"},
+                **({"response_format": {"type": "json_object"}} if use_json_mode else {}),
                 **kwargs,
             )
         except Exception as exc:
-            if not self._should_retry_without_json_mode(exc):
+            if not use_json_mode or not self._should_retry_without_json_mode(exc):
                 raise
             logger.warning(
                 f"Model {self.config.model} does not support "
@@ -518,7 +533,9 @@ class TemplateAnalyzer:
         if getattr(shape, "has_text_frame", False) or str(getattr(shape, "text", "") or "").strip():
             self._draw_text(draw, bounds, str(getattr(shape, "text", "") or "").strip())
 
-    def _paste_picture(self, canvas: Image.Image, shape: Any, bounds: tuple[int, int, int, int]) -> bool:
+    def _paste_picture(
+        self, canvas: Image.Image, shape: Any, bounds: tuple[int, int, int, int]
+    ) -> bool:
         try:
             blob = shape.image.blob
             picture = Image.open(BytesIO(blob)).convert("RGB")

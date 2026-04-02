@@ -5,21 +5,98 @@ Analyzes notebook content and generates progressive knowledge point learning pla
 """
 
 import json
+import re
 from typing import Any
 
 from src.agents.base_agent import BaseAgent
+from src.services.llm.config import supports_response_format_json_object
 
 
 class LocateAgent(BaseAgent):
     """Knowledge point location agent"""
 
     def __init__(self, api_key: str, base_url: str, language: str = "zh", binding: str = "openai"):
+        self.binding = binding
         super().__init__(
             module_name="guide",
             agent_name="locate_agent",
             api_key=api_key,
             base_url=base_url,
             language=language,
+        )
+
+    @staticmethod
+    def _extract_json_payload(text: str) -> Any | None:
+        """Extract JSON payload from plain text or fenced code blocks."""
+        if not text:
+            return None
+
+        candidates: list[str] = [text.strip()]
+
+        fenced_blocks = re.findall(r"```(?:json)?\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE)
+        candidates.extend(block.strip() for block in fenced_blocks if block.strip())
+
+        for open_char, close_char in (("{", "}"), ("[", "]")):
+            start = text.find(open_char)
+            end = text.rfind(close_char)
+            if start != -1 and end != -1 and end > start:
+                snippet = text[start : end + 1].strip()
+                if snippet:
+                    candidates.append(snippet)
+
+        seen: set[str] = set()
+        for candidate in candidates:
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+        return None
+
+    @staticmethod
+    def _normalize_knowledge_points(payload: Any) -> list[dict[str, str]]:
+        """Normalize model output into the knowledge point schema expected by the UI."""
+        if isinstance(payload, list):
+            knowledge_points = payload
+        elif isinstance(payload, dict):
+            knowledge_points = (
+                payload.get("knowledge_points") or payload.get("points") or payload.get("data") or []
+            )
+        else:
+            knowledge_points = []
+
+        validated_points = []
+        for point in knowledge_points:
+            if isinstance(point, dict):
+                validated_points.append(
+                    {
+                        "knowledge_title": point.get("knowledge_title", "Unnamed knowledge point"),
+                        "knowledge_summary": point.get("knowledge_summary", ""),
+                        "user_difficulty": point.get("user_difficulty", ""),
+                    }
+                )
+
+        return validated_points
+
+    @staticmethod
+    def _force_json_output(prompt: str) -> str:
+        return (
+            f"{prompt.rstrip()}\n\n"
+            "IMPORTANT: Return a single valid JSON object only. "
+            'Use the shape {"knowledge_points":[...]} and do not use markdown fences. '
+            "Do not add explanations before or after the JSON."
+        )
+
+    @staticmethod
+    def _should_retry_without_json_mode(exc: Exception) -> bool:
+        message = str(exc).lower()
+        if "json_object" not in message:
+            return False
+        return any(
+            marker in message
+            for marker in ("not supported", "not valid", "invalidparameter", "unsupported")
         )
 
     def _format_records(self, records: list[dict[str, Any]]) -> str:
@@ -87,54 +164,43 @@ class LocateAgent(BaseAgent):
             records_content=records_content,
         )
 
+        use_json_mode = supports_response_format_json_object(
+            self.get_model(),
+            self.binding,
+            self.base_url,
+        )
+        prompt_for_request = user_prompt if use_json_mode else self._force_json_output(user_prompt)
+
         try:
-            response = await self.call_llm(
-                user_prompt=user_prompt,
-                system_prompt=system_prompt,
-                response_format={"type": "json_object"},
-            )
-
             try:
-                result = json.loads(response)
+                response = await self.call_llm(
+                    user_prompt=prompt_for_request,
+                    system_prompt=system_prompt,
+                    response_format={"type": "json_object"} if use_json_mode else None,
+                )
+            except Exception as e:
+                if not use_json_mode or not self._should_retry_without_json_mode(e):
+                    return {"success": False, "error": str(e), "knowledge_points": []}
+                response = await self.call_llm(
+                    user_prompt=self._force_json_output(user_prompt),
+                    system_prompt=system_prompt,
+                )
 
-                if isinstance(result, list):
-                    knowledge_points = result
-                elif isinstance(result, dict):
-                    knowledge_points = (
-                        result.get("knowledge_points")
-                        or result.get("points")
-                        or result.get("data")
-                        or []
-                    )
-                else:
-                    knowledge_points = []
-
-                validated_points = []
-                for point in knowledge_points:
-                    if isinstance(point, dict):
-                        validated_points.append(
-                            {
-                                "knowledge_title": point.get(
-                                    "knowledge_title", "Unnamed knowledge point"
-                                ),
-                                "knowledge_summary": point.get("knowledge_summary", ""),
-                                "user_difficulty": point.get("user_difficulty", ""),
-                            }
-                        )
-
-                return {
-                    "success": True,
-                    "knowledge_points": validated_points,
-                    "total_points": len(validated_points),
-                }
-
-            except json.JSONDecodeError as e:
+            result = self._extract_json_payload(response)
+            if result is None:
                 return {
                     "success": False,
-                    "error": f"JSON parsing failed: {e!s}",
+                    "error": "JSON parsing failed: model did not return valid JSON",
                     "raw_response": response,
                     "knowledge_points": [],
                 }
+
+            validated_points = self._normalize_knowledge_points(result)
+            return {
+                "success": True,
+                "knowledge_points": validated_points,
+                "total_points": len(validated_points),
+            }
 
         except Exception as e:
             return {"success": False, "error": str(e), "knowledge_points": []}

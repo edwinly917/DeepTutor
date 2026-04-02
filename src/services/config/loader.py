@@ -451,9 +451,7 @@ def get_ppt_analysis_vision_config(project_root: Optional[Path] = None) -> PptAn
         temperature=float(
             _get_value_env_first("temperature", "PPT_ANALYSIS_VISION_TEMPERATURE", 0.3)
         ),
-        max_tokens=int(
-            _get_value_env_first("max_tokens", "PPT_ANALYSIS_VISION_MAX_TOKENS", 2000)
-        ),
+        max_tokens=int(_get_value_env_first("max_tokens", "PPT_ANALYSIS_VISION_MAX_TOKENS", 2000)),
     )
 
 

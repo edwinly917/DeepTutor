@@ -32,23 +32,46 @@ class DescriptionGenerator:
             deck_outline_summary=deck_outline_summary,
             supporting_context=supporting_context,
             style_context=style_context,
-            source_brief=(project.get("normalized_content") or project.get("source_content") or ""),
             detail_level=detail_level,
             language=language,
-            reference_files=project.get("template_file_refs") or [],
         )
         data = self.json_complete(user_prompt, system_prompt)
-        text = (data.get("text") or "").strip()
-        image_prompt = (data.get("image_prompt") or "").strip() or page.get("image_prompt") or ""
-        if not text:
+        page_title = self._clean_slide_text(data.get("page_title") or "") or title
+        subtitle = self._clean_slide_text(data.get("subtitle") or "")
+        page_text = self._clean_slide_text(data.get("page_text") or data.get("text") or "")
+        material_images = data.get("material_images") or []
+        if not page_text:
             raise ValueError(f"Failed to generate description for slide '{title}'")
         return {
             "description_content": {
-                "text": text,
+                "page_title": page_title,
+                "subtitle": subtitle,
+                "text": page_text,
+                "material_images": material_images,
                 "detail_level": detail_level,
             },
-            "image_prompt": image_prompt,
+            "image_prompt": "",
         }
+
+    @staticmethod
+    def _clean_slide_text(text: str) -> str:
+        """Strip markdown formatting symbols that pollute image generation."""
+        cleaned = (text or "").strip()
+        # Remove heading markers: ### Title -> Title
+        cleaned = re.sub(r"^#{1,6}\s*", "", cleaned, flags=re.MULTILINE)
+        # Remove bold/italic markers: **text** -> text, *text* -> text
+        cleaned = re.sub(r"\*{1,3}(.+?)\*{1,3}", r"\1", cleaned)
+        # Remove horizontal rules: --- or *** or ___
+        cleaned = re.sub(r"^[\-\*_]{3,}\s*$", "", cleaned, flags=re.MULTILINE)
+        # Remove code fences: ```...```
+        cleaned = re.sub(r"```[^\n]*\n?", "", cleaned)
+        # Remove inline code backticks: `code` -> code
+        cleaned = re.sub(r"`([^`]+)`", r"\1", cleaned)
+        # Remove markdown links: [text](url) -> text
+        cleaned = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", cleaned)
+        # Collapse multiple blank lines
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned.strip()
 
     def build_deck_outline_summary(self, pages: list[dict[str, Any]]) -> str:
         lines: list[str] = []

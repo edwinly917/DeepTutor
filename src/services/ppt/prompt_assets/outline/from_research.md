@@ -19,12 +19,6 @@ Layout guidance:
 - Choose layout based on slide function, not decoration.
 - Use image-oriented layouts only when the slide benefits from a strong supporting visual.
 
-imagePrompt guidance:
-- imagePrompt must directly support the slide's message.
-- Describe one professional 16:9 presentation visual concept.
-- Prefer editorial, business, analytical, or conceptual visuals.
-- Avoid logos, watermarks, readable text, UI screenshots, fantasy spectacle, or decorative-only imagery.
-
 <source_brief>
 $source_brief
 </source_brief>

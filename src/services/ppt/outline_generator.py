@@ -89,11 +89,8 @@ class OutlineGenerator:
             raise ValueError("Failed to parse outline JSON")
         return self._normalize_outline(data, max_slides)
 
-    def _trim_source(self, source: str, max_chars: int = 16000) -> str:
-        cleaned = (source or "").strip()
-        if len(cleaned) <= max_chars:
-            return cleaned
-        return cleaned[:max_chars]
+    def _trim_source(self, source: str) -> str:
+        return (source or "").strip()
 
     def _normalize_outline(self, outline: dict[str, Any], max_slides: int) -> dict[str, Any]:
         title = str(outline.get("title") or "Presentation")
@@ -110,17 +107,11 @@ class OutlineGenerator:
             layout = str(slide.get("layout") or "TYPOGRAPHIC")
             if layout not in _LAYOUTS:
                 layout = "TYPOGRAPHIC"
-            image_prompt = slide.get("imagePrompt")
-            if image_prompt is not None:
-                image_prompt = str(image_prompt).strip() or None
-            if image_prompt and layout == "TYPOGRAPHIC":
-                layout = "TYPOGRAPHIC_WITH_IMAGE"
             slides.append(
                 {
                     "title": slide_title,
                     "points": points,
                     "layout": layout,
-                    "imagePrompt": image_prompt,
                 }
             )
             if len(slides) >= max_slides:

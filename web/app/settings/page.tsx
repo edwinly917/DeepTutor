@@ -1390,9 +1390,7 @@ export default function SettingsPage() {
                   ) : (
                     <RefreshCw className="w-3 h-3" />
                   )}
-                  {testingService.ppt_vlm
-                    ? t("Testing...")
-                    : t("Test PPT VLM")}
+                  {testingService.ppt_vlm ? t("Testing...") : t("Test PPT VLM")}
                 </button>
               </div>
             </div>

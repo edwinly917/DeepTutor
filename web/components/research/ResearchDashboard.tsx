@@ -35,51 +35,6 @@ import { getTranslation } from "@/lib/i18n";
 
 type ProcessTab = "planning" | "researching" | "reporting";
 
-type PptStyleTemplate = {
-  id: string;
-  label: string;
-  prompt: string;
-};
-
-const PPT_STYLE_TEMPLATES: PptStyleTemplate[] = [
-  {
-    id: "corporate-minimal",
-    label: "Corporate (Minimal)",
-    prompt:
-      "干净的商务风格幻灯片。使用浅色背景与充足留白。偏好扁平图形、细分隔线与轻微阴影。主题：背景 #FFFFFF，强调色 #2563EB，标题色 #0F172A，正文字色 #334155，字体 Aptos。标题尽量短；要点尽量精炼。",
-  },
-  {
-    id: "academic-lecture",
-    label: "Academic (Lecture)",
-    prompt:
-      "学术讲义风格。层级清晰、配色沉稳、排版易读。主题：背景 #FFFFFF，强调色 #4F46E5，标题色 #111827，正文字色 #111827，字体 Aptos。偏好分节页、少装饰，突出定义与关键结论。",
-  },
-  {
-    id: "dark-tech",
-    label: "Dark (Tech)",
-    prompt:
-      "现代深色科技风。深色背景、亮色强调、高对比。主题：背景 #0B1220，强调色 #22D3EE，标题色 #E2E8F0，正文字色 #CBD5E1，字体 Aptos。使用简洁线条与轻微渐变；要点短促有力。",
-  },
-  {
-    id: "data-report",
-    label: "Data (Report)",
-    prompt:
-      "数据型报告风格。突出数字、强调清晰与结构化要点。主题：背景 #FFFFFF，强调色 #10B981，标题色 #111827，正文字色 #1F2937，字体 Aptos。对指标使用一致的强调方式；分析要点简洁。",
-  },
-  {
-    id: "storyboard",
-    label: "Narrative (Pitch)",
-    prompt:
-      "路演/故事板风格。叙事节奏强，章节标题醒目，要点简短。主题：背景 #FFFBEB，强调色 #F97316，标题色 #7C2D12，正文字色 #431407，字体 Aptos。氛围有张力但保持可读性。",
-  },
-  {
-    id: "chinese-formal",
-    label: "Chinese (Formal)",
-    prompt:
-      "中文正式/公文风格。版式均衡、配色克制、层级清晰，适合内部汇报。主题：背景 #FFFFFF，强调色 #DC2626，标题色 #111827，正文字色 #1F2937，字体 PingFang SC。避免复杂装饰；要点结构化。",
-  },
-];
-
 interface ResearchDashboardProps {
   state: ResearchState;
   selectedTaskId: string | null;
@@ -88,8 +43,6 @@ interface ResearchDashboardProps {
   onExportMarkdown?: () => void;
   onExportPdf?: () => void;
   onExportPptx?: () => void;
-  pptStylePrompt?: string;
-  onPptStylePromptChange?: (prompt: string) => void;
   isExportingPdf?: boolean;
   isExportingPptx?: boolean;
 }
@@ -102,8 +55,6 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
   onExportMarkdown,
   onExportPdf,
   onExportPptx,
-  pptStylePrompt = "",
-  onPptStylePromptChange,
   isExportingPdf = false,
   isExportingPptx = false,
 }) => {
@@ -122,20 +73,6 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
   const [activeView, setActiveView] = useState<"process" | "report">("process");
   const [activeProcessTab, setActiveProcessTab] =
     useState<ProcessTab>("planning");
-  const [selectedPptTemplateId, setSelectedPptTemplateId] =
-    useState<string>("custom");
-
-  useEffect(() => {
-    if (selectedPptTemplateId === "custom") return;
-    const tmpl = PPT_STYLE_TEMPLATES.find(
-      (t) => t.id === selectedPptTemplateId,
-    );
-    if (!tmpl) return;
-    if (pptStylePrompt !== tmpl.prompt) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSelectedPptTemplateId("custom");
-    }
-  }, [pptStylePrompt, selectedPptTemplateId]);
 
   const steps: { id: ProcessTab; label: string; icon: React.ElementType }[] = [
     { id: "planning", label: t("Planning"), icon: GitBranch },
@@ -168,13 +105,10 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
   // Auto-switch to current stage tab when stage changes
   useEffect(() => {
     if (global.stage === "planning") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveProcessTab("planning");
     } else if (global.stage === "researching") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveProcessTab("researching");
     } else if (global.stage === "reporting") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveProcessTab("reporting");
     }
     // When completed, stay on current tab (user can browse freely)
@@ -197,7 +131,6 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
   // Reset to process view when a new research starts
   useEffect(() => {
     if (global.stage === "planning") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveView("process");
     }
   }, [global.stage]);
@@ -789,37 +722,6 @@ export const ResearchDashboard: React.FC<ResearchDashboardProps> = ({
               )}
               {onExportPptx && (
                 <div className="flex items-center gap-2">
-                  {onPptStylePromptChange && (
-                    <select
-                      value={selectedPptTemplateId}
-                      onChange={(e) => {
-                        const nextId = e.target.value;
-                        setSelectedPptTemplateId(nextId);
-                        if (nextId === "custom") return;
-                        const tmpl = PPT_STYLE_TEMPLATES.find(
-                          (t) => t.id === nextId,
-                        );
-                        if (!tmpl) return;
-                        onPptStylePromptChange(tmpl.prompt);
-                      }}
-                      className="text-sm px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
-                    >
-                      <option value="custom">{t("Custom")}</option>
-                      {PPT_STYLE_TEMPLATES.map((tmpl) => (
-                        <option key={tmpl.id} value={tmpl.id}>
-                          {t(tmpl.label)}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {onPptStylePromptChange && (
-                    <input
-                      value={pptStylePrompt}
-                      onChange={(e) => onPptStylePromptChange(e.target.value)}
-                      placeholder={t("PPT Style Prompt (Optional)")}
-                      className="text-sm px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 w-72"
-                    />
-                  )}
                   <button
                     onClick={onExportPptx}
                     disabled={isExportingPptx}

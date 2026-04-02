@@ -9,7 +9,7 @@ import traceback
 from typing import Any, Literal
 import uuid
 
-from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile, WebSocket
+from fastapi import APIRouter, HTTPException, Query, WebSocket
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -21,7 +21,6 @@ from src.api.utils.task_id_manager import TaskIDManager
 from src.logging import get_logger
 from src.services.config import load_config_with_main
 from src.services.export.pdf_generator import PDFGenerator
-from src.services.export.ppt_project_service import get_ppt_project_service
 from src.services.export.source_report import SourceReportGenerator
 from src.services.llm import get_llm_config
 from src.services.storage.file_store import get_file_record
@@ -34,49 +33,12 @@ if sys.platform == "win32":
 router = APIRouter()
 _ACTIVE_RESEARCH_RUNS: dict[str, dict[str, str]] = {}
 _ACTIVE_RESEARCH_RUNS_LOCK = asyncio.Lock()
-_DEPRECATED_PPT_HEADER = "X-DeepTutor-Deprecated"
 
 
 # Helper to load config (with main.yaml merge)
 def load_config():
     project_root = Path(__file__).parent.parent.parent.parent
     return load_config_with_main("research_config.yaml", project_root)
-
-
-def _project_root() -> Path:
-    return Path(__file__).parent.parent.parent.parent
-
-
-def _ppt_service():
-    return get_ppt_project_service(_project_root())
-
-
-def _mark_ppt_deprecated(response: Response) -> None:
-    response.headers[_DEPRECATED_PPT_HEADER] = "true"
-
-
-def _deprecated_http_exception(status_code: int, detail: str) -> HTTPException:
-    return HTTPException(
-        status_code=status_code,
-        detail=detail,
-        headers={_DEPRECATED_PPT_HEADER: "true"},
-    )
-
-
-async def _wait_for_ppt_task(project_id: str, task_id: str) -> dict[str, Any]:
-    service = _ppt_service()
-    while True:
-        task = service.get_task(project_id, task_id)
-        if not task:
-            raise _deprecated_http_exception(status_code=404, detail="PPT task not found")
-        if task["status"] == "COMPLETED":
-            return task
-        if task["status"] in {"FAILED", "CANCELED"}:
-            raise _deprecated_http_exception(
-                status_code=500,
-                detail=task.get("error_message") or "PPT task failed",
-            )
-        await asyncio.sleep(1.5)
 
 
 def _read_json_file(path: Path) -> dict | None:
@@ -235,17 +197,6 @@ class OptimizeRequest(BaseModel):
     kb_name: str | None = "ai_textbook"
 
 
-class ExportPptxRequest(BaseModel):
-    markdown: str
-    title: str | None = None
-    max_slides: int = 15
-    style_prompt: str | None = None
-    style_model: str | None = None
-    style_api_key: str | None = None
-    style_base_url: str | None = None
-    template_name: str | None = None
-
-
 class ExportPdfRequest(BaseModel):
     markdown: str
     title: str | None = None
@@ -266,81 +217,6 @@ class ComposeFromSourcesRequest(BaseModel):
 class PptStyleFromSourcesRequest(BaseModel):
     sources: list[SourceItem]
     topic: str | None = None
-
-
-class PptStylePreviewRequest(BaseModel):
-    style_prompt: str | None = None
-
-
-class BananaPptOutlineRequest(BaseModel):
-    source_content: str
-    style_prompt: str | None = None
-    max_slides: int | None = None
-
-
-class BananaPptImageRequest(BaseModel):
-    prompt: str
-    slide_title: str | None = None
-    slide_points: list[str] | None = None
-    layout: str | None = None
-    deck_title: str | None = None
-    style_prompt: str | None = None
-
-
-@router.post("/export_pptx")
-async def export_pptx(request: ExportPptxRequest, response: Response):
-    _mark_ppt_deprecated(response)
-    try:
-        service = _ppt_service()
-        markdown = (request.markdown or "").strip()
-        if not markdown:
-            raise ValueError("Markdown content is required")
-        if request.template_name:
-            logger.warning("Ignoring legacy PPT template export path; using PPT v2 image pipeline")
-        source_title = (request.title or "").strip() or "Research Report"
-        project = service.create_project(
-            notebook_id=None,
-            session_id=None,
-            creation_type="from_research",
-            source_content=markdown,
-            style_preset_id=None,
-            style_custom_text=request.style_prompt,
-            template_image_path=None,
-            template_file_refs=[],
-            reference_style_prompt=None,
-            reference_layout_prompt=None,
-            reference_content_prompt=None,
-            image_aspect_ratio="16:9",
-            language="zh",
-            reference_sources=[],
-            source_refs=[
-                {
-                    "type": "report",
-                    "title": source_title,
-                    "source_key": source_title,
-                    "content": markdown,
-                }
-            ],
-        )
-        full_task = service.start_generate_full(
-            project["id"],
-            max_slides=request.max_slides,
-        )
-        await _wait_for_ppt_task(project["id"], full_task["id"])
-        return service.export_pptx_with_title(
-            project["id"],
-            title_override=request.title,
-        )
-    except HTTPException:
-        raise
-    except ImportError as exc:
-        raise _deprecated_http_exception(
-            status_code=500,
-            detail=f"PPT export dependencies not installed: {exc}",
-        )
-    except Exception as exc:
-        logger.error(f"PPT export compatibility path failed: {exc}")
-        raise _deprecated_http_exception(status_code=500, detail=str(exc))
 
 
 @router.get("/pptx/{file_id}")
@@ -389,13 +265,6 @@ async def export_pdf(request: ExportPdfRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/ppt_style_templates")
-async def list_ppt_style_templates(response: Response):
-    _mark_ppt_deprecated(response)
-    config = _ppt_service().get_config()
-    return {"templates": config.get("style_presets") or []}
-
-
 @router.post("/compose_from_sources")
 async def compose_from_sources(request: ComposeFromSourcesRequest):
     try:
@@ -422,119 +291,6 @@ async def ppt_style_from_sources(request: PptStyleFromSourcesRequest):
     except Exception as e:
         logger.error(f"PPT style generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/ppt_style_preview")
-async def ppt_style_preview(request: PptStylePreviewRequest, response: Response):
-    _mark_ppt_deprecated(response)
-    try:
-        return await _ppt_service().preview_style(style_custom_text=request.style_prompt)
-    except Exception as exc:
-        logger.error(f"PPT style preview failed: {exc}")
-        raise _deprecated_http_exception(status_code=500, detail=str(exc))
-
-
-@router.get("/ppt_config")
-async def get_ppt_config_for_banana(response: Response):
-    _mark_ppt_deprecated(response)
-    config = _ppt_service().get_config()
-    style_presets = config.get("style_presets") or []
-    return {
-        "enabled": config.get("enabled", True),
-        "max_slides": config.get("max_slides", 15),
-        "style_presets": style_presets,
-        "style_templates": style_presets,
-    }
-
-
-@router.post("/ppt_outline")
-async def generate_ppt_outline(request: BananaPptOutlineRequest, response: Response):
-    _mark_ppt_deprecated(response)
-    config = _ppt_service().get_config()
-    if not config.get("enabled", True):
-        raise _deprecated_http_exception(status_code=403, detail="Banana PPT is disabled")
-
-    try:
-        service = _ppt_service()
-        style_briefs = await service._build_style_briefs(style_custom_text=request.style_prompt)
-        result = await service.banana_service.generate_outline(
-            source_content=request.source_content,
-            style_prompt=style_briefs.get("outline_style_brief"),
-            max_slides=request.max_slides,
-            language="zh",
-            source_type="from_research",
-        )
-        return result
-    except Exception as exc:
-        logger.error(f"Banana PPT outline failed: {exc}")
-        raise _deprecated_http_exception(status_code=500, detail=str(exc))
-
-
-@router.post("/ppt_image")
-async def generate_ppt_image(request: BananaPptImageRequest, response: Response):
-    _mark_ppt_deprecated(response)
-    config = _ppt_service().get_config()
-    if not config.get("enabled", True):
-        raise _deprecated_http_exception(status_code=403, detail="Banana PPT is disabled")
-
-    try:
-        return await _ppt_service().generate_image_preview(
-            prompt=request.prompt,
-            slide_title=request.slide_title,
-            slide_points=request.slide_points,
-            layout=request.layout,
-            deck_title=request.deck_title,
-            style_prompt=request.style_prompt,
-        )
-    except Exception as exc:
-        logger.error(f"Banana PPT image failed: {exc}")
-        raise _deprecated_http_exception(status_code=500, detail=str(exc))
-
-
-@router.get("/ppt_templates")
-async def list_ppt_templates(response: Response):
-    _mark_ppt_deprecated(response)
-    project_root = _project_root()
-    template_dir = project_root / "data" / "user" / "notebook" / "ppt_templates"
-    template_dir.mkdir(parents=True, exist_ok=True)
-
-    templates = []
-    for path in template_dir.iterdir():
-        if not path.is_file() or path.suffix.lower() != ".pptx":
-            continue
-        stat = path.stat()
-        templates.append(
-            {
-                "name": path.name,
-                "size": stat.st_size,
-                "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "download_url": f"/api/outputs/notebook/ppt_templates/{path.name}",
-            }
-        )
-
-    templates.sort(key=lambda item: item["modified_at"], reverse=True)
-    return {"templates": templates}
-
-
-@router.post("/ppt_templates/upload")
-async def upload_ppt_template(response: Response, file: UploadFile = File(...)):
-    _mark_ppt_deprecated(response)
-    project_root = _project_root()
-    template_dir = project_root / "data" / "user" / "notebook" / "ppt_templates"
-    template_dir.mkdir(parents=True, exist_ok=True)
-
-    if not file.filename or not file.filename.lower().endswith(".pptx"):
-        raise _deprecated_http_exception(
-            status_code=400,
-            detail="Only .pptx templates are supported",
-        )
-
-    safe_name = Path(file.filename).name.replace("/", "_").replace("\\", "_")
-    target_path = template_dir / safe_name
-    content = await file.read()
-    target_path.write_bytes(content)
-
-    return {"success": True, "name": safe_name}
 
 
 @router.post("/optimize_topic")

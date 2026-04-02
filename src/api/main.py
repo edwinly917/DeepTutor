@@ -152,9 +152,10 @@ if __name__ == "__main__":
 
     backend_port = get_backend_port(project_root)
 
-    # Configure reload_excludes with absolute paths to properly exclude directories
+    # Configure reload_excludes relative to project root. Uvicorn's reload
+    # pattern resolver does not accept absolute glob patterns.
     reload_excludes = [
-        str(project_root / d)
+        d
         for d in [
             "venv",
             ".venv",
@@ -165,6 +166,7 @@ if __name__ == "__main__":
             "cache",
             "reports",
         ]
+        if (project_root / d).exists()
     ]
 
     logger.info(f"Starting backend on port {backend_port} (reload=True)")

@@ -19,6 +19,7 @@ from src.services.config import get_banana_ppt_config, load_config_with_main
 from src.services.export.ppt_task_manager import ppt_task_manager
 from src.services.llm import complete as llm_complete
 from src.services.llm import get_llm_config, get_token_limit_kwargs
+from src.services.llm.config import supports_response_format_json_object
 from src.services.ppt.content_extractors import (
     NotebookExtractor,
     ResearchExtractor,
@@ -58,6 +59,23 @@ _SUPPORTED_CREATION_TYPES = {
     "from_notebook",
     "from_sources",
 }
+_TITLE_SOURCE_SUFFIX_RE = re.compile(
+    r"[\w\u4e00-\u9fff]{2,16}(资讯|新闻|官网|首页|频道|栏目|专栏|快讯|日报|研报|网)$"
+)
+
+
+def _clean_project_source_title(raw_title: str) -> str:
+    title = re.sub(r"\s+", " ", raw_title or "").strip(" \t\r\n-|_|｜丨")
+    if not title:
+        return ""
+    for separator in ("|", "｜", "丨", " - ", " — ", " – ", "_"):
+        if separator in title:
+            title = title.split(separator, 1)[0].strip()
+    if " " in title:
+        prefix, suffix = title.rsplit(" ", 1)
+        if _TITLE_SOURCE_SUFFIX_RE.fullmatch(suffix):
+            title = prefix.strip()
+    return title.strip()
 
 
 @dataclass
@@ -258,47 +276,6 @@ class PptProjectService:
             "content_type": content_type or self._guess_image_content_type(output_path),
         }
 
-    async def preview_style(
-        self,
-        *,
-        style_preset_id: str | None = None,
-        style_custom_text: str | None = None,
-        reference_style_prompt: str | None = None,
-        reference_layout_prompt: str | None = None,
-        reference_content_prompt: str | None = None,
-        language: str = "zh",
-    ) -> dict[str, Any]:
-        style_context = self._build_style_context(
-            style_preset_id=style_preset_id,
-            style_custom_text=style_custom_text,
-            reference_style_prompt=reference_style_prompt,
-            reference_layout_prompt=reference_layout_prompt,
-            reference_content_prompt=reference_content_prompt,
-        )
-        theme = self._build_style_preview_theme(style_context.preview_prompt(language))
-        payload = PptPromptManager.style_context_to_preview_payload(style_context, language)
-        return {"theme": theme, "preview_svg": self._build_style_preview_svg(theme), **payload}
-
-    async def generate_image_preview(
-        self,
-        *,
-        prompt: str,
-        slide_title: str | None = None,
-        slide_points: list[str] | None = None,
-        layout: str | None = None,
-        deck_title: str | None = None,
-        style_prompt: str | None = None,
-    ) -> dict[str, Any]:
-        image_data_url = await self.image_generator.generate_image(
-            prompt=prompt,
-            slide_title=slide_title,
-            slide_points=slide_points,
-            layout=layout,
-            deck_title=deck_title,
-            style_prompt=style_prompt,
-        )
-        return {"image_data_url": image_data_url}
-
     async def generate_outline(
         self,
         project_id: str,
@@ -476,7 +453,7 @@ class PptProjectService:
             edit_type=edit_type,
         )
 
-        total_steps = 1 if edit_type == "image_edit" else 2
+        total_steps = 2 if edit_type == "outline_edit" else 1
         task = ppt_store.create_task(
             project_id,
             "PAGE_CHAT_EDIT",
@@ -713,7 +690,9 @@ class PptProjectService:
                     notebook_id=project.get("notebook_id"),
                     record_ids=project.get("record_ids") or [],
                 )
-                project = ppt_store.update_project(project_id, source_content=source_content) or project
+                project = (
+                    ppt_store.update_project(project_id, source_content=source_content) or project
+                )
         elif creation_type == "from_sources" and not project.get("source_content"):
             source_refs = project.get("source_refs") or project.get("reference_sources") or []
             if not source_refs:
@@ -738,7 +717,8 @@ class PptProjectService:
                 raise ValueError("No source content available for PPT normalization")
             normalized_content = await self._normalize_to_deck_source_brief(project, source_content)
             project = (
-                ppt_store.update_project(project_id, normalized_content=normalized_content) or project
+                ppt_store.update_project(project_id, normalized_content=normalized_content)
+                or project
             )
         return project, warnings
 
@@ -859,10 +839,26 @@ class PptProjectService:
             return
         project = asyncio.run(self._ensure_template_analysis(project))
         pages = self._filter_pages(project_id, page_ids or None)
-        deck_pages = self._filter_pages(project_id, None)
-        deck_title = self._resolve_project_title({"pages": deck_pages, **project})
         style_context = self._style_context_for_project(project)
-        total = len(pages)
+
+        completed = 0
+        failed = 0
+        warnings: list[str] = []
+
+        image_eligible = [
+            page
+            for page in pages
+            if isinstance(page.get("description_content"), dict)
+            and page["description_content"].get("text")
+        ]
+        for page in pages:
+            if page not in image_eligible:
+                failed += 1
+                title = (page.get("outline_content") or {}).get("title") or "Unknown"
+                warnings.append(f"页面 '{title}' 描述生成失败，跳过图片生成")
+                ppt_store.update_page(page["id"], status="FAILED")
+
+        total = len(image_eligible)
         ppt_store.update_task(
             task_id,
             status="RUNNING",
@@ -870,20 +866,15 @@ class PptProjectService:
                 0,
                 total,
                 "正在生成页面图片",
-                failed_count=0,
-                page_ids=[page["id"] for page in pages],
+                failed_count=failed,
+                page_ids=[page["id"] for page in image_eligible],
             ),
         )
 
-        completed = 0
-        failed = 0
-        warnings: list[str] = []
         with ThreadPoolExecutor(max_workers=max(1, self.image_workers)) as executor:
             futures = {
-                executor.submit(self._generate_page_image, project, page, style_context, deck_title): page[
-                    "id"
-                ]
-                for page in pages
+                executor.submit(self._generate_page_image, project, page, style_context): page["id"]
+                for page in image_eligible
             }
             for future in as_completed(futures):
                 page_id = futures[future]
@@ -977,9 +968,7 @@ class PptProjectService:
                     phase="outline",
                 ),
             )
-            asyncio.run(
-                self.generate_outline(project_id, max_slides=max_slides)
-            )
+            asyncio.run(self.generate_outline(project_id, max_slides=max_slides))
 
             project = ppt_store.get_project(project_id) or project
             project = asyncio.run(self._ensure_template_analysis(project))
@@ -1054,8 +1043,19 @@ class PptProjectService:
             ppt_store.update_project(project_id, status="DESCRIPTIONS_GENERATED")
 
             pages = self._filter_pages(project_id, None)
-            deck_title = self._resolve_project_title({"pages": pages, **project})
-            for page in pages:
+            image_eligible = [
+                page
+                for page in pages
+                if isinstance(page.get("description_content"), dict)
+                and page["description_content"].get("text")
+            ]
+            skipped_pages = [p for p in pages if p not in image_eligible]
+            for page in skipped_pages:
+                failed_count += 1
+                title = (page.get("outline_content") or {}).get("title") or "Unknown"
+                warnings.append(f"页面 '{title}' 描述生成失败，跳过图片生成")
+                ppt_store.update_page(page["id"], status="FAILED", is_dirty=True)
+            for page in image_eligible:
                 ppt_store.update_page(page["id"], status="IMAGE_QUEUED", is_dirty=True)
             ppt_store.update_project(project_id, status="IMAGES_GENERATING")
             ppt_store.update_task(
@@ -1064,10 +1064,10 @@ class PptProjectService:
                 progress=self._build_progress(
                     2,
                     3,
-                    f"正在生成页面图片 0/{total_pages}",
+                    f"正在生成页面图片 0/{len(image_eligible)}",
                     warnings=warnings[-5:],
                     failed_count=failed_count,
-                    page_ids=[page["id"] for page in pages],
+                    page_ids=[page["id"] for page in image_eligible],
                     phase="images",
                 ),
             )
@@ -1075,10 +1075,10 @@ class PptProjectService:
             image_completed = 0
             with ThreadPoolExecutor(max_workers=max(1, self.image_workers)) as executor:
                 futures = {
-                    executor.submit(
-                        self._generate_page_image, project, page, style_context, deck_title
-                    ): page["id"]
-                    for page in pages
+                    executor.submit(self._generate_page_image, project, page, style_context): page[
+                        "id"
+                    ]
+                    for page in image_eligible
                 }
                 for future in as_completed(futures):
                     page_id = futures[future]
@@ -1111,10 +1111,10 @@ class PptProjectService:
                         progress=self._build_progress(
                             2,
                             3,
-                            f"正在生成页面图片 {image_completed + failed_count}/{total_pages}",
+                            f"正在生成页面图片 {image_completed}/{len(image_eligible)}",
                             warnings=warnings[-5:],
                             failed_count=failed_count,
-                            page_ids=[page["id"] for page in pages],
+                            page_ids=[page["id"] for page in image_eligible],
                             phase="images",
                         ),
                     )
@@ -1166,9 +1166,9 @@ class PptProjectService:
             if not page:
                 raise ValueError("Page not found")
 
-            total_steps = 1 if edit_type == "image_edit" else 2
+            total_steps = 2 if edit_type == "outline_edit" else 1
             style_context = self._style_context_for_project(project)
-            if edit_type != "image_edit":
+            if edit_type == "outline_edit":
                 deck_pages = self._filter_pages(project_id, None)
                 deck_outline_summary = self._build_deck_outline_summary(deck_pages)
                 ppt_store.update_page(page_id, status="DESCRIPTION_QUEUED", is_dirty=True)
@@ -1219,7 +1219,15 @@ class PptProjectService:
                     phase="images",
                 ),
             )
-            payload = self._generate_page_image(project, page, style_context, deck_title)
+            if edit_type == "image_edit":
+                payload = self._generate_page_image(
+                    project,
+                    page,
+                    style_context,
+                    prompt_override=page.get("image_prompt"),
+                )
+            else:
+                payload = self._generate_page_image(project, page, style_context)
             ppt_store.update_page(
                 page_id,
                 generated_image_path=payload["generated_image_path"],
@@ -1272,31 +1280,34 @@ class PptProjectService:
         project: dict[str, Any],
         page: dict[str, Any],
         style_context: StyleContext,
-        deck_title: str,
+        prompt_override: str | None = None,
     ) -> dict[str, Any]:
         ppt_store.update_page(page["id"], status="IMAGE_GENERATING")
         outline = page.get("outline_content") or {}
         title = outline.get("title") or "Untitled Slide"
         points = outline.get("points") or []
-        description_text = (
-            (page.get("description_content") or {}).get("text")
-            if isinstance(page.get("description_content"), dict)
-            else ""
-        )
-        prompt = (page.get("image_prompt") or "").strip() or self._fallback_image_prompt(
-            title, points
-        )
-        layout = outline.get("layout") or self._default_layout(page["order_index"])
+
+        description_content = page.get("description_content")
+        if not isinstance(description_content, dict) or not description_content:
+            raise ValueError(
+                f"Page '{title}' has no description_content — "
+                "description generation may have failed. Cannot generate image."
+            )
+        if not description_content.get("page_title"):
+            description_content["page_title"] = title
+        if not description_content.get("text"):
+            raise ValueError(
+                f"Page '{title}' has empty description text — "
+                "cannot generate a meaningful slide image."
+            )
+
         data_url = asyncio.run(
             self.image_generator.generate_image(
-                prompt=prompt,
+                description_content=description_content,
                 slide_title=title,
-                slide_points=points,
-                layout=layout,
-                deck_title=deck_title,
+                prompt_override=prompt_override,
                 style_context=style_context,
-                source_brief=project.get("normalized_content") or project.get("source_content") or "",
-                reference_files=project.get("template_file_refs") or [],
+                page_index=page.get("order_index", 0) + 1,
                 language=project.get("language") or "zh",
             )
         )
@@ -1311,8 +1322,8 @@ class PptProjectService:
         return {
             "generated_image_path": generated_path,
             "cached_image_path": cached_path,
-            "prompt_used": prompt,
-            "description_text": description_text,
+            "prompt_used": (prompt_override or "").strip() or description_content.get("text", ""),
+            "description_text": description_content.get("text", ""),
         }
 
     def _run_page_regeneration(
@@ -1391,7 +1402,7 @@ class PptProjectService:
                     phase="images",
                 ),
             )
-            payload = self._generate_page_image(project, page, style_context, deck_title)
+            payload = self._generate_page_image(project, page, style_context)
             ppt_store.update_page(
                 page_id,
                 generated_image_path=payload["generated_image_path"],
@@ -1499,7 +1510,7 @@ class PptProjectService:
                     "points": (page.get("outline_content") or {}).get("points") or [],
                     "imagePrompt": page.get("image_prompt"),
                     "generatedImageUrl": self._to_output_url(
-                        page.get("cached_image_path") or page.get("generated_image_path")
+                        page.get("generated_image_path") or page.get("cached_image_path")
                     ),
                     "layout": (page.get("outline_content") or {}).get("layout")
                     or self._default_layout(index),
@@ -1553,7 +1564,7 @@ class PptProjectService:
 
     def _resolve_project_topic(self, bundle: dict[str, Any]) -> str:
         for ref in bundle.get("source_refs") or bundle.get("reference_sources") or []:
-            title = str(ref.get("title") or "").strip()
+            title = _clean_project_source_title(str(ref.get("title") or ""))
             if title:
                 return title
         source_content = (
@@ -1707,57 +1718,6 @@ class PptProjectService:
             max_chunks=max_chunks,
         )
 
-    def _build_style_preview_theme(self, style_prompt: str) -> dict[str, Any]:
-        colors = re.findall(r"#[0-9a-fA-F]{6}", style_prompt or "")
-        background = self._parse_hex_color(colors[0]) if colors else (255, 255, 255)
-        accent = self._parse_hex_color(colors[1]) if len(colors) > 1 else (79, 70, 229)
-        lowered = (style_prompt or "").lower()
-        if any(keyword in lowered for keyword in ["dark", "深色", "黑", "midnight"]):
-            background = background or (17, 24, 39)
-            title_color = (248, 250, 252)
-            body_color = (226, 232, 240)
-        else:
-            background = background or (255, 255, 255)
-            title_color = (17, 24, 39)
-            body_color = (71, 85, 105)
-        return {
-            "background": background,
-            "accent": accent or (79, 70, 229),
-            "title_color": title_color,
-            "body_color": body_color,
-        }
-
-    def _build_style_preview_svg(self, theme: dict[str, Any]) -> str:
-        def rgb(key: str) -> str:
-            value = theme.get(key, (0, 0, 0))
-            return f"rgb({value[0]}, {value[1]}, {value[2]})"
-
-        background = rgb("background")
-        accent = rgb("accent")
-        title = rgb("title_color")
-        body = rgb("body_color")
-        return f"""<svg width="640" height="360" viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
-  <rect width="640" height="360" rx="18" fill="{background}" />
-  <rect width="640" height="28" fill="{accent}" />
-  <text x="40" y="90" font-size="28" font-family="Arial" fill="{title}">Slide Title</text>
-  <text x="40" y="140" font-size="16" font-family="Arial" fill="{body}">• Key insight goes here</text>
-  <text x="40" y="170" font-size="16" font-family="Arial" fill="{body}">• Supporting detail goes here</text>
-  <text x="40" y="200" font-size="16" font-family="Arial" fill="{body}">• Short takeaway goes here</text>
-  <rect x="40" y="240" width="220" height="80" rx="12" fill="{accent}" opacity="0.12" />
-  <rect x="280" y="240" width="320" height="80" rx="12" fill="{accent}" opacity="0.08" />
-</svg>"""
-
-    def _parse_hex_color(self, value: str | None) -> tuple[int, int, int] | None:
-        text = (value or "").strip().lstrip("#")
-        if len(text) == 3:
-            text = "".join(char * 2 for char in text)
-        if len(text) != 6:
-            return None
-        try:
-            return tuple(int(text[index : index + 2], 16) for index in (0, 2, 4))
-        except ValueError:
-            return None
-
     def _build_progress(
         self,
         current: int,
@@ -1865,21 +1825,26 @@ class PptProjectService:
 
     async def _complete_json_async(self, prompt: str, system_prompt: str) -> dict[str, Any]:
         llm_cfg = get_llm_config()
-        kwargs = get_token_limit_kwargs(llm_cfg.model, 1200)
+        kwargs = get_token_limit_kwargs(llm_cfg.model, 4096)
+        use_json_mode = supports_response_format_json_object(
+            llm_cfg.model,
+            llm_cfg.binding,
+            llm_cfg.base_url,
+        )
         try:
             raw = await llm_complete(
-                prompt=prompt,
+                prompt=prompt if use_json_mode else self._force_json_output(prompt),
                 system_prompt=system_prompt,
                 model=llm_cfg.model,
                 api_key=llm_cfg.api_key,
                 base_url=llm_cfg.base_url,
                 binding=llm_cfg.binding,
                 temperature=0.3,
-                response_format={"type": "json_object"},
+                **({"response_format": {"type": "json_object"}} if use_json_mode else {}),
                 **kwargs,
             )
         except Exception as exc:
-            if not self._should_retry_without_json_mode(exc):
+            if not use_json_mode or not self._should_retry_without_json_mode(exc):
                 raise
             logger.warning(
                 f"Model {llm_cfg.model} does not support response_format=json_object; "
@@ -1929,12 +1894,13 @@ class PptProjectService:
         reference_context_xml = PptPromptManager._format_reference_context_xml(
             style_context=style_context,
             reference_files=project.get("source_refs") or project.get("reference_sources") or [],
-            source_anchors=self._build_source_anchor_summary(project),
         )
+        language = project.get("language") or "zh"
         system_prompt, user_prompt = PptPromptManager.normalization_prompt(
             source_type=project.get("creation_type") or "from_sources",
             source_content=source_content,
             reference_context_xml=reference_context_xml,
+            language=language,
         )
         raw = await self._complete_text_async(user_prompt, system_prompt, max_tokens=3600)
         if not raw:
@@ -1950,7 +1916,6 @@ class PptProjectService:
             "## Core Theme",
             "## Key Findings",
             "## Supporting Evidence",
-            "## Source Anchors",
         ]
         optional_for_sources = [
             "## Consensus",

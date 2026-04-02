@@ -39,6 +39,10 @@ type SourceRef = {
 - `from_sources` always reads the project-frozen `source_refs`. It must not re-read the live left-sidebar selection during generation, retry, or recovery.
 - SSRF protection for `web` source fetching is in scope for this refactor and should be implemented in the fetch path, not deferred.
 - Concurrency control stays lightweight in this phase: guard with active task checks, not new DB lock/version fields.
+- Preview fidelity is a first-class requirement in this refactor:
+  - the user-facing PPT preview must render the same per-slide final page images that will be exported
+  - do not use code-simulated layout cards as the primary preview for generation/editing
+  - `SlidePreview.tsx` should be removed from the main notebook PPT flow, or retained only as an internal/debug-only component
 
 ## Required Spec Changes
 
@@ -111,7 +115,23 @@ type SourceRef = {
 - Chat history stays in DB and is fetched by page, not persisted into `studio_state`.
 - Restore logic for `selectedSlideId` must validate that the slide still exists; otherwise fall back to the first available slide.
 
-### 7. Migration Strategy
+### 7. Preview Fidelity Contract
+
+- The left preview rail and main preview area must show the real generated page images returned by the backend, not a reconstructed card layout.
+- In the current architecture, "real PPT preview" means "the exact per-slide image that will be inserted into the exported PPTX", not browser-side rendering of a `.pptx` file.
+- Preview behavior must be:
+  - generating: show skeleton/placeholder or spinner until that slide's page image is available
+  - ready: show the real generated page image thumbnail and large preview
+  - dirty/regenerating: keep showing the last available page image with a dirty/regenerating overlay
+  - failed: show a failed-state placeholder with retry affordance
+- `PptPreviewModal` recommended structure:
+  - left rail: real page image thumbnails, status badges, dirty overlay, selected state
+  - center/main area: enlarged real page image for the selected slide
+  - right rail: `SlideEditorPanel` / chat history / prompt input for the selected slide
+- The preview UI must not imply a structural layout guarantee that the exported PPT does not actually have.
+- If `SlidePreview.tsx` is retained, it must not remain the primary user-facing preview in the notebook PPT flow.
+
+### 8. Migration Strategy
 
 - Use an MVP-friendly schema migration strategy before implementation starts.
 - Do not hard-bind the plan to Alembic.
@@ -129,14 +149,14 @@ type SourceRef = {
   5. deploy frontend changes after backend/schema compatibility is confirmed
 - Prefer nullable columns and additive changes so old code paths degrade safely during rollout.
 
-### 8. Lightweight Concurrency Guard
+### 9. Lightweight Concurrency Guard
 
 - Define request-time guards using active task state:
   - reject new `generate_full` while another project-level PPT task is active
   - reject page chat/regeneration while the same page already has an active regeneration task
 - Do not introduce `operation_lock`, `version`, or DB-level optimistic locking in this phase.
 
-### 9. SSRF Protection for Web Source Fetching
+### 10. SSRF Protection for Web Source Fetching
 
 - Add URL validation requirements for `web` source fetches:
   - allow only `http` / `https`
@@ -213,6 +233,12 @@ type SourceRef = {
   - `web/components/ppt/PptPreviewModal.tsx`
   - `web/lib/pptApi.ts`
   - `web/types/ppt.ts`
+- Remove `SlidePreview.tsx` from the main notebook PPT preview path, or demote it to non-user-facing/debug-only use.
+- Make `PptPreviewModal` render:
+  - real generated page image thumbnails on the left
+  - one selected real page image in the main preview area
+  - chat/editor controls on the right
+- Treat per-slide `generatedImageUrl` plus `isDirty/status` as the authoritative preview model for editing.
 - Add `waitForPageRegenTask()` so single-page task polling does not mutate global `pptActiveTaskId`.
 - Keep `generate_full` on the existing global recovery path.
 - Persist and restore `selectedSlideId`.
@@ -231,6 +257,7 @@ type SourceRef = {
 - Verify unsupported source warnings are visible to users.
 - Verify `from_sources` never changes when the live sidebar selection changes after project creation.
 - Verify SSRF validation rejects internal-network URLs.
+- Verify that the preview modal shows the same real page images that are later exported into the PPTX.
 
 ## Deferred Implementation Optimization
 
@@ -245,3 +272,4 @@ type SourceRef = {
 - `from_sources` supports `report` sources correctly.
 - Chat edit, manual edit, export blocking, and refresh recovery form one closed system.
 - Frontend/backend task semantics remain stable after refresh and retry.
+- User-facing preview is aligned with exported page images, not a simulated card layout.

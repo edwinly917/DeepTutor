@@ -1,5 +1,4 @@
 from sqlalchemy import select, update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from .db import co_writer_history, get_engine, utc_now
 
@@ -26,7 +25,13 @@ def upsert_history_item(payload: dict) -> None:
     item_id = payload.get("id")
     if not item_id:
         raise ValueError("history item id is required")
-    stmt = pg_insert(co_writer_history).values(
+    engine = get_engine()
+    if engine.dialect.name == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert as dialect_insert
+    else:
+        from sqlalchemy.dialects.postgresql import insert as dialect_insert
+
+    stmt = dialect_insert(co_writer_history).values(
         id=item_id,
         created_at=utc_now(),
         payload=payload,
@@ -35,7 +40,6 @@ def upsert_history_item(payload: dict) -> None:
         index_elements=[co_writer_history.c.id],
         set_={"payload": payload},
     )
-    engine = get_engine()
     with engine.begin() as conn:
         conn.execute(stmt)
 

@@ -26,20 +26,22 @@ class ImageGenerator:
 
     async def generate_image(
         self,
-        prompt: str,
         *,
+        description_content: dict | None = None,
         slide_title: str | None = None,
-        slide_points: list[str] | None = None,
-        layout: str | None = None,
-        deck_title: str | None = None,
+        prompt_override: str | None = None,
         style_prompt: str | None = None,
         style_context=None,
-        source_brief: str | None = None,
-        reference_files: list[dict] | None = None,
+        page_index: int = 1,
         language: str = "zh",
     ) -> str:
-        prompt = (prompt or "").strip()
-        if not prompt:
+        description_content = description_content or {}
+        override_prompt = (prompt_override or "").strip()
+        if (
+            not override_prompt
+            and not description_content.get("text")
+            and not description_content.get("page_title")
+        ):
             return ""
 
         img_cfg = self.config.image
@@ -47,16 +49,12 @@ class ImageGenerator:
             logger.warning("PPT image config missing model/base_url")
             return ""
 
-        primary_prompt = self.build_image_prompt(
-            prompt=prompt,
+        primary_prompt = override_prompt or self.build_image_prompt(
+            description_content=description_content,
             slide_title=slide_title,
-            slide_points=slide_points,
-            layout=layout,
-            deck_title=deck_title,
             style_prompt=style_prompt,
             style_context=style_context,
-            source_brief=source_brief,
-            reference_files=reference_files,
+            page_index=page_index,
             simplified=False,
             language=language,
         )
@@ -64,16 +62,12 @@ class ImageGenerator:
         if image_data:
             return image_data
 
-        fallback_prompt = self.build_image_prompt(
-            prompt=prompt,
+        fallback_prompt = override_prompt or self.build_image_prompt(
+            description_content=description_content,
             slide_title=slide_title,
-            slide_points=slide_points,
-            layout=layout,
-            deck_title=deck_title,
             style_prompt=style_prompt,
             style_context=style_context,
-            source_brief=source_brief,
-            reference_files=reference_files,
+            page_index=page_index,
             simplified=True,
             language=language,
         )
@@ -88,15 +82,11 @@ class ImageGenerator:
     def build_image_prompt(
         self,
         *,
-        prompt: str,
-        slide_title: str | None,
-        slide_points: list[str] | None,
-        layout: str | None,
-        deck_title: str | None,
-        style_prompt: str | None,
+        description_content: dict | None = None,
+        slide_title: str | None = None,
+        style_prompt: str | None = None,
         style_context=None,
-        source_brief: str | None = None,
-        reference_files: list[dict] | None = None,
+        page_index: int = 1,
         simplified: bool = False,
         language: str = "zh",
     ) -> str:
@@ -104,14 +94,10 @@ class ImageGenerator:
             style_custom_text=style_prompt
         )
         return PptPromptManager.image_generation(
-            image_prompt=prompt,
+            description_content=description_content or {},
             slide_title=slide_title,
-            slide_points=slide_points,
-            layout=layout,
-            deck_title=deck_title,
             style_context=resolved_style_context,
-            source_brief=source_brief,
-            reference_files=reference_files,
+            page_index=page_index,
             simplified=simplified,
             language=language,
         )
@@ -161,7 +147,7 @@ class ImageGenerator:
             "response_format": "b64_json",
             "size": size,
             "sequential_image_generation": "disabled",
-            "watermark": True,
+            "watermark": False,
         }
 
         try:

@@ -50,24 +50,6 @@ export async function uploadPptReferenceImage(
   return readJson<PptReferenceImageUploadResponse>(res);
 }
 
-export async function previewPptStyle(
-  payload?: {
-    style_preset_id?: string;
-    style_custom_text?: string;
-    reference_style_prompt?: string;
-    reference_layout_prompt?: string;
-    reference_content_prompt?: string;
-    language?: string;
-  },
-): Promise<{ preview_svg?: string; preview_prompt?: string }> {
-  const res = await fetch(apiUrl("/api/v1/ppt/style-preview"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload || {}),
-  });
-  return readJson<{ preview_svg?: string; preview_prompt?: string }>(res);
-}
-
 export async function createPptProject(
   payload: JsonPayload,
 ): Promise<PptProject> {
@@ -161,27 +143,6 @@ export async function fetchPptTask(
     apiUrl(`/api/v1/ppt/projects/${projectId}/tasks/${taskId}`),
   );
   return readJson<PptTask>(res);
-}
-
-export async function updatePptPage(
-  projectId: string,
-  pageId: string,
-  payload: {
-    title?: string;
-    points?: string[];
-    description_text?: string;
-    image_prompt?: string;
-  },
-) {
-  const res = await fetch(
-    apiUrl(`/api/v1/ppt/projects/${projectId}/pages/${pageId}`),
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    },
-  );
-  return readJson(res);
 }
 
 export async function regeneratePptPageImage(

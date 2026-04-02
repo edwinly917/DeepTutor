@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import os
+from pathlib import Path
 
 from sqlalchemy import (
     JSON,
@@ -130,25 +131,32 @@ def get_database_url() -> str:
     url = os.getenv("DATABASE_URL")
     if url:
         return url
-    host = os.getenv("POSTGRES_HOST", "localhost")
-    port = os.getenv("POSTGRES_PORT", "5432")
-    user = os.getenv("POSTGRES_USER", "deeptutor")
-    password = os.getenv("POSTGRES_PASSWORD", "deeptutor")
-    dbname = os.getenv("POSTGRES_DB", "deeptutor")
-    return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{dbname}"
+    # For local development without explicit database configuration, use a
+    # file-based SQLite database so PPT/storage features work without Postgres.
+    project_root = Path(__file__).resolve().parents[3]
+    sqlite_dir = project_root / "data" / "user" / "storage"
+    sqlite_dir.mkdir(parents=True, exist_ok=True)
+    return f"sqlite:///{sqlite_dir / 'deeptutor.db'}"
 
 
 def get_engine():
     global _engine
     if _engine is None:
-        _engine = create_engine(get_database_url(), pool_pre_ping=True)
+        database_url = get_database_url()
+        engine_kwargs = {}
+        if database_url.startswith("sqlite"):
+            engine_kwargs["connect_args"] = {"check_same_thread": False}
+        else:
+            engine_kwargs["pool_pre_ping"] = True
+        _engine = create_engine(database_url, **engine_kwargs)
     return _engine
 
 
 def init_db():
     engine = get_engine()
     _metadata.create_all(engine)
-    _ensure_additive_schema(engine)
+    if engine.dialect.name != "sqlite":
+        _ensure_additive_schema(engine)
 
 
 def _ensure_additive_schema(engine) -> None:

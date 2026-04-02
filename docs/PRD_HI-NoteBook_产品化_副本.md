@@ -130,7 +130,7 @@ HI-NoteBook
 ├── /guide                           # 引导学习
 ├── /settings                        # 设置页面
 ├── /history                         # 历史记录
-└── /preview/ppt                     # PPT 预览页
+└── /notebooks/[id] Studio -> PPT    # PPT 生成与真实预览入口
 ```
 
 ### 2.3 功能边界说明

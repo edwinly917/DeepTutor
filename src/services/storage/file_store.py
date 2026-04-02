@@ -1,5 +1,4 @@
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from .db import generated_files, get_engine, utc_now
 
@@ -13,7 +12,13 @@ def save_file_record(
     content_type: str,
     metadata: dict | None = None,
 ) -> None:
-    stmt = pg_insert(generated_files).values(
+    engine = get_engine()
+    if engine.dialect.name == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert as dialect_insert
+    else:
+        from sqlalchemy.dialects.postgresql import insert as dialect_insert
+
+    stmt = dialect_insert(generated_files).values(
         id=file_id,
         created_at=utc_now(),
         file_type=file_type,
@@ -34,7 +39,6 @@ def save_file_record(
             "metadata": metadata,
         },
     )
-    engine = get_engine()
     with engine.begin() as conn:
         conn.execute(stmt)
 

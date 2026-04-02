@@ -31,16 +31,18 @@ system: |
   3. **用户难点 (user_difficulty)**：分析用户的提问方式和问题内容，推测用户在理解这个知识点时可能遇到的困难
 
   # 输出格式
-  直接输出JSON数组（无Markdown格式）：
+  直接输出JSON对象（无Markdown格式）：
   ```json
-  [
-    {
-      "knowledge_title": "知识点标题",
-      "knowledge_summary": "详细的知识点内容阐述...",
-      "user_difficulty": "用户可能存在的理解困难..."
-    },
-    ...
-  ]
+  {
+    "knowledge_points": [
+      {
+        "knowledge_title": "知识点标题",
+        "knowledge_summary": "详细的知识点内容阐述...",
+        "user_difficulty": "用户可能存在的理解困难..."
+      },
+      ...
+    ]
+  }
   ```
 
   # 注意事项
@@ -65,4 +67,4 @@ user_template: |
   1. 识别出涉及的所有核心知识点
   2. 按照从基础到进阶的顺序组织这些知识点
   3. 为每个知识点生成详细的摘要和用户可能的困难点
-  4. 输出3-5个知识点的JSON数组
+  4. 输出包含3-5个知识点的JSON对象，字段名为 knowledge_points

@@ -7,15 +7,17 @@ Rules:
 - Keep risks, recommendations, and future implications explicit.
 - Remove literature-review style details, excessive methodology, and other content that is not useful on slides.
 - Do not invent Audience & Goal or Narrative Arc unless they are strongly implied by the source.
+- Do not include source citations, references, or bibliographic anchors — they are not useful for slide generation.
 
 Output Markdown with these sections:
 - ## Core Theme
 - ## Key Findings
 - ## Supporting Evidence
-- ## Source Anchors
 - Optional: ## Audience & Goal
 - Optional: ## Narrative Arc
 - Optional: ## Conclusion & Recommendations
+
+$language_instruction
 
 $reference_context_xml
 

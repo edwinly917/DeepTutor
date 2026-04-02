@@ -56,24 +56,8 @@ class GenerateFullRequest(BaseModel):
     detail_level: Literal["concise", "default", "detailed"] = "default"
 
 
-class UpdatePageRequest(BaseModel):
-    title: str | None = None
-    points: list[str] | None = None
-    description_text: str | None = None
-    image_prompt: str | None = None
-
-
 class SlideChatRequest(BaseModel):
     message: str
-
-
-class StylePreviewRequest(BaseModel):
-    style_preset_id: str | None = None
-    style_custom_text: str | None = None
-    reference_style_prompt: str | None = None
-    reference_layout_prompt: str | None = None
-    reference_content_prompt: str | None = None
-    language: str = "zh"
 
 
 @router.get("/config")
@@ -94,14 +78,6 @@ async def upload_reference_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=str(exc))
     except ReferenceStyleExtractionError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@router.post("/style-preview")
-async def preview_style(request: StylePreviewRequest):
-    try:
-        return await _service().preview_style(**request.model_dump())
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -185,17 +161,6 @@ async def get_task(project_id: str, task_id: str):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
-
-
-@router.put("/projects/{project_id}/pages/{page_id}")
-async def update_page(project_id: str, page_id: str, request: UpdatePageRequest):
-    try:
-        return _service().update_page(project_id, page_id, **request.model_dump())
-    except ValueError as exc:
-        status = 404 if "not found" in str(exc).lower() else 400
-        raise HTTPException(status_code=status, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/projects/{project_id}/pages/{page_id}/chat")

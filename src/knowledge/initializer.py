@@ -42,6 +42,7 @@ logger = get_logger("KnowledgeInit")
 
 # Import numbered items extraction functionality
 from src.knowledge.extract_numbered_items import process_content_list
+from src.knowledge.mineru_timeout import process_document_with_timeout
 from src.knowledge.progress_tracker import ProgressStage, ProgressTracker
 from src.knowledge.text_sanitizer import sanitize_extracted_text
 
@@ -382,14 +383,14 @@ class KnowledgeBaseInitializer:
                 # Use RAGAnything's process_document_complete method
                 # This method handles document parsing, content extraction, and insertion
                 logger.info("  → Starting document processing...")
-                await asyncio.wait_for(
-                    rag.process_document_complete(
-                        file_path=str(doc_file),
-                        output_dir=str(self.content_list_dir),
-                        parse_method="auto",
-                    ),
-                    timeout=600.0,  # 10 minute timeout
+                elapsed_seconds = await process_document_with_timeout(
+                    rag=rag,
+                    file_path=doc_file,
+                    output_dir=self.content_list_dir,
+                    parse_method="auto",
+                    logger_instance=logger,
                 )
+                logger.info(f"  → MinerU processing completed in {elapsed_seconds:.1f}s")
                 logger.info(f"  ✓ Successfully processed: {doc_file.name}")
 
                 # Content list should be automatically saved in output_dir
@@ -398,7 +399,7 @@ class KnowledgeBaseInitializer:
                 if content_list_file.exists():
                     logger.info(f"  ✓ Content list saved: {content_list_file.name}")
 
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as e:
                 fallback_used = False
                 if doc_file.suffix.lower() == ".pdf":
                     logger.warning(
@@ -413,7 +414,7 @@ class KnowledgeBaseInitializer:
                             logger.info(f"  ✓ Fallback text ingestion complete: {doc_file.name}")
                 if fallback_used:
                     continue
-                error_msg = "Processing timeout (>10 minutes)"
+                error_msg = str(e) or "Processing timeout"
                 logger.error(f"  ✗ Timeout processing {doc_file.name}")
                 logger.error("  Possible causes: Large PDF, slow embedding API, network issues")
                 self.progress_tracker.update(

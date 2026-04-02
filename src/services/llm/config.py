@@ -208,12 +208,38 @@ def get_token_limit_kwargs(model: str, max_tokens: int) -> dict:
     return {"max_tokens": max_tokens}
 
 
+def supports_response_format_json_object(
+    model: str,
+    binding: Optional[str] = None,
+    base_url: Optional[str] = None,
+) -> bool:
+    """
+    Whether the current model/provider supports response_format={"type": "json_object"}.
+
+    Keep this intentionally conservative. If we know a provider/model family rejects
+    OpenAI JSON mode, callers should fall back to "plain text JSON" prompting instead.
+    """
+    model_lower = (model or "").lower()
+    binding_lower = (binding or "").lower()
+    base_url_lower = (base_url or "").lower()
+
+    if (
+        "doubao" in model_lower
+        or "doubao" in binding_lower
+        or "ark.cn-beijing.volces.com" in base_url_lower
+    ):
+        return False
+
+    return True
+
+
 __all__ = [
     "LLMConfig",
     "get_llm_config",
     "get_llm_mode",
     "uses_max_completion_tokens",
     "get_token_limit_kwargs",
+    "supports_response_format_json_object",
     "LLM_MODE_API",
     "LLM_MODE_LOCAL",
     "LLM_MODE_HYBRID",

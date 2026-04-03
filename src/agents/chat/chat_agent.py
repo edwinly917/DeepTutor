@@ -13,6 +13,7 @@ Uses the unified LLM factory from BaseAgent for both cloud and local LLM support
 
 import asyncio
 from pathlib import Path
+import re
 import sys
 from typing import Any, AsyncGenerator
 
@@ -251,11 +252,324 @@ class ChatAgent(BaseAgent):
         lines.append("When you cite, ONLY use bracket numbers from this index, e.g. [1], [2].")
         return "\n".join(lines)
 
+    def _normalize_selected_source_refs(
+        self, selected_source_refs: list[dict[str, Any]] | None
+    ) -> list[dict[str, Any]]:
+        if not selected_source_refs:
+            return []
+
+        normalized_refs = []
+        for raw in selected_source_refs:
+            if not isinstance(raw, dict):
+                continue
+
+            source_type = (raw.get("type") or "").strip().lower() or "web"
+            if source_type not in {"web", "file", "kb", "report", "paper"}:
+                source_type = "web"
+
+            ref_number = raw.get("ref_number")
+            if isinstance(ref_number, str) and ref_number.isdigit():
+                ref_number = int(ref_number)
+            if not isinstance(ref_number, int) or ref_number <= 0:
+                ref_number = None
+
+            normalized_refs.append(
+                {
+                    "id": (raw.get("id") or "").strip(),
+                    "type": source_type,
+                    "title": (raw.get("title") or "").strip(),
+                    "url": (raw.get("url") or "").strip(),
+                    "content": (raw.get("content") or "").strip(),
+                    "selected": raw.get("selected", True) is not False,
+                    "source_key": (raw.get("source_key") or "").strip(),
+                    "ref_number": ref_number,
+                    "kb_name": (raw.get("kb_name") or "").strip(),
+                    "source_file": (raw.get("source_file") or "").strip(),
+                    "chunk_id": (raw.get("chunk_id") or "").strip(),
+                    "page": raw.get("page"),
+                }
+            )
+
+        return normalized_refs
+
+    def _extract_selected_kb_reference_context(
+        self, selected_source_refs: list[dict[str, Any]] | None
+    ) -> tuple[str, list[dict[str, Any]], list[str]]:
+        normalized_refs = self._normalize_selected_source_refs(selected_source_refs)
+        if not normalized_refs:
+            return "", [], []
+
+        context_blocks: list[str] = []
+        sources: list[dict[str, Any]] = []
+        referenced_kbs: list[str] = []
+        seen_context_keys: set[str] = set()
+        seen_kbs: set[str] = set()
+
+        for source in normalized_refs:
+            if not source.get("selected", True):
+                continue
+
+            kb_name = source.get("kb_name") or ""
+            if source.get("type") == "kb" and kb_name and kb_name not in seen_kbs:
+                referenced_kbs.append(kb_name)
+                seen_kbs.add(kb_name)
+
+            snippet = (source.get("content") or "").strip()
+            if source.get("type") != "kb" or not kb_name or not snippet:
+                continue
+
+            location_parts = []
+            if source.get("source_file"):
+                location_parts.append(f"File: {source['source_file']}")
+            if source.get("page") not in (None, ""):
+                location_parts.append(f"Page: {source['page']}")
+            if source.get("chunk_id"):
+                location_parts.append(f"Chunk: {source['chunk_id']}")
+            location = " | ".join(location_parts)
+
+            context_key = (
+                source.get("source_key")
+                or f"{kb_name}|{source.get('source_file') or ''}|{source.get('page') or ''}|"
+                f"{source.get('chunk_id') or ''}|{source.get('title') or ''}"
+            )
+            if context_key in seen_context_keys:
+                continue
+            seen_context_keys.add(context_key)
+
+            lines = ["[Selected Knowledge Base Reference]", f"Knowledge Base: {kb_name}"]
+            if source.get("title"):
+                lines.append(f"Title: {source['title']}")
+            if location:
+                lines.append(location)
+            if source.get("ref_number"):
+                lines.append(f"Reference Number: [{source['ref_number']}]")
+            lines.append("Excerpt:")
+            lines.append(snippet)
+            context_blocks.append("\n".join(lines))
+
+            source_entry = {
+                "kb_name": kb_name,
+                "title": source.get("title") or source.get("source_file") or kb_name,
+                "content": snippet[:500] + "..." if len(snippet) > 500 else snippet,
+            }
+            if source.get("source_file"):
+                source_entry["source_file"] = source["source_file"]
+            if source.get("page") not in (None, ""):
+                source_entry["page"] = source["page"]
+            if source.get("chunk_id"):
+                source_entry["chunk_id"] = source["chunk_id"]
+            if source.get("source_key"):
+                source_entry["source_key"] = source["source_key"]
+            if source.get("ref_number"):
+                source_entry["ref_number"] = source["ref_number"]
+            sources.append(source_entry)
+
+        return "\n\n".join(context_blocks), sources, referenced_kbs
+
+    def _normalize_text_for_match(self, text: str | None) -> str:
+        return re.sub(r"\s+", "", (text or "")).strip().lower()
+
+    def _normalize_file_basename(self, path_value: str | None) -> str:
+        value = (path_value or "").strip()
+        if not value:
+            return ""
+        return Path(value).name.strip().lower()
+
+    def _score_chunk_against_selected_ref(
+        self, chunk: dict[str, Any], selected_ref: dict[str, Any]
+    ) -> int:
+        chunk_id = str(chunk.get("chunk_id") or "").strip()
+        chunk_file_name = self._normalize_file_basename(chunk.get("file_path"))
+        chunk_content = self._normalize_text_for_match(chunk.get("content"))
+
+        ref_chunk_id = str(selected_ref.get("chunk_id") or "").strip()
+        ref_file_name = self._normalize_file_basename(selected_ref.get("source_file"))
+        ref_content = self._normalize_text_for_match(selected_ref.get("content"))
+
+        score = 0
+
+        if ref_chunk_id:
+            if chunk_id != ref_chunk_id:
+                return -1
+            score += 100
+
+        if ref_file_name:
+            if chunk_file_name != ref_file_name:
+                if ref_chunk_id:
+                    return -1
+            else:
+                score += 50
+
+        if ref_content and chunk_content:
+            if ref_content in chunk_content or chunk_content in ref_content:
+                score += 30
+            elif ref_chunk_id:
+                return -1
+
+        if ref_chunk_id:
+            return score if score >= 100 else -1
+        if ref_file_name:
+            return score if score >= 50 else -1
+        return -1
+
+    def _match_selected_kb_chunks(
+        self,
+        structured_chunks: list[dict[str, Any]],
+        selected_refs: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        matched_chunks: list[dict[str, Any]] = []
+        seen_chunk_keys: set[str] = set()
+
+        for chunk in structured_chunks:
+            if not isinstance(chunk, dict):
+                continue
+
+            best_ref: dict[str, Any] | None = None
+            best_score = -1
+            for selected_ref in selected_refs:
+                score = self._score_chunk_against_selected_ref(chunk, selected_ref)
+                if score > best_score:
+                    best_score = score
+                    best_ref = selected_ref
+
+            if not best_ref or best_score < 0:
+                continue
+
+            chunk_key = (
+                f"{self._normalize_file_basename(chunk.get('file_path'))}|"
+                f"{str(chunk.get('chunk_id') or '').strip()}"
+            )
+            if chunk_key in seen_chunk_keys:
+                continue
+            seen_chunk_keys.add(chunk_key)
+            matched_chunks.append(
+                {
+                    "chunk": chunk,
+                    "selected_ref": best_ref,
+                    "score": best_score,
+                }
+            )
+
+        return matched_chunks
+
+    async def _retrieve_precise_selected_kb_context(
+        self,
+        message: str,
+        selected_source_refs: list[dict[str, Any]] | None,
+    ) -> tuple[str, list[dict[str, Any]], set[str], list[str]]:
+        normalized_refs = self._normalize_selected_source_refs(selected_source_refs)
+        refs_by_kb: dict[str, list[dict[str, Any]]] = {}
+
+        for selected_ref in normalized_refs:
+            if not selected_ref.get("selected", True):
+                continue
+            if selected_ref.get("type") != "kb":
+                continue
+
+            kb_name = selected_ref.get("kb_name") or ""
+            if not kb_name:
+                continue
+            if not selected_ref.get("chunk_id") and not selected_ref.get("source_file"):
+                continue
+
+            refs_by_kb.setdefault(kb_name, []).append(selected_ref)
+
+        if not refs_by_kb:
+            return "", [], set(), []
+
+        context_blocks: list[str] = []
+        sources: list[dict[str, Any]] = []
+        matched_kbs: set[str] = set()
+        exceptions: list[str] = []
+
+        for kb_name, kb_refs in refs_by_kb.items():
+            try:
+                self.logger.info(
+                    f"Referenced KB precise search: {kb_name} ({message[:50]}...)"
+                )
+                precise_result = await asyncio.wait_for(
+                    rag_search(
+                        query=message,
+                        kb_name=kb_name,
+                        mode="hybrid",
+                        only_need_context=True,
+                        return_raw_data=True,
+                    ),
+                    timeout=120,
+                )
+                raw_data = precise_result.get("raw_data") or {}
+                structured_chunks = ((raw_data.get("data") or {}).get("chunks") or [])
+                matched_chunks = self._match_selected_kb_chunks(structured_chunks, kb_refs)
+                if not matched_chunks:
+                    continue
+
+                matched_kbs.add(kb_name)
+
+                for matched in matched_chunks:
+                    chunk = matched["chunk"]
+                    selected_ref = matched["selected_ref"]
+                    file_path = (chunk.get("file_path") or "").strip()
+                    chunk_file_name = Path(file_path).name if file_path else ""
+                    chunk_id = str(chunk.get("chunk_id") or "").strip()
+                    chunk_content = (chunk.get("content") or "").strip()
+                    if not chunk_content:
+                        continue
+
+                    lines = ["[Selected Knowledge Base Exact Match]", f"Knowledge Base: {kb_name}"]
+                    title = selected_ref.get("title") or chunk_file_name or kb_name
+                    if title:
+                        lines.append(f"Title: {title}")
+
+                    location_parts = []
+                    if chunk_file_name:
+                        location_parts.append(f"File: {chunk_file_name}")
+                    if selected_ref.get("page") not in (None, ""):
+                        location_parts.append(f"Page: {selected_ref['page']}")
+                    if chunk_id:
+                        location_parts.append(f"Chunk: {chunk_id}")
+                    if location_parts:
+                        lines.append(" | ".join(location_parts))
+                    if selected_ref.get("ref_number"):
+                        lines.append(f"Reference Number: [{selected_ref['ref_number']}]")
+                    lines.append("Excerpt:")
+                    lines.append(chunk_content)
+                    context_blocks.append("\n".join(lines))
+
+                    source_entry = {
+                        "kb_name": kb_name,
+                        "title": title,
+                        "content": chunk_content[:500] + "..."
+                        if len(chunk_content) > 500
+                        else chunk_content,
+                    }
+                    if chunk_file_name:
+                        source_entry["source_file"] = chunk_file_name
+                    if selected_ref.get("page") not in (None, ""):
+                        source_entry["page"] = selected_ref["page"]
+                    if chunk_id:
+                        source_entry["chunk_id"] = chunk_id
+                    if selected_ref.get("source_key"):
+                        source_entry["source_key"] = selected_ref["source_key"]
+                    if selected_ref.get("ref_number"):
+                        source_entry["ref_number"] = selected_ref["ref_number"]
+                    sources.append(source_entry)
+            except asyncio.TimeoutError:
+                self.logger.warning(
+                    f"Referenced KB precise search timed out after 120s: {kb_name}"
+                )
+                exceptions.append(f"来源知识库精确检索超时: {kb_name} (120s)")
+            except Exception as e:
+                self.logger.warning(f"Referenced KB precise search failed ({kb_name}): {e}")
+                exceptions.append(f"来源知识库精确检索异常: {kb_name}: {str(e)}")
+
+        return "\n\n".join(context_blocks), sources, matched_kbs, exceptions
+
     async def retrieve_context(
         self,
         message: str,
         kb_name: str | None = None,
         sources_kb_name: str | None = None,
+        selected_source_refs: list[dict[str, Any]] | None = None,
         enable_rag: bool = False,
         enable_web_search: bool = False,
     ) -> tuple[str, dict[str, Any], list[str]]:
@@ -266,6 +580,7 @@ class ChatAgent(BaseAgent):
             message: User message to search for
             kb_name: Knowledge base name for RAG
             sources_kb_name: Knowledge base name for selected sources
+            selected_source_refs: Selected source references from the notebook UI
             enable_rag: Whether to use RAG
             enable_web_search: Whether to use Web Search
 
@@ -275,6 +590,27 @@ class ChatAgent(BaseAgent):
         context_parts = []
         sources = {"rag": [], "web": []}
         exceptions = []
+        normalized_selected_refs = self._normalize_selected_source_refs(selected_source_refs)
+        selected_ref_context, selected_ref_sources, referenced_kb_names = (
+            self._extract_selected_kb_reference_context(normalized_selected_refs)
+        )
+        precise_ref_context, precise_ref_sources, precise_ref_hit_kbs, precise_ref_exceptions = (
+            await self._retrieve_precise_selected_kb_context(
+                message,
+                normalized_selected_refs,
+            )
+        )
+
+        if selected_ref_context:
+            context_parts.append(selected_ref_context)
+        if selected_ref_sources:
+            sources["rag"].extend(selected_ref_sources)
+        if precise_ref_context:
+            context_parts.append(precise_ref_context)
+        if precise_ref_sources:
+            sources["rag"].extend(precise_ref_sources)
+        if precise_ref_exceptions:
+            exceptions.extend(precise_ref_exceptions)
 
         # RAG retrieval
         if enable_rag and kb_name:
@@ -306,6 +642,51 @@ class ChatAgent(BaseAgent):
             except Exception as e:
                 self.logger.warning(f"RAG search failed: {e}")
                 exceptions.append(f"知识库检索异常: {str(e)}")
+
+        # Referenced KB retrieval for selected knowledge-base sources.
+        for referenced_kb_name in referenced_kb_names:
+            if not referenced_kb_name:
+                continue
+            if enable_rag and kb_name and referenced_kb_name == kb_name:
+                continue
+            if sources_kb_name and referenced_kb_name == sources_kb_name:
+                continue
+            if referenced_kb_name in precise_ref_hit_kbs:
+                continue
+
+            try:
+                self.logger.info(f"Referenced KB search: {referenced_kb_name} ({message[:50]}...)")
+                ref_result = await asyncio.wait_for(
+                    rag_search(
+                        query=message,
+                        kb_name=referenced_kb_name,
+                        mode="hybrid",
+                    ),
+                    timeout=120,
+                )
+                ref_answer = ref_result.get("answer", "")
+                if ref_answer:
+                    context_parts.append(f"[Referenced Knowledge Base: {referenced_kb_name}]\n{ref_answer}")
+                    sources["rag"].append(
+                        {
+                            "kb_name": referenced_kb_name,
+                            "title": referenced_kb_name,
+                            "content": ref_answer[:500] + "..."
+                            if len(ref_answer) > 500
+                            else ref_answer,
+                        }
+                    )
+                    self.logger.info(
+                        f"Referenced KB '{referenced_kb_name}' retrieved {len(ref_answer)} chars"
+                    )
+            except asyncio.TimeoutError:
+                self.logger.warning(
+                    f"Referenced KB search timed out after 120s: {referenced_kb_name}"
+                )
+                exceptions.append(f"来源知识库检索超时: {referenced_kb_name} (120s)")
+            except Exception as e:
+                self.logger.warning(f"Referenced KB search failed ({referenced_kb_name}): {e}")
+                exceptions.append(f"来源知识库检索异常: {referenced_kb_name}: {str(e)}")
 
         # Selected sources KB retrieval (always-on if provided)
         if sources_kb_name and sources_kb_name != kb_name:
@@ -580,6 +961,7 @@ class ChatAgent(BaseAgent):
         history: list[dict[str, str]] | None = None,
         kb_name: str | None = None,
         sources_kb_name: str | None = None,
+        selected_source_refs: list[dict[str, Any]] | None = None,
         enable_rag: bool = False,
         enable_web_search: bool = False,
         require_sources: bool = False,
@@ -594,6 +976,7 @@ class ChatAgent(BaseAgent):
             history: Conversation history (will be truncated if needed)
             kb_name: Knowledge base name for RAG
             sources_kb_name: Knowledge base name for selected sources
+            selected_source_refs: Selected source references from the notebook UI
             enable_rag: Whether to enable RAG retrieval
             enable_web_search: Whether to enable web search
             require_sources: Whether to require sources before answering
@@ -614,6 +997,7 @@ class ChatAgent(BaseAgent):
             message=message,
             kb_name=kb_name,
             sources_kb_name=sources_kb_name,
+            selected_source_refs=selected_source_refs,
             enable_rag=enable_rag,
             enable_web_search=enable_web_search,
         )

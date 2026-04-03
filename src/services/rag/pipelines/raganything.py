@@ -11,6 +11,8 @@ import re
 import sys
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
+from lightrag.base import QueryParam
+
 from src.logging import get_logger
 from src.logging.adapters import LightRAGLogContext
 from src.services.llm.config import supports_response_format_json_object
@@ -24,6 +26,8 @@ Use exactly this schema:
 }
 Do not include any explanation before or after the JSON.
 """.strip()
+
+_QUERY_PARAM_KEYS = set(QueryParam.__annotations__.keys())
 
 
 def _extract_json_payload(text: str) -> Any | None:
@@ -406,6 +410,30 @@ class RAGAnythingPipeline:
         with LightRAGLogContext(scene="rag_search"):
             rag = self._get_rag_instance(kb_name)
             await rag._ensure_lightrag_initialized()
+            return_raw_data = bool(kwargs.pop("return_raw_data", False))
+            query_param_kwargs = {
+                key: kwargs.pop(key) for key in list(kwargs.keys()) if key in _QUERY_PARAM_KEYS
+            }
+
+            if return_raw_data:
+                query_param = QueryParam(
+                    mode=mode,
+                    only_need_context=only_need_context,
+                    **query_param_kwargs,
+                )
+                raw_result = await rag.lightrag.aquery_llm(query, param=query_param)
+                llm_response = raw_result.get("llm_response", {})
+                answer = llm_response.get("content", "")
+                answer_str = answer if isinstance(answer, str) else str(answer or "")
+
+                return {
+                    "query": query,
+                    "answer": answer_str,
+                    "content": answer_str,
+                    "mode": mode,
+                    "provider": "raganything",
+                    "raw_data": raw_result,
+                }
 
             try:
                 answer = await rag.aquery(query, mode=mode, only_need_context=only_need_context)

@@ -149,6 +149,10 @@ interface Source {
   content?: string;
   source_key?: string;
   ref_number?: number;
+  kb_name?: string;
+  source_file?: string;
+  chunk_id?: string;
+  page?: number | string;
   // Paper-specific fields
   authors?: string[];
   year?: number;
@@ -254,8 +258,26 @@ const normalizeSourceUrl = (raw?: string) => {
   }
 };
 
+const isKbReferenceSource = (source: Partial<Source>) =>
+  source.type === "kb" && Boolean((source.kb_name || "").trim());
+
+const shouldMaterializeSource = (source: Partial<Source>) =>
+  !isKbReferenceSource(source);
+
 const buildSourceKey = (source: Partial<Source> & { source_key?: string }) => {
   if (source.source_key) return source.source_key;
+  if (isKbReferenceSource(source)) {
+    const keyParts = [
+      (source.kb_name || "").trim(),
+      (source.source_file || "").trim(),
+      String(source.page || "").trim(),
+      (source.chunk_id || "").trim(),
+      (source.title || "").trim(),
+      (source.id || "").trim(),
+    ].filter(Boolean);
+    const kbKey = keyParts.join("|");
+    return kbKey ? `kb-${kbKey}` : "";
+  }
   const normalizedUrl = normalizeSourceUrl(source.url);
   const key = normalizedUrl || source.url || source.id || source.title || "";
   const sourceType = source.type || "web";
@@ -1071,6 +1093,10 @@ export default function NotebookDetailPage() {
             source_key: s.source_key,
             ref_number:
               typeof s.ref_number === "number" ? s.ref_number : undefined,
+            kb_name: s.kb_name,
+            source_file: s.source_file,
+            chunk_id: s.chunk_id,
+            page: s.page,
           });
         });
       }
@@ -1087,6 +1113,10 @@ export default function NotebookDetailPage() {
             source_key: s.source_key,
             ref_number:
               typeof s.ref_number === "number" ? s.ref_number : undefined,
+            kb_name: s.kb_name,
+            source_file: s.source_file,
+            chunk_id: s.chunk_id,
+            page: s.page,
           });
         });
       }
@@ -1453,6 +1483,11 @@ export default function NotebookDetailPage() {
   const selectedSourcesList = useMemo(
     () => aggregatedSources.filter((source) => source.selected),
     [aggregatedSources],
+  );
+
+  const selectedMaterializedSourcesList = useMemo(
+    () => selectedSourcesList.filter((source) => shouldMaterializeSource(source)),
+    [selectedSourcesList],
   );
 
   const selectedNotebookRecords = useMemo(() => {
@@ -2310,6 +2345,27 @@ export default function NotebookDetailPage() {
     );
   }, [selectedSourcesList, registerCitationKey]);
 
+  const buildSelectedSourceRefs = useCallback((): Source[] => {
+    const byKey = new Map<string, Source>();
+    selectedSourcesList.forEach((source) => {
+      const sourceKey = buildSourceKey(source);
+      if (!sourceKey) return;
+      const assignedRef =
+        source.ref_number ||
+        citationRegistryRef.current.get(sourceKey) ||
+        registerCitationKey(sourceKey);
+      byKey.set(sourceKey, {
+        ...source,
+        source_key: sourceKey,
+        ref_number: assignedRef || source.ref_number,
+        selected: true,
+      });
+    });
+    return Array.from(byKey.values()).sort(
+      (a, b) => (a.ref_number || 0) - (b.ref_number || 0),
+    );
+  }, [selectedSourcesList, registerCitationKey]);
+
   const normalizeSourceCatalog = useCallback(
     (catalog: any[]): CitationCatalogItem[] => {
       if (!Array.isArray(catalog)) return [];
@@ -2332,7 +2388,8 @@ export default function NotebookDetailPage() {
             item?.type === "web" ||
             item?.type === "file" ||
             item?.type === "kb" ||
-            item?.type === "report"
+            item?.type === "report" ||
+            item?.type === "paper"
               ? item.type
               : "web",
         };
@@ -2441,9 +2498,10 @@ export default function NotebookDetailPage() {
     setIsChatting(true);
     setChatError(null);
 
-    // If there are selected sources, wait for KB to be ready
-    const hasSelectedSources = sources.some((s) => s.selected);
-    if (hasSelectedSources) {
+    // Only sources that need notebook materialization should block on sources KB readiness.
+    const hasSelectedMaterializedSources =
+      selectedMaterializedSourcesList.length > 0;
+    if (hasSelectedMaterializedSources) {
       setSourcesKbIndexing(true);
       const isReady = await waitForSourcesKbReady();
       setSourcesKbIndexing(false);
@@ -2456,8 +2514,8 @@ export default function NotebookDetailPage() {
     }
 
     setTimeout(() => {
-      const needsSourceSync = selectedSourcesList.length > 0;
-      scheduleSessionSave(needsSourceSync, activeSessionId);
+      const shouldPersistSourcesImmediately = selectedSourcesList.length > 0;
+      scheduleSessionSave(shouldPersistSourcesImmediately, activeSessionId);
     }, 0);
 
     // Close existing WebSocket
@@ -2487,17 +2545,21 @@ export default function NotebookDetailPage() {
         content: msg.content,
       }));
       const selectedSourceCatalog = buildSelectedSourceCatalog();
+      const selectedSourceRefs = buildSelectedSourceRefs();
 
       ws.send(
         JSON.stringify({
           message: userMessage.content,
           history,
           kb_name: enableRag ? selectedKb || undefined : undefined,
-          sources_kb_name: hasSelectedSources ? sourcesKbName : undefined,
+          sources_kb_name: hasSelectedMaterializedSources
+            ? sourcesKbName
+            : undefined,
           enable_rag: enableRag && !!selectedKb,
           enable_web_search: false, // 笔记本内禁用联网，使用来源 + 知识库问答
           require_sources: true,
           selected_sources: selectedSourceCatalog,
+          selected_source_refs: selectedSourceRefs,
         }),
       );
 
@@ -2553,6 +2615,15 @@ export default function NotebookDetailPage() {
                   url: item?.url || "",
                   content: item?.content || item?.snippet || "",
                   selected: true,
+                  source_key: item?.source_key,
+                  ref_number:
+                    typeof item?.ref_number === "number"
+                      ? item.ref_number
+                      : undefined,
+                  kb_name: item?.kb_name,
+                  source_file: item?.source_file,
+                  chunk_id: item?.chunk_id,
+                  page: item?.page,
                 }),
               );
             });
@@ -2769,6 +2840,10 @@ export default function NotebookDetailPage() {
                 selected: true,
                 source_key: sourceKey || undefined,
                 ref_number: hasRefNumber ? Math.floor(refNumber) : undefined,
+                kb_name: s.kb_name,
+                source_file: s.source_file,
+                chunk_id: s.chunk_id,
+                page: s.page,
               });
             });
           }

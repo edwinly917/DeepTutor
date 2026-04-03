@@ -50,7 +50,8 @@ async def websocket_notebook_chat(websocket: WebSocket):
         "enable_rag": bool,          # Enable RAG retrieval
         "enable_web_search": bool,   # Enable Web Search
         "require_sources": bool,     # Require sources before answering (grounded QA)
-        "selected_sources": list     # Optional source catalog with ref_number mapping
+        "selected_sources": list,    # Optional source catalog with ref_number mapping
+        "selected_source_refs": list # Optional full selected source metadata
     }
 
     Response format:
@@ -78,8 +79,11 @@ async def websocket_notebook_chat(websocket: WebSocket):
             enable_web_search = data.get("enable_web_search", False)
             require_sources = data.get("require_sources", False)
             source_catalog = data.get("selected_sources") or []
+            selected_source_refs = data.get("selected_source_refs") or []
             if not isinstance(source_catalog, list):
                 source_catalog = []
+            if not isinstance(selected_source_refs, list):
+                selected_source_refs = []
 
             if not message:
                 await websocket.send_json({"type": "error", "message": "Message is required"})
@@ -89,7 +93,7 @@ async def websocket_notebook_chat(websocket: WebSocket):
                 f"Notebook chat: message={message[:50]}..., "
                 f"rag={enable_rag}, web={enable_web_search}, "
                 f"sources_kb={sources_kb_name or 'none'}, "
-                f"catalog={len(source_catalog)}"
+                f"catalog={len(source_catalog)}, refs={len(selected_source_refs)}"
             )
 
             try:
@@ -146,6 +150,7 @@ async def websocket_notebook_chat(websocket: WebSocket):
                     enable_web_search=enable_web_search,
                     require_sources=require_sources,
                     source_catalog=source_catalog,
+                    selected_source_refs=selected_source_refs,
                     stream=True,
                 )
 

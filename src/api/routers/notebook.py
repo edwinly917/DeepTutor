@@ -80,6 +80,12 @@ _SOURCES_OWNER_TYPE = "notebook_sources"
 _LEGACY_SOURCES_KB_RE = re.compile(r"^notebook_(?P<notebook_id>[^/]+)_sources$")
 _SUCCESS_FETCH_STATUS_PREFIX = "success_"
 _SOURCE_META_FIELDS = (
+    "kb_name",
+    "source_file",
+    "chunk_id",
+    "page",
+    "source_key",
+    "ref_number",
     "requested_url",
     "canonical_url",
     "final_url",
@@ -370,9 +376,26 @@ def _attach_source_metadata(base: dict, source: dict, canonical_url: str) -> dic
     return normalized
 
 
+def _is_kb_reference_source(source: dict) -> bool:
+    return (source.get("type") or "").strip().lower() == "kb" and bool(
+        (source.get("kb_name") or "").strip()
+    )
+
+
+def _should_materialize_source(source: dict) -> bool:
+    return not _is_kb_reference_source(source)
+
+
+def _filter_materialized_sources(sources: list[dict]) -> list[dict]:
+    return [source for source in sources if _should_materialize_source(source)]
+
+
 def _is_indexable_source(source: dict) -> bool:
     source_type = source.get("type") or ""
     fetch_status = (source.get("fetch_status") or "").strip()
+
+    if _is_kb_reference_source(source):
+        return False
 
     if source.get("is_pdf") and source.get("file_path"):
         return not fetch_status or _is_success_fetch_status(fetch_status)
@@ -414,7 +437,18 @@ def _normalize_source_payload(source: dict) -> dict:
 
 def _source_key(source: dict) -> str:
     canonical_url = _canonicalize_source_url(source.get("url") or "")
-    key = canonical_url or source.get("url") or source.get("id") or source.get("title") or ""
+    if _is_kb_reference_source(source):
+        key_parts = [
+            (source.get("kb_name") or "").strip(),
+            (source.get("source_file") or "").strip(),
+            str(source.get("page") or "").strip(),
+            (source.get("chunk_id") or "").strip(),
+            (source.get("title") or "").strip(),
+            (source.get("id") or "").strip(),
+        ]
+        key = "|".join(part for part in key_parts if part)
+    else:
+        key = canonical_url or source.get("url") or source.get("id") or source.get("title") or ""
     return f"{source.get('type', '')}-{key}"
 
 
@@ -462,6 +496,10 @@ def _source_digest(source: dict) -> dict:
         "type": source.get("type") or "",
         "title": source.get("title") or "",
         "url": canonical_url or source.get("url") or "",
+        "kb_name": source.get("kb_name") or "",
+        "source_file": source.get("source_file") or "",
+        "chunk_id": source.get("chunk_id") or "",
+        "page": source.get("page") or "",
         "content_hash": content_hash,
     }
 
@@ -846,6 +884,12 @@ async def _sync_sources_kb(notebook_id: str) -> str | None:
     selected_sources = _collect_selected_sources_raw(sessions)
     if not selected_sources:
         return None
+    selected_sources = _filter_materialized_sources(selected_sources)
+    if not selected_sources:
+        logger.info(
+            f"Notebook '{notebook_id}' has no materialized selected sources; skipping sources KB sync"
+        )
+        return None
 
     # Calculate signature before enrichment (for consistency)
     # Note: We normalize for signature calculation, but keep raw sources for enrichment.
@@ -1003,13 +1047,17 @@ class SessionMessage(BaseModel):
 
 class SessionSource(BaseModel):
     id: str
-    type: Literal["web", "file", "kb", "report"]
+    type: Literal["web", "file", "kb", "report", "paper"]
     title: str
     url: str | None = None
     selected: bool = True
     content: str | None = None
     source_key: str | None = None
     ref_number: int | None = None
+    kb_name: str | None = None
+    source_file: str | None = None
+    chunk_id: str | None = None
+    page: int | str | None = None
 
 
 class SessionSnapshot(BaseModel):
@@ -1287,8 +1335,9 @@ async def upsert_session(notebook_id: str, request: SessionSnapshot):
     try:
         sessions = notebook_manager.list_sessions(notebook_id)
         selected_sources = _collect_selected_sources_raw(sessions)
-        signature = _selected_sources_signature(selected_sources)
-        if _should_sync_sources_kb(notebook_id, signature):
+        materialized_sources = _filter_materialized_sources(selected_sources)
+        signature = _selected_sources_signature(materialized_sources)
+        if materialized_sources and _should_sync_sources_kb(notebook_id, signature):
             scheduled = await _schedule_sources_kb_sync(notebook_id)
             if not scheduled:
                 logger.info(f"Sources KB sync already running for notebook '{notebook_id}'")
